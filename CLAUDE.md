@@ -73,3 +73,7 @@ MCP client → rmcp transport (stdio or Axum/StreamableHTTP)
 ### project_id encoding
 
 All GitLab endpoints are project-scoped. The `project_id` field accepts either a numeric ID (`"42"`) or a namespace path (`"mygroup/myrepo"`). `encode_project_id()` in `src/tools/mod.rs` (pub crate) URL-encodes the slash when a path is provided and is shared by all domain modules.
+
+## Testing
+
+End-to-end tool verification is documented in [`docs/testing-protocol.md`](docs/testing-protocol.md). It covers seed data setup, per-tool test cases, cross-tool workflows, and error-handling checks for Issues, Branches, and Merge Requests against the test project `3kirt1/gitlab-mcp-testing`.
