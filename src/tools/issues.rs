@@ -12,7 +12,7 @@ use crate::tools::{PaginationParams, QueryBuilder};
 pub struct IssuesListParams {
     #[schemars(description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")")]
     pub project_id: String,
-    #[schemars(description = "Filter by state: \"opened\", \"closed\", or \"all\" (default: \"opened\")")]
+    #[schemars(description = "Filter by state: \"opened\", \"closed\", or \"all\" (default: \"all\" — GitLab returns all issues when omitted)")]
     pub state: Option<String>,
     #[schemars(description = "Comma-separated label names to filter by")]
     pub labels: Option<String>,
