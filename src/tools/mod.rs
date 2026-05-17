@@ -15,6 +15,7 @@ use std::sync::{Arc, OnceLock};
 
 use crate::client::{GitlabClient, GitlabError};
 
+pub mod branches;
 pub mod issues;
 pub mod merge_requests;
 
@@ -293,6 +294,56 @@ impl GitlabMcpServer {
         Parameters(p): Parameters<merge_requests::MrMergeParams>,
     ) -> Result<CallToolResult, McpError> {
         delegate_update!(self, merge_requests::mr_merge, p, "merge request")
+    }
+
+    #[tool(
+        description = "List branches for a GitLab project, sorted alphabetically. Optional filters: search (substring match) and regex (re2 regular expression). Paginate with page and per_page."
+    )]
+    async fn gitlab_branches_list(
+        &self,
+        Parameters(p): Parameters<branches::BranchesListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, branches::branches_list, p, "branches")
+    }
+
+    #[tool(
+        description = "Get a single GitLab branch by project and branch name. Returns commit details and protection status."
+    )]
+    async fn gitlab_branches_get(
+        &self,
+        Parameters(p): Parameters<branches::BranchGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, branches::branch_get, p, "branch")
+    }
+
+    #[tool(
+        description = "Create a new branch in a GitLab project. Required: project_id, branch (new branch name), ref (source branch name or commit SHA)."
+    )]
+    async fn gitlab_branches_create(
+        &self,
+        Parameters(p): Parameters<branches::BranchCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, branches::branch_create, p, "branch")
+    }
+
+    #[tool(
+        description = "Delete a GitLab branch by name. Cannot delete default or protected branches."
+    )]
+    async fn gitlab_branches_delete(
+        &self,
+        Parameters(p): Parameters<branches::BranchDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, branches::branch_delete, p, "branch")
+    }
+
+    #[tool(
+        description = "Delete all branches in a GitLab project that have been merged into the default branch. Protected branches are excluded."
+    )]
+    async fn gitlab_branches_delete_merged(
+        &self,
+        Parameters(p): Parameters<branches::BranchesDeleteMergedParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, branches::branches_delete_merged, p, "merged branches")
     }
 }
 

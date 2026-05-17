@@ -6,7 +6,7 @@ Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Crea
 
 - **Full CRUD** — create, read, update, and delete GitLab resources
 - **Two transports** — stdio (local subprocess) or HTTP (remote/shared)
-- **Issues & Merge Requests** — full CRUD plus merge and draft support
+- **Issues, Merge Requests & Branches** — full CRUD plus merge, draft, and branch management support
 
 ---
 
@@ -186,6 +186,16 @@ All tools accept `project_id` as either a numeric ID (e.g. `42`) or a URL-encode
 | `gitlab_mrs_update` | PUT | Update an existing merge request. Use `state_event: "close"` or `"reopen"` to change state; `draft: true/false` to toggle draft status. |
 | `gitlab_mrs_delete` | DELETE | Permanently delete a merge request. Requires Maintainer role or higher. |
 | `gitlab_mrs_merge` | PUT | Accept and merge a merge request. Optional: `merge_commit_message`, `squash`, `should_remove_source_branch`, `merge_when_pipeline_succeeds`. |
+
+### Branches
+
+| Tool | Method | Description |
+|---|---|---|
+| `gitlab_branches_list` | GET | List branches for a project, sorted alphabetically. Optional: `search` (substring), `regex` (re2 pattern). Paginate with `page`/`per_page`. |
+| `gitlab_branches_get` | GET | Get a single branch by name. Returns commit details and protection status. |
+| `gitlab_branches_create` | POST | Create a new branch. Required: `project_id`, `branch` (new name), `ref` (source branch or commit SHA). |
+| `gitlab_branches_delete` | DELETE | Delete a branch by name. Cannot delete default or protected branches. |
+| `gitlab_branches_delete_merged` | DELETE | Delete all branches that have been merged into the default branch (protected branches are excluded). |
 
 ---
 

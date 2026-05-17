@@ -37,7 +37,7 @@ The server supports two transport modes selected at startup:
 ```
 MCP client → rmcp transport (stdio or Axum/StreamableHTTP)
            → GitlabMcpServer (tool_router macro dispatch)
-           → domain function in tools/issues.rs or tools/merge_requests.rs
+           → domain function in tools/issues.rs, tools/merge_requests.rs, or tools/branches.rs
            → GitlabClient (reqwest, PRIVATE-TOKEN header)
            → GitLab REST API
 ```
@@ -57,6 +57,8 @@ MCP client → rmcp transport (stdio or Axum/StreamableHTTP)
 **`src/tools/issues.rs`** — Issues domain module. Each operation has a `*Params` struct (derives `Deserialize` + `JsonSchema`) and an `async fn` that builds the URL path, assembles query params or a JSON body, and calls the appropriate `GitlabClient` method.
 
 **`src/tools/merge_requests.rs`** — Merge Requests domain module. Follows the same pattern as `issues.rs`. Implements list, get, create, update, delete, and merge (accept) operations.
+
+**`src/tools/branches.rs`** — Branches domain module. Follows the same pattern as `issues.rs`. Implements list, get, create, delete, and delete-merged operations. Branch names containing slashes are percent-encoded via a module-local `encode_branch_name()` helper.
 
 **`src/server/http.rs`** — Axum router wrapping `StreamableHttpService`. Middleware enforces a non-empty Bearer header on all routes except `/healthz` and `/readyz`. `/readyz` does a DNS lookup of the configured GitLab host.
 
