@@ -1,0 +1,8 @@
+/gitlab-mcp
+.claude/
+.mcp.json
+.mcp.*.json
+
+# Added by cargo
+
+/target
