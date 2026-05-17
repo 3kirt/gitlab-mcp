@@ -37,7 +37,7 @@ The server supports two transport modes selected at startup:
 ```
 MCP client → rmcp transport (stdio or Axum/StreamableHTTP)
            → GitlabMcpServer (tool_router macro dispatch)
-           → domain function in tools/issues.rs
+           → domain function in tools/issues.rs or tools/merge_requests.rs
            → GitlabClient (reqwest, PRIVATE-TOKEN header)
            → GitLab REST API
 ```
@@ -54,7 +54,9 @@ MCP client → rmcp transport (stdio or Axum/StreamableHTTP)
 - `PaginationParams` — shared `page`/`per_page` struct flattened into list param structs
 - `#[tool_handler] #[prompt_handler] impl ServerHandler` — handles HTTP-mode token injection in `initialize()`
 
-**`src/tools/issues.rs`** — domain module. Each operation has a `*Params` struct (derives `Deserialize` + `JsonSchema`) and an `async fn` that builds the URL path, assembles query params or a JSON body, and calls the appropriate `GitlabClient` method.
+**`src/tools/issues.rs`** — Issues domain module. Each operation has a `*Params` struct (derives `Deserialize` + `JsonSchema`) and an `async fn` that builds the URL path, assembles query params or a JSON body, and calls the appropriate `GitlabClient` method.
+
+**`src/tools/merge_requests.rs`** — Merge Requests domain module. Follows the same pattern as `issues.rs`. Implements list, get, create, update, delete, and merge (accept) operations.
 
 **`src/server/http.rs`** — Axum router wrapping `StreamableHttpService`. Middleware enforces a non-empty Bearer header on all routes except `/healthz` and `/readyz`. `/readyz` does a DNS lookup of the configured GitLab host.
 
@@ -68,4 +70,4 @@ MCP client → rmcp transport (stdio or Axum/StreamableHTTP)
 
 ### project_id encoding
 
-All GitLab issue endpoints are project-scoped. The `project_id` field accepts either a numeric ID (`"42"`) or a namespace path (`"mygroup/myrepo"`). `encode_project_id()` in `issues.rs` URL-encodes the slash when a path is provided.
+All GitLab endpoints are project-scoped. The `project_id` field accepts either a numeric ID (`"42"`) or a namespace path (`"mygroup/myrepo"`). `encode_project_id()` in `src/tools/mod.rs` (pub crate) URL-encodes the slash when a path is provided and is shared by all domain modules.

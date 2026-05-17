@@ -2,11 +2,11 @@
 
 A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that connects Claude and other MCP-compatible AI clients to the [GitLab API](https://docs.gitlab.com/api/rest/).
 
-Ask things like *"List open issues assigned to me in my-org/my-project"* or *"Create an issue titled 'Fix login bug' with the label 'bug'"* — the server translates them into real GitLab API calls and returns structured results.
+Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Create a merge request from feature-branch to main"*, or *"Close MR #42"* — the server translates them into real GitLab API calls and returns structured results.
 
 - **Full CRUD** — create, read, update, and delete GitLab resources
 - **Two transports** — stdio (local subprocess) or HTTP (remote/shared)
-- **Issues API** — initial scope covers the full GitLab Issues API
+- **Issues & Merge Requests** — full CRUD plus merge and draft support
 
 ---
 
@@ -164,6 +164,8 @@ claude mcp add --transport http \
 
 ## Available tools
 
+All tools accept `project_id` as either a numeric ID (e.g. `42`) or a URL-encoded namespace path (e.g. `mygroup%2Fmyproject`).
+
 ### Issues
 
 | Tool | Method | Description |
@@ -174,7 +176,16 @@ claude mcp add --transport http \
 | `gitlab_issues_update` | PUT | Update an existing issue. Use `state_event: "close"` or `"reopen"` to change state. |
 | `gitlab_issues_delete` | DELETE | Permanently delete an issue. Requires Maintainer role or higher. |
 
-All tools accept `project_id` as either a numeric ID (e.g. `42`) or a URL-encoded namespace path (e.g. `mygroup%2Fmyproject`).
+### Merge Requests
+
+| Tool | Method | Description |
+|---|---|---|
+| `gitlab_mrs_list` | GET | List merge requests for a project. Filters: `state`, `source_branch`, `target_branch`, `author_id`, `assignee_id`, `reviewer_id`, `labels`, `search`, `draft`, `scope`, `order_by`, `sort`. Paginate with `page`/`per_page`. |
+| `gitlab_mrs_get` | GET | Get a single merge request by project ID and MR IID. |
+| `gitlab_mrs_create` | POST | Create a new merge request. Required: `project_id`, `source_branch`, `target_branch`, `title`. Optional: `description`, `assignee_id`, `reviewer_ids`, `labels`, `milestone_id`, `squash`, `remove_source_branch`, `draft`. |
+| `gitlab_mrs_update` | PUT | Update an existing merge request. Use `state_event: "close"` or `"reopen"` to change state; `draft: true/false` to toggle draft status. |
+| `gitlab_mrs_delete` | DELETE | Permanently delete a merge request. Requires Maintainer role or higher. |
+| `gitlab_mrs_merge` | PUT | Accept and merge a merge request. Optional: `merge_commit_message`, `squash`, `should_remove_source_branch`, `merge_when_pipeline_succeeds`. |
 
 ---
 
