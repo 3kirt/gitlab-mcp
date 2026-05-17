@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{PaginationParams, QueryBuilder};
+use crate::tools::{PaginationParams, QueryBuilder, encode_project_id};
 
 // --------------------------------------------------------------------------
 // List issues
@@ -216,17 +216,3 @@ pub async fn issue_delete(client: &GitlabClient, p: IssueDeleteParams) -> Result
     client.delete(&path).await
 }
 
-// --------------------------------------------------------------------------
-// Helpers
-// --------------------------------------------------------------------------
-
-/// URL-encode a project ID for use in REST API paths.
-/// Numeric IDs are passed through unchanged; path-style IDs like
-/// "mygroup/myrepo" have slashes replaced with %2F.
-fn encode_project_id(id: &str) -> String {
-    if id.chars().all(|c| c.is_ascii_digit()) {
-        id.to_string()
-    } else {
-        id.replace('/', "%2F")
-    }
-}

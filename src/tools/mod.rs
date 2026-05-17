@@ -16,6 +16,7 @@ use std::sync::{Arc, OnceLock};
 use crate::client::{GitlabClient, GitlabError};
 
 pub mod issues;
+pub mod merge_requests;
 
 // --------------------------------------------------------------------------
 // Shared helpers
@@ -43,6 +44,17 @@ pub fn tool_error(msg: &str) -> Result<CallToolResult, McpError> {
 // --------------------------------------------------------------------------
 // Query construction
 // --------------------------------------------------------------------------
+
+/// URL-encode a project ID for use in REST API paths.
+/// Numeric IDs pass through unchanged; path-style IDs like
+/// "mygroup/myrepo" have slashes replaced with %2F.
+pub(crate) fn encode_project_id(id: &str) -> String {
+    if id.chars().all(|c| c.is_ascii_digit()) {
+        id.to_string()
+    } else {
+        id.replace('/', "%2F")
+    }
+}
 
 pub struct QueryBuilder {
     params: Vec<(&'static str, String)>,
@@ -221,6 +233,66 @@ impl GitlabMcpServer {
         Parameters(p): Parameters<issues::IssueDeleteParams>,
     ) -> Result<CallToolResult, McpError> {
         delegate_delete!(self, issues::issue_delete, p, "issue")
+    }
+
+    #[tool(
+        description = "List merge requests for a GitLab project. Filters: state (opened/closed/merged/all), source_branch, target_branch, author_id, assignee_id, reviewer_id, labels, search, draft, scope, order_by, sort. Paginate with page and per_page."
+    )]
+    async fn gitlab_mrs_list(
+        &self,
+        Parameters(p): Parameters<merge_requests::MrsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, merge_requests::mrs_list, p, "merge requests")
+    }
+
+    #[tool(
+        description = "Get a single GitLab merge request by project ID and merge request IID (the number shown in the GitLab UI)."
+    )]
+    async fn gitlab_mrs_get(
+        &self,
+        Parameters(p): Parameters<merge_requests::MrGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, merge_requests::mr_get, p, "merge request")
+    }
+
+    #[tool(
+        description = "Create a new merge request in a GitLab project. Required: project_id, source_branch, target_branch, title. Optional: description, assignee_id, reviewer_ids, labels, milestone_id, squash, remove_source_branch, draft."
+    )]
+    async fn gitlab_mrs_create(
+        &self,
+        Parameters(p): Parameters<merge_requests::MrCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, merge_requests::mr_create, p, "merge request")
+    }
+
+    #[tool(
+        description = "Update an existing GitLab merge request. Use state_event=\"close\" to close or \"reopen\" to reopen. All fields except project_id and merge_request_iid are optional."
+    )]
+    async fn gitlab_mrs_update(
+        &self,
+        Parameters(p): Parameters<merge_requests::MrUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, merge_requests::mr_update, p, "merge request")
+    }
+
+    #[tool(
+        description = "Delete a GitLab merge request. Requires at least Maintainer role. This action is permanent and cannot be undone."
+    )]
+    async fn gitlab_mrs_delete(
+        &self,
+        Parameters(p): Parameters<merge_requests::MrDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, merge_requests::mr_delete, p, "merge request")
+    }
+
+    #[tool(
+        description = "Accept and merge a GitLab merge request. Optional: merge_commit_message, squash, should_remove_source_branch, merge_when_pipeline_succeeds."
+    )]
+    async fn gitlab_mrs_merge(
+        &self,
+        Parameters(p): Parameters<merge_requests::MrMergeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, merge_requests::mr_merge, p, "merge request")
     }
 }
 
