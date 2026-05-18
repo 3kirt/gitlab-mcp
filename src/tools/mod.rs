@@ -13,7 +13,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
-use crate::client::{GitlabClient, GitlabError};
+use crate::client::GitlabClient;
 
 pub mod branches;
 pub mod commits;
@@ -975,9 +975,6 @@ impl ServerHandler for GitlabMcpServer {
     }
 }
 
-// Suppress the unused import warning — GitlabError is referenced only in macro expansions.
-#[allow(unused_imports)]
-use GitlabError as _;
 
 #[cfg(test)]
 mod tests {

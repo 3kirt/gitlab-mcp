@@ -70,7 +70,7 @@ Several callers use `client.list(...)` for endpoints that return a single object
 
 The method works (it's GET-with-query-params) but the name lies. Rename to `get_with_params`, or add it as a sibling and reserve `list` for actual list endpoints.
 
-## 7. Investigate `use GitlabError as _;`
+## ~~7. Investigate `use GitlabError as _;`~~ ✓
 
 [src/tools/mod.rs:948-950](src/tools/mod.rs#L948-L950):
 
@@ -81,7 +81,7 @@ use GitlabError as _;
 
 The comment claims it's needed for macro expansions, but `to_tool_message` is an inherent method and doesn't need the type in scope. Try removing — if it builds, delete.
 
-## 8. Verify `#[allow(dead_code)]` on router fields
+## ~~8. Verify `#[allow(dead_code)]` on router fields~~ — still needed
 
 [src/tools/mod.rs:162-165](src/tools/mod.rs#L162-L165) — `tool_router` and `prompt_router` are populated by macros, presumably read by `#[tool_handler]`/`#[prompt_handler]` expansions. Confirm the attribute is still required by the current `rmcp` version; remove if not.
 
