@@ -2,7 +2,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_path_segment, encode_project_id};
+use crate::tools::{
+    BodyBuilder, PaginationParams, QueryBuilder, encode_path_segment, encode_project_id,
+};
 
 // --------------------------------------------------------------------------
 // List commits
@@ -14,9 +16,13 @@ pub struct CommitsListParams {
     pub project_id: String,
     #[schemars(description = "Branch name, tag, or revision range to list commits from")]
     pub ref_name: Option<String>,
-    #[schemars(description = "Only commits after or on this date (ISO 8601: YYYY-MM-DDTHH:MM:SSZ)")]
+    #[schemars(
+        description = "Only commits after or on this date (ISO 8601: YYYY-MM-DDTHH:MM:SSZ)"
+    )]
     pub since: Option<String>,
-    #[schemars(description = "Only commits before or on this date (ISO 8601: YYYY-MM-DDTHH:MM:SSZ)")]
+    #[schemars(
+        description = "Only commits before or on this date (ISO 8601: YYYY-MM-DDTHH:MM:SSZ)"
+    )]
     pub until: Option<String>,
     #[schemars(description = "File path to filter commits to those touching that path")]
     pub path: Option<String>,
@@ -32,7 +38,9 @@ pub struct CommitsListParams {
     pub with_stats: Option<bool>,
     #[schemars(description = "If true, parse and include Git trailers in the response")]
     pub trailers: Option<bool>,
-    #[schemars(description = "If true, follow file renames when filtering by path (default: true)")]
+    #[schemars(
+        description = "If true, follow file renames when filtering by path (default: true)"
+    )]
     pub follow: Option<bool>,
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -181,9 +189,7 @@ pub async fn commit_get(client: &GitlabClient, p: CommitGetParams) -> Result<Val
         encode_project_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
-    let params = QueryBuilder::new()
-        .opt("stats", p.stats)
-        .into_params();
+    let params = QueryBuilder::new().opt("stats", p.stats).into_params();
     client.get_with_params(&path, &params).await
 }
 
@@ -203,10 +209,7 @@ pub struct CommitRefsParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn commit_refs(
-    client: &GitlabClient,
-    p: CommitRefsParams,
-) -> Result<Value, GitlabError> {
+pub async fn commit_refs(client: &GitlabClient, p: CommitRefsParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/refs",
         encode_project_id(&p.project_id),
@@ -330,18 +333,13 @@ pub struct CommitDiffParams {
     pub unidiff: Option<bool>,
 }
 
-pub async fn commit_diff(
-    client: &GitlabClient,
-    p: CommitDiffParams,
-) -> Result<Value, GitlabError> {
+pub async fn commit_diff(client: &GitlabClient, p: CommitDiffParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/diff",
         encode_project_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
-    let params = QueryBuilder::new()
-        .opt("unidiff", p.unidiff)
-        .into_params();
+    let params = QueryBuilder::new().opt("unidiff", p.unidiff).into_params();
     client.get_with_params(&path, &params).await
 }
 
@@ -557,9 +555,7 @@ pub struct CommitMergeRequestsParams {
     pub project_id: String,
     #[schemars(description = "Commit SHA")]
     pub sha: String,
-    #[schemars(
-        description = "Filter by state: \"opened\", \"closed\", \"locked\", or \"merged\""
-    )]
+    #[schemars(description = "Filter by state: \"opened\", \"closed\", \"locked\", or \"merged\"")]
     pub state: Option<String>,
 }
 
@@ -572,9 +568,7 @@ pub async fn commit_merge_requests(
         encode_project_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
-    let params = QueryBuilder::new()
-        .opt("state", p.state)
-        .into_params();
+    let params = QueryBuilder::new().opt("state", p.state).into_params();
     client.get_with_params(&path, &params).await
 }
 

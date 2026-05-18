@@ -99,8 +99,7 @@ fn enforce_https(url: &str) -> anyhow::Result<()> {
         return Ok(());
     }
     if url.starts_with("http://") {
-        let parsed = url::Url::parse(url)
-            .with_context(|| format!("invalid GitLab URL: {url}"))?;
+        let parsed = url::Url::parse(url).with_context(|| format!("invalid GitLab URL: {url}"))?;
         let host = parsed.host_str().unwrap_or("");
         if host == "localhost" || host == "127.0.0.1" {
             return Ok(());

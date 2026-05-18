@@ -102,17 +102,21 @@ pub struct BodyBuilder {
 
 impl BodyBuilder {
     pub fn new() -> Self {
-        Self { map: serde_json::Map::new() }
+        Self {
+            map: serde_json::Map::new(),
+        }
     }
 
     pub fn req<T: serde::Serialize>(mut self, key: &'static str, v: T) -> Self {
-        self.map.insert(key.to_string(), serde_json::to_value(v).unwrap());
+        self.map
+            .insert(key.to_string(), serde_json::to_value(v).unwrap());
         self
     }
 
     pub fn opt<T: serde::Serialize>(mut self, key: &'static str, v: Option<T>) -> Self {
         if let Some(v) = v {
-            self.map.insert(key.to_string(), serde_json::to_value(v).unwrap());
+            self.map
+                .insert(key.to_string(), serde_json::to_value(v).unwrap());
         }
         self
     }
@@ -465,9 +469,7 @@ impl GitlabMcpServer {
         delegate_list!(self, commits::commit_diff, p, "commit diff")
     }
 
-    #[tool(
-        description = "List all comments on a commit. Paginate with page and per_page."
-    )]
+    #[tool(description = "List all comments on a commit. Paginate with page and per_page.")]
     async fn gitlab_commits_comments_list(
         &self,
         Parameters(p): Parameters<commits::CommitCommentsListParams>,
@@ -711,9 +713,7 @@ impl GitlabMcpServer {
         delegate_get!(self, jobs::job_get, p, "job")
     }
 
-    #[tool(
-        description = "Get the raw log output (trace) of a GitLab job as plain text."
-    )]
+    #[tool(description = "Get the raw log output (trace) of a GitLab job as plain text.")]
     async fn gitlab_jobs_get_trace(
         &self,
         Parameters(p): Parameters<jobs::JobGetTraceParams>,
@@ -969,7 +969,6 @@ impl ServerHandler for GitlabMcpServer {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1000,9 +999,7 @@ mod tests {
 
     #[test]
     fn body_builder_opt_some_inserts() {
-        let v = BodyBuilder::new()
-            .opt("description", Some("desc"))
-            .build();
+        let v = BodyBuilder::new().opt("description", Some("desc")).build();
         assert_eq!(v["description"], json!("desc"));
     }
 
@@ -1073,9 +1070,7 @@ mod tests {
 
     #[test]
     fn query_builder_opt_none_omits() {
-        let params = QueryBuilder::new()
-            .opt("page", None::<u32>)
-            .into_params();
+        let params = QueryBuilder::new().opt("page", None::<u32>).into_params();
         assert!(params.is_empty());
     }
 
@@ -1084,17 +1079,18 @@ mod tests {
         let params = QueryBuilder::new()
             .multi("labels[]", Some(vec!["bug".into(), "wip".into()]))
             .into_params();
-        assert_eq!(params, vec![
-            ("labels[]", "bug".to_string()),
-            ("labels[]", "wip".to_string()),
-        ]);
+        assert_eq!(
+            params,
+            vec![
+                ("labels[]", "bug".to_string()),
+                ("labels[]", "wip".to_string()),
+            ]
+        );
     }
 
     #[test]
     fn query_builder_multi_none_omits() {
-        let params = QueryBuilder::new()
-            .multi("labels[]", None)
-            .into_params();
+        let params = QueryBuilder::new().multi("labels[]", None).into_params();
         assert!(params.is_empty());
     }
 }

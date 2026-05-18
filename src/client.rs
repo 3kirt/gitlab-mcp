@@ -79,7 +79,11 @@ impl GitlabClient {
     }
 
     /// GET {base_url}{path}?{params} — returns the JSON response body.
-    pub async fn get_with_params(&self, path: &str, params: &[(&str, String)]) -> Result<Value, GitlabError> {
+    pub async fn get_with_params(
+        &self,
+        path: &str,
+        params: &[(&str, String)],
+    ) -> Result<Value, GitlabError> {
         let url = self.url(path);
         let resp = self.http.get(&url).query(params).send().await?;
         self.handle_response(resp).await
@@ -100,7 +104,11 @@ impl GitlabClient {
     }
 
     /// GET {base_url}{path}?{params} — returns the raw text response body (for non-JSON endpoints).
-    pub async fn get_text(&self, path: &str, params: &[(&str, String)]) -> Result<String, GitlabError> {
+    pub async fn get_text(
+        &self,
+        path: &str,
+        params: &[(&str, String)],
+    ) -> Result<String, GitlabError> {
         let url = self.url(path);
         let resp = self.http.get(&url).query(params).send().await?;
         let status = resp.status();
@@ -158,7 +166,10 @@ mod tests {
     }
 
     fn api_err(status: StatusCode, body: &str) -> GitlabError {
-        GitlabError::Api { status, body: body.to_string() }
+        GitlabError::Api {
+            status,
+            body: body.to_string(),
+        }
     }
 
     #[test]
@@ -223,7 +234,10 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = mock_client(&server).get("/api/v4/projects/1/issues/1").await.unwrap();
+        let result = mock_client(&server)
+            .get("/api/v4/projects/1/issues/1")
+            .await
+            .unwrap();
         assert_eq!(result, body);
     }
 
@@ -236,7 +250,10 @@ mod tests {
             .mount(&server)
             .await;
 
-        let err = mock_client(&server).get("/api/v4/projects/99/issues/1").await.unwrap_err();
+        let err = mock_client(&server)
+            .get("/api/v4/projects/99/issues/1")
+            .await
+            .unwrap_err();
         match err {
             GitlabError::Api { status, body } => {
                 assert_eq!(status, StatusCode::NOT_FOUND);
@@ -258,7 +275,9 @@ mod tests {
             .await;
 
         let params = &[("state", "opened".to_string()), ("page", "2".to_string())];
-        let result = mock_client(&server).get_with_params("/api/v4/projects/1/issues", params).await;
+        let result = mock_client(&server)
+            .get_with_params("/api/v4/projects/1/issues", params)
+            .await;
         assert!(result.is_ok());
     }
 
@@ -273,7 +292,10 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = mock_client(&server).post("/api/v4/projects/1/issues", &req_body).await.unwrap();
+        let result = mock_client(&server)
+            .post("/api/v4/projects/1/issues", &req_body)
+            .await
+            .unwrap();
         assert_eq!(result["iid"], 5);
     }
 
@@ -284,11 +306,15 @@ mod tests {
         Mock::given(method("PUT"))
             .and(path("/api/v4/projects/1/issues/1"))
             .and(body_json(req_body.clone()))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"title": "Updated"})))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(serde_json::json!({"title": "Updated"})),
+            )
             .mount(&server)
             .await;
 
-        let result = mock_client(&server).put("/api/v4/projects/1/issues/1", &req_body).await;
+        let result = mock_client(&server)
+            .put("/api/v4/projects/1/issues/1", &req_body)
+            .await;
         assert!(result.is_ok());
     }
 
@@ -317,7 +343,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let result = mock_client(&server).delete("/api/v4/projects/1/issues/1").await;
+        let result = mock_client(&server)
+            .delete("/api/v4/projects/1/issues/1")
+            .await;
         assert!(result.is_ok());
     }
 
@@ -330,7 +358,10 @@ mod tests {
             .mount(&server)
             .await;
 
-        let err = mock_client(&server).delete("/api/v4/projects/1/issues/99").await.unwrap_err();
+        let err = mock_client(&server)
+            .delete("/api/v4/projects/1/issues/99")
+            .await
+            .unwrap_err();
         match err {
             GitlabError::Api { status, body } => {
                 assert_eq!(status, StatusCode::FORBIDDEN);

@@ -27,10 +27,7 @@ pub struct JobListParams {
 }
 
 pub async fn job_list(client: &GitlabClient, p: JobListParams) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/jobs",
-        encode_project_id(&p.project_id)
-    );
+    let path = format!("/api/v4/projects/{}/jobs", encode_project_id(&p.project_id));
     let params = QueryBuilder::new()
         .multi("scope[]", p.scope)
         .opt("order_by", p.order_by)

@@ -212,7 +212,11 @@ pub async fn mr_update(client: &GitlabClient, p: MrUpdateParams) -> Result<Value
                 }
             };
             Some(if make_draft {
-                if base.starts_with("Draft:") { base } else { format!("Draft: {}", base) }
+                if base.starts_with("Draft:") {
+                    base
+                } else {
+                    format!("Draft: {}", base)
+                }
             } else {
                 base.strip_prefix("Draft: ")
                     .or_else(|| base.strip_prefix("Draft:"))
@@ -287,7 +291,10 @@ pub async fn mr_merge(client: &GitlabClient, p: MrMergeParams) -> Result<Value, 
         .opt("merge_commit_message", p.merge_commit_message)
         .opt("squash", p.squash)
         .opt("should_remove_source_branch", p.should_remove_source_branch)
-        .opt("merge_when_pipeline_succeeds", p.merge_when_pipeline_succeeds)
+        .opt(
+            "merge_when_pipeline_succeeds",
+            p.merge_when_pipeline_succeeds,
+        )
         .build();
     client.put(&path, &body).await
 }
