@@ -108,3 +108,46 @@ fn enforce_https(url: &str) -> anyhow::Result<()> {
         url
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::enforce_https;
+
+    #[test]
+    fn https_is_allowed() {
+        assert!(enforce_https("https://gitlab.com").is_ok());
+        assert!(enforce_https("https://gitlab.example.com/").is_ok());
+    }
+
+    #[test]
+    fn http_localhost_is_allowed() {
+        assert!(enforce_https("http://localhost").is_ok());
+        assert!(enforce_https("http://localhost:8080").is_ok());
+        assert!(enforce_https("http://localhost/path").is_ok());
+    }
+
+    #[test]
+    fn http_loopback_is_allowed() {
+        assert!(enforce_https("http://127.0.0.1").is_ok());
+        assert!(enforce_https("http://127.0.0.1:8080").is_ok());
+    }
+
+    #[test]
+    fn http_plain_host_is_rejected() {
+        assert!(enforce_https("http://gitlab.com").is_err());
+        assert!(enforce_https("http://internal.company.com").is_err());
+    }
+
+    #[test]
+    fn non_http_scheme_is_rejected() {
+        assert!(enforce_https("ftp://gitlab.com").is_err());
+        assert!(enforce_https("gitlab.com").is_err());
+    }
+
+    // Current prefix-match bug: these pass today but should be rejected (see TODO #3).
+    #[test]
+    fn localhost_prefix_bypass_current_behavior() {
+        assert!(enforce_https("http://localhost.evil.com").is_ok());
+        assert!(enforce_https("http://127.0.0.1.evil.com").is_ok());
+    }
+}

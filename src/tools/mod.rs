@@ -978,3 +978,132 @@ impl ServerHandler for GitlabMcpServer {
 // Suppress the unused import warning — GitlabError is referenced only in macro expansions.
 #[allow(unused_imports)]
 use GitlabError as _;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // BodyBuilder
+
+    #[test]
+    fn body_builder_empty() {
+        assert_eq!(BodyBuilder::new().build(), json!({}));
+    }
+
+    #[test]
+    fn body_builder_req_string() {
+        let v = BodyBuilder::new().req("title", "hello").build();
+        assert_eq!(v["title"], json!("hello"));
+    }
+
+    #[test]
+    fn body_builder_req_bool_and_number() {
+        let v = BodyBuilder::new()
+            .req("squash", true)
+            .req("milestone_id", 42u64)
+            .build();
+        assert_eq!(v["squash"], json!(true));
+        assert_eq!(v["milestone_id"], json!(42));
+    }
+
+    #[test]
+    fn body_builder_opt_some_inserts() {
+        let v = BodyBuilder::new()
+            .opt("description", Some("desc"))
+            .build();
+        assert_eq!(v["description"], json!("desc"));
+    }
+
+    #[test]
+    fn body_builder_opt_none_omits() {
+        let v = BodyBuilder::new()
+            .opt("description", None::<String>)
+            .build();
+        assert!(v.get("description").is_none());
+    }
+
+    #[test]
+    fn body_builder_opt_vec_u64() {
+        let v = BodyBuilder::new()
+            .opt("assignee_ids", Some(vec![1u64, 2, 3]))
+            .build();
+        assert_eq!(v["assignee_ids"], json!([1, 2, 3]));
+    }
+
+    #[test]
+    fn body_builder_mixed_req_and_opt() {
+        let v = BodyBuilder::new()
+            .req("title", "t")
+            .opt("desc", Some("d"))
+            .opt("missing", None::<String>)
+            .build();
+        assert_eq!(v["title"], json!("t"));
+        assert_eq!(v["desc"], json!("d"));
+        assert!(v.get("missing").is_none());
+    }
+
+    // encode_path_segment
+
+    #[test]
+    fn encode_path_segment_no_slash() {
+        assert_eq!(encode_path_segment("main"), "main");
+    }
+
+    #[test]
+    fn encode_path_segment_single_slash() {
+        assert_eq!(encode_path_segment("feat/login"), "feat%2Flogin");
+    }
+
+    #[test]
+    fn encode_path_segment_multiple_slashes() {
+        assert_eq!(encode_path_segment("a/b/c"), "a%2Fb%2Fc");
+    }
+
+    // encode_project_id
+
+    #[test]
+    fn encode_project_id_numeric_passthrough() {
+        assert_eq!(encode_project_id("12345"), "12345");
+    }
+
+    #[test]
+    fn encode_project_id_path_encodes_slash() {
+        assert_eq!(encode_project_id("mygroup/myrepo"), "mygroup%2Fmyrepo");
+    }
+
+    // QueryBuilder
+
+    #[test]
+    fn query_builder_opt_some_adds_param() {
+        let params = QueryBuilder::new().opt("page", Some(2u32)).into_params();
+        assert_eq!(params, vec![("page", "2".to_string())]);
+    }
+
+    #[test]
+    fn query_builder_opt_none_omits() {
+        let params = QueryBuilder::new()
+            .opt("page", None::<u32>)
+            .into_params();
+        assert!(params.is_empty());
+    }
+
+    #[test]
+    fn query_builder_multi_expands_to_repeated_key() {
+        let params = QueryBuilder::new()
+            .multi("labels[]", Some(vec!["bug".into(), "wip".into()]))
+            .into_params();
+        assert_eq!(params, vec![
+            ("labels[]", "bug".to_string()),
+            ("labels[]", "wip".to_string()),
+        ]);
+    }
+
+    #[test]
+    fn query_builder_multi_none_omits() {
+        let params = QueryBuilder::new()
+            .multi("labels[]", None)
+            .into_params();
+        assert!(params.is_empty());
+    }
+}
