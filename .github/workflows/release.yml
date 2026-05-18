@@ -9,9 +9,26 @@ permissions:
   contents: write
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo clippy --locked -- -D warnings
+
+      - run: cargo fmt --check
+
   build:
     name: Build ${{ matrix.artifact }}
     runs-on: ${{ matrix.os }}
+    needs: lint
     strategy:
       matrix:
         include:
