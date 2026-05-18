@@ -129,7 +129,9 @@ pub struct MrCreateParams {
     #[serde(default = "default_true")]
     #[schemars(description = "Remove source branch after merge (default: true)")]
     pub remove_source_branch: bool,
-    #[schemars(description = "Mark as draft (true/false)")]
+    #[schemars(
+        description = "Mark as draft (true/false); implemented via the \"Draft: \" title prefix"
+    )]
     pub draft: Option<bool>,
 }
 
@@ -138,10 +140,15 @@ pub async fn mr_create(client: &GitlabClient, p: MrCreateParams) -> Result<Value
         "/api/v4/projects/{}/merge_requests",
         encode_project_id(&p.project_id)
     );
+    // GitLab ignores the `draft` body field; the title prefix is the reliable mechanism.
+    let title = match p.draft {
+        Some(true) if !p.title.starts_with("Draft:") => format!("Draft: {}", p.title),
+        _ => p.title,
+    };
     let body = BodyBuilder::new()
         .req("source_branch", &p.source_branch)
         .req("target_branch", &p.target_branch)
-        .req("title", &p.title)
+        .req("title", &title)
         .req("squash", p.squash)
         .req("remove_source_branch", p.remove_source_branch)
         .opt("description", p.description)
@@ -149,7 +156,6 @@ pub async fn mr_create(client: &GitlabClient, p: MrCreateParams) -> Result<Value
         .opt("reviewer_ids", p.reviewer_ids)
         .opt("labels", p.labels)
         .opt("milestone_id", p.milestone_id)
-        .opt("draft", p.draft)
         .build();
     client.post(&path, &body).await
 }
@@ -182,7 +188,9 @@ pub struct MrUpdateParams {
     pub milestone_id: Option<u64>,
     #[schemars(description = "Squash commits on merge (true/false)")]
     pub squash: Option<bool>,
-    #[schemars(description = "Mark as draft or ready (true/false)")]
+    #[schemars(
+        description = "Mark as draft (true) or ready to merge (false); adds or removes the \"Draft: \" title prefix"
+    )]
     pub draft: Option<bool>,
 }
 
@@ -192,8 +200,30 @@ pub async fn mr_update(client: &GitlabClient, p: MrUpdateParams) -> Result<Value
         encode_project_id(&p.project_id),
         p.merge_request_iid
     );
+    // GitLab's update endpoint doesn't accept `draft` as a body field; draft status is
+    // controlled by the "Draft: " title prefix. Fetch the current title when needed.
+    let effective_title = match p.draft {
+        Some(make_draft) => {
+            let base = match p.title {
+                Some(ref t) => t.clone(),
+                None => {
+                    let current = client.get(&path).await?;
+                    current["title"].as_str().unwrap_or("").to_string()
+                }
+            };
+            Some(if make_draft {
+                if base.starts_with("Draft:") { base } else { format!("Draft: {}", base) }
+            } else {
+                base.strip_prefix("Draft: ")
+                    .or_else(|| base.strip_prefix("Draft:"))
+                    .unwrap_or(&base)
+                    .to_string()
+            })
+        }
+        None => p.title,
+    };
     let body = BodyBuilder::new()
-        .opt("title", p.title)
+        .opt("title", effective_title)
         .opt("description", p.description)
         .opt("state_event", p.state_event)
         .opt("target_branch", p.target_branch)
@@ -202,7 +232,6 @@ pub async fn mr_update(client: &GitlabClient, p: MrUpdateParams) -> Result<Value
         .opt("labels", p.labels)
         .opt("milestone_id", p.milestone_id)
         .opt("squash", p.squash)
-        .opt("draft", p.draft)
         .build();
     client.put(&path, &body).await
 }
