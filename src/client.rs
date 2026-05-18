@@ -146,3 +146,48 @@ impl GitlabClient {
         Ok(resp.json().await?)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn api_err(status: StatusCode, body: &str) -> GitlabError {
+        GitlabError::Api { status, body: body.to_string() }
+    }
+
+    #[test]
+    fn to_tool_message_short_body_not_truncated() {
+        let msg = api_err(StatusCode::NOT_FOUND, "Not found").to_tool_message();
+        assert_eq!(msg, "GitLab API error 404 Not Found: Not found");
+        assert!(!msg.contains("truncated"));
+    }
+
+    #[test]
+    fn to_tool_message_exactly_300_chars_not_truncated() {
+        let body = "x".repeat(300);
+        let msg = api_err(StatusCode::BAD_REQUEST, &body).to_tool_message();
+        assert!(msg.ends_with(&body));
+        assert!(!msg.contains("truncated"));
+    }
+
+    #[test]
+    fn to_tool_message_over_300_chars_truncated() {
+        let body = "y".repeat(400);
+        let msg = api_err(StatusCode::INTERNAL_SERVER_ERROR, &body).to_tool_message();
+        assert!(msg.contains("(truncated)"));
+        assert!(msg.contains("GitLab API error 500"));
+        // Body portion should be exactly 300 chars of 'y'
+        assert!(msg.contains(&"y".repeat(300)));
+        assert!(!msg.contains(&"y".repeat(301)));
+    }
+
+    #[test]
+    fn to_tool_message_multibyte_truncation_at_char_boundary() {
+        // 300 three-byte chars (é) + extra: must not split a char
+        let body = "é".repeat(305);
+        let msg = api_err(StatusCode::FORBIDDEN, &body).to_tool_message();
+        assert!(msg.contains("(truncated)"));
+        // Result must be valid UTF-8 (would panic on display if not)
+        let _ = msg.len();
+    }
+}
