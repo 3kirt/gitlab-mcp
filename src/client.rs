@@ -99,6 +99,37 @@ impl GitlabClient {
         self.handle_response(resp).await
     }
 
+    /// GET {base_url}{path} — returns the raw text response body (for non-JSON endpoints).
+    pub async fn get_text(&self, path: &str) -> Result<String, GitlabError> {
+        let url = self.url(path);
+        let resp = self.http.get(&url).send().await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(GitlabError::Api { status, body });
+        }
+        Ok(resp.text().await?)
+    }
+
+    /// GET {base_url}{path}?{params} — returns the raw text response body (for non-JSON endpoints).
+    pub async fn get_text_with_params(&self, path: &str, params: &[(&str, String)]) -> Result<String, GitlabError> {
+        let url = self.url(path);
+        let resp = self.http.get(&url).query(params).send().await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(GitlabError::Api { status, body });
+        }
+        Ok(resp.text().await?)
+    }
+
+    /// DELETE {base_url}{path} with a JSON body — returns the JSON response body.
+    pub async fn delete_with_body(&self, path: &str, body: &Value) -> Result<Value, GitlabError> {
+        let url = self.url(path);
+        let resp = self.http.delete(&url).json(body).send().await?;
+        self.handle_response(resp).await
+    }
+
     /// DELETE {base_url}{path} — returns () on success (204 No Content expected).
     pub async fn delete(&self, path: &str) -> Result<(), GitlabError> {
         let url = self.url(path);
@@ -120,6 +151,9 @@ impl GitlabClient {
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
             return Err(GitlabError::Api { status, body });
+        }
+        if status == StatusCode::NO_CONTENT {
+            return Ok(Value::Null);
         }
         Ok(resp.json().await?)
     }

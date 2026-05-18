@@ -18,6 +18,8 @@ use crate::client::{GitlabClient, GitlabError};
 pub mod branches;
 pub mod issues;
 pub mod merge_requests;
+pub mod repositories;
+pub mod repository_files;
 
 // --------------------------------------------------------------------------
 // Shared helpers
@@ -344,6 +346,156 @@ impl GitlabMcpServer {
         Parameters(p): Parameters<branches::BranchesDeleteMergedParams>,
     ) -> Result<CallToolResult, McpError> {
         delegate_delete!(self, branches::branches_delete_merged, p, "merged branches")
+    }
+
+    #[tool(
+        description = "List files and directories in a GitLab repository tree. Optional: path (subdirectory), ref (branch/tag/SHA), recursive, pagination mode (keyset), page_token, page, per_page."
+    )]
+    async fn gitlab_repo_tree(
+        &self,
+        Parameters(p): Parameters<repositories::RepoTreeListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, repositories::repo_tree_list, p, "repository tree")
+    }
+
+    #[tool(
+        description = "Get metadata for a GitLab repository blob (file) by its SHA. Returns content (Base64 encoded), encoding, sha, and size in bytes."
+    )]
+    async fn gitlab_repo_blob_get(
+        &self,
+        Parameters(p): Parameters<repositories::RepoBlobGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repositories::repo_blob_get, p, "blob")
+    }
+
+    #[tool(
+        description = "Get the raw text content of a GitLab repository blob by its SHA. Best suited for text files; binary files may not decode cleanly."
+    )]
+    async fn gitlab_repo_blob_raw(
+        &self,
+        Parameters(p): Parameters<repositories::RepoBlobRawParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repositories::repo_blob_raw, p, "raw blob")
+    }
+
+    #[tool(
+        description = "Compare two refs (branches, tags, or commit SHAs) in a GitLab repository. Returns commit list, diffs, and comparison metadata. Optional: from_project_id, straight (direct diff), unidiff (unified format)."
+    )]
+    async fn gitlab_repo_compare(
+        &self,
+        Parameters(p): Parameters<repositories::RepoCompareParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repositories::repo_compare, p, "repository comparison")
+    }
+
+    #[tool(
+        description = "List contributors for a GitLab repository with commit counts, additions, and deletions. Optional: order_by (name/email/commits), sort (asc/desc), ref (branch/tag/SHA), page, per_page."
+    )]
+    async fn gitlab_repo_contributors(
+        &self,
+        Parameters(p): Parameters<repositories::RepoContributorsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, repositories::repo_contributors_list, p, "contributors")
+    }
+
+    #[tool(
+        description = "Find the common ancestor (merge base) of two or more refs (commit SHAs, branch names, or tag names) in a GitLab repository."
+    )]
+    async fn gitlab_repo_merge_base(
+        &self,
+        Parameters(p): Parameters<repositories::RepoMergeBaseParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repositories::repo_merge_base, p, "merge base")
+    }
+
+    #[tool(
+        description = "Generate changelog markdown for a semantic version without committing it. Required: project_id, version. Optional: config_file, config_file_ref, from, to, trailer, date."
+    )]
+    async fn gitlab_repo_changelog_get(
+        &self,
+        Parameters(p): Parameters<repositories::RepoChangelogGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repositories::repo_changelog_get, p, "changelog")
+    }
+
+    #[tool(
+        description = "Generate changelog for a semantic version and commit it to the repository. Required: project_id, version. Optional: branch, config_file, config_file_ref, file, from, to, message, trailer, date."
+    )]
+    async fn gitlab_repo_changelog_add(
+        &self,
+        Parameters(p): Parameters<repositories::RepoChangelogAddParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, repositories::repo_changelog_add, p, "changelog")
+    }
+
+    #[tool(
+        description = "Get repository health statistics for a GitLab project, including size, references, objects, commit graph, and bitmap information. Optional: generate (create a report if none exists)."
+    )]
+    async fn gitlab_repo_health(
+        &self,
+        Parameters(p): Parameters<repositories::RepoHealthParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repositories::repo_health, p, "repository health")
+    }
+
+    #[tool(
+        description = "Get a file from a GitLab repository. Returns metadata and Base64-encoded content. Required: project_id, file_path (e.g. \"src/main.rs\"), ref_name (branch/tag/SHA or \"HEAD\" for default branch)."
+    )]
+    async fn gitlab_file_get(
+        &self,
+        Parameters(p): Parameters<repository_files::FileGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repository_files::file_get, p, "file")
+    }
+
+    #[tool(
+        description = "Get the raw text content of a file from a GitLab repository. Required: project_id, file_path. Optional: ref_name (default: HEAD), lfs (return LFS object instead of pointer)."
+    )]
+    async fn gitlab_file_raw(
+        &self,
+        Parameters(p): Parameters<repository_files::FileRawParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repository_files::file_raw, p, "raw file")
+    }
+
+    #[tool(
+        description = "Get the blame history for a file in a GitLab repository, showing which commit last modified each line. Required: project_id, file_path, ref_name. Optional: range_start, range_end (1-based line numbers)."
+    )]
+    async fn gitlab_file_blame(
+        &self,
+        Parameters(p): Parameters<repository_files::FileBlameParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repository_files::file_blame, p, "file blame")
+    }
+
+    #[tool(
+        description = "Create a new file in a GitLab repository. Required: project_id, file_path, branch, commit_message, content. Optional: encoding (\"base64\"), author_name, author_email, execute_filemode, start_branch."
+    )]
+    async fn gitlab_file_create(
+        &self,
+        Parameters(p): Parameters<repository_files::FileCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, repository_files::file_create, p, "file")
+    }
+
+    #[tool(
+        description = "Update an existing file in a GitLab repository. Required: project_id, file_path, branch, commit_message, content. Optional: encoding (\"base64\"), author_name, author_email, execute_filemode, last_commit_id, start_branch."
+    )]
+    async fn gitlab_file_update(
+        &self,
+        Parameters(p): Parameters<repository_files::FileUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, repository_files::file_update, p, "file")
+    }
+
+    #[tool(
+        description = "Delete a file from a GitLab repository by committing its removal. Required: project_id, file_path, branch, commit_message. Optional: author_name, author_email, last_commit_id, start_branch."
+    )]
+    async fn gitlab_file_delete(
+        &self,
+        Parameters(p): Parameters<repository_files::FileDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, repository_files::file_delete, p, "file")
     }
 }
 
