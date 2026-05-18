@@ -16,8 +16,11 @@ use std::sync::{Arc, OnceLock};
 use crate::client::{GitlabClient, GitlabError};
 
 pub mod branches;
+pub mod commits;
 pub mod issues;
+pub mod jobs;
 pub mod merge_requests;
+pub mod pipelines;
 pub mod repositories;
 pub mod repository_files;
 
@@ -71,6 +74,15 @@ impl QueryBuilder {
     pub fn opt<T: ToString>(mut self, key: &'static str, v: Option<T>) -> Self {
         if let Some(v) = v {
             self.params.push((key, v.to_string()));
+        }
+        self
+    }
+
+    pub fn multi(mut self, key: &'static str, values: Option<Vec<String>>) -> Self {
+        if let Some(vs) = values {
+            for v in vs {
+                self.params.push((key, v));
+            }
         }
         self
     }
@@ -347,6 +359,384 @@ impl GitlabMcpServer {
         Parameters(p): Parameters<branches::BranchesDeleteMergedParams>,
     ) -> Result<CallToolResult, McpError> {
         delegate_delete!(self, branches::branches_delete_merged, p, "merged branches")
+    }
+
+    #[tool(
+        description = "List commits for a GitLab project. Optional filters: ref_name (branch/tag/range), since/until (ISO 8601), path (file filter), author, all, first_parent, order (default/topo), with_stats, trailers, follow. Paginate with page and per_page."
+    )]
+    async fn gitlab_commits_list(
+        &self,
+        Parameters(p): Parameters<commits::CommitsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, commits::commits_list, p, "commits")
+    }
+
+    #[tool(
+        description = "Get a single GitLab commit by SHA, branch name, or tag name. Optional: stats (include commit statistics, default true)."
+    )]
+    async fn gitlab_commits_get(
+        &self,
+        Parameters(p): Parameters<commits::CommitGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, commits::commit_get, p, "commit")
+    }
+
+    #[tool(
+        description = "Create a commit in a GitLab project with one or more file actions (create, update, delete, move, chmod). Required: project_id, branch, commit_message, actions[]. Optional: start_branch, start_sha, start_project, author_name, author_email, force, allow_empty, stats."
+    )]
+    async fn gitlab_commits_create(
+        &self,
+        Parameters(p): Parameters<commits::CommitCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, commits::commit_create, p, "commit")
+    }
+
+    #[tool(
+        description = "List all branches and tags that contain a specific commit. Optional: type (\"branch\", \"tag\", or \"all\"), page, per_page."
+    )]
+    async fn gitlab_commits_refs(
+        &self,
+        Parameters(p): Parameters<commits::CommitRefsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, commits::commit_refs, p, "commit refs")
+    }
+
+    #[tool(
+        description = "Get the sequence number of a commit (number of ancestors by following parent links). Optional: first_parent."
+    )]
+    async fn gitlab_commits_sequence(
+        &self,
+        Parameters(p): Parameters<commits::CommitSequenceParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, commits::commit_sequence, p, "commit sequence")
+    }
+
+    #[tool(
+        description = "Cherry-pick a commit into a target branch. Required: project_id, sha, branch. Optional: dry_run (simulate without committing), message (custom commit message)."
+    )]
+    async fn gitlab_commits_cherry_pick(
+        &self,
+        Parameters(p): Parameters<commits::CommitCherryPickParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, commits::commit_cherry_pick, p, "cherry-pick")
+    }
+
+    #[tool(
+        description = "Revert a commit by creating a new revert commit on the target branch. Required: project_id, sha, branch. Optional: dry_run (simulate without committing)."
+    )]
+    async fn gitlab_commits_revert(
+        &self,
+        Parameters(p): Parameters<commits::CommitRevertParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, commits::commit_revert, p, "revert")
+    }
+
+    #[tool(
+        description = "Get the diff introduced by a specific commit. Optional: unidiff (use unified diff format, default false)."
+    )]
+    async fn gitlab_commits_diff(
+        &self,
+        Parameters(p): Parameters<commits::CommitDiffParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, commits::commit_diff, p, "commit diff")
+    }
+
+    #[tool(
+        description = "List all comments on a commit. Paginate with page and per_page."
+    )]
+    async fn gitlab_commits_comments_list(
+        &self,
+        Parameters(p): Parameters<commits::CommitCommentsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, commits::commit_comments_list, p, "commit comments")
+    }
+
+    #[tool(
+        description = "Post a comment on a commit. Required: project_id, sha, note. Optional: path (file path for inline comment), line (line number), line_type (\"new\" or \"old\")."
+    )]
+    async fn gitlab_commits_comment_create(
+        &self,
+        Parameters(p): Parameters<commits::CommitCommentCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, commits::commit_comment_create, p, "commit comment")
+    }
+
+    #[tool(
+        description = "List all discussion threads on a commit. Paginate with page and per_page."
+    )]
+    async fn gitlab_commits_discussions_list(
+        &self,
+        Parameters(p): Parameters<commits::CommitDiscussionsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(
+            self,
+            commits::commit_discussions_list,
+            p,
+            "commit discussions"
+        )
+    }
+
+    #[tool(
+        description = "List CI/CD pipeline statuses for a commit. Optional: ref (branch/tag), name (job name filter), stage, all (include non-latest), pipeline_id, order_by (id/pipeline_id), sort (asc/desc), page, per_page."
+    )]
+    async fn gitlab_commits_statuses_list(
+        &self,
+        Parameters(p): Parameters<commits::CommitStatusesListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, commits::commit_statuses_list, p, "commit statuses")
+    }
+
+    #[tool(
+        description = "Set a pipeline status on a commit (for external CI systems). Required: project_id, sha, state (pending/running/success/failed/canceled/skipped). Optional: name/context, ref, description, target_url, coverage, pipeline_id."
+    )]
+    async fn gitlab_commits_status_set(
+        &self,
+        Parameters(p): Parameters<commits::CommitStatusSetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, commits::commit_status_set, p, "commit status")
+    }
+
+    #[tool(
+        description = "List merge requests that introduced a specific commit. Optional: state (opened/closed/locked/merged)."
+    )]
+    async fn gitlab_commits_merge_requests(
+        &self,
+        Parameters(p): Parameters<commits::CommitMergeRequestsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(
+            self,
+            commits::commit_merge_requests,
+            p,
+            "commit merge requests"
+        )
+    }
+
+    #[tool(
+        description = "Get the GPG, SSH, or X.509 signature for a signed commit. Returns 404 for unsigned commits."
+    )]
+    async fn gitlab_commits_signature(
+        &self,
+        Parameters(p): Parameters<commits::CommitSignatureParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, commits::commit_signature, p, "commit signature")
+    }
+
+    #[tool(
+        description = "List pipelines for a GitLab project. Optional filters: scope, status, source, ref, sha, yaml_errors, username, updated_after/before, created_after/before, order_by, sort, name. Paginate with page and per_page."
+    )]
+    async fn gitlab_pipelines_list(
+        &self,
+        Parameters(p): Parameters<pipelines::PipelineListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, pipelines::pipeline_list, p, "pipelines")
+    }
+
+    #[tool(description = "Get a single GitLab pipeline by project ID and pipeline ID.")]
+    async fn gitlab_pipelines_get(
+        &self,
+        Parameters(p): Parameters<pipelines::PipelineGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, pipelines::pipeline_get, p, "pipeline")
+    }
+
+    #[tool(
+        description = "Get the latest pipeline for a GitLab project. Optional: ref (branch or tag name; defaults to project default branch)."
+    )]
+    async fn gitlab_pipelines_get_latest(
+        &self,
+        Parameters(p): Parameters<pipelines::PipelineGetLatestParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, pipelines::pipeline_get_latest, p, "latest pipeline")
+    }
+
+    #[tool(
+        description = "List variables defined on a specific GitLab pipeline run. Returns key/value pairs used when the pipeline was triggered."
+    )]
+    async fn gitlab_pipelines_get_variables(
+        &self,
+        Parameters(p): Parameters<pipelines::PipelineGetVariablesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(
+            self,
+            pipelines::pipeline_get_variables,
+            p,
+            "pipeline variables"
+        )
+    }
+
+    #[tool(
+        description = "Get the full test report for a GitLab pipeline, including suite and case details with pass/fail/error counts."
+    )]
+    async fn gitlab_pipelines_get_test_report(
+        &self,
+        Parameters(p): Parameters<pipelines::PipelineGetTestReportParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(
+            self,
+            pipelines::pipeline_get_test_report,
+            p,
+            "pipeline test report"
+        )
+    }
+
+    #[tool(
+        description = "Get the test report summary for a GitLab pipeline — total counts only without per-case details."
+    )]
+    async fn gitlab_pipelines_get_test_report_summary(
+        &self,
+        Parameters(p): Parameters<pipelines::PipelineGetTestReportSummaryParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(
+            self,
+            pipelines::pipeline_get_test_report_summary,
+            p,
+            "pipeline test report summary"
+        )
+    }
+
+    #[tool(
+        description = "Create (trigger) a new GitLab pipeline. Required: project_id, ref (branch/tag/SHA). Optional: variables (array of {key, value, variable_type} objects), inputs."
+    )]
+    async fn gitlab_pipelines_create(
+        &self,
+        Parameters(p): Parameters<pipelines::PipelineCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, pipelines::pipeline_create, p, "pipeline")
+    }
+
+    #[tool(
+        description = "Retry all failed and canceled jobs in a GitLab pipeline, creating a new pipeline run."
+    )]
+    async fn gitlab_pipelines_retry(
+        &self,
+        Parameters(p): Parameters<pipelines::PipelineRetryParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, pipelines::pipeline_retry, p, "pipeline retry")
+    }
+
+    #[tool(description = "Cancel all running jobs in a GitLab pipeline.")]
+    async fn gitlab_pipelines_cancel(
+        &self,
+        Parameters(p): Parameters<pipelines::PipelineCancelParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, pipelines::pipeline_cancel, p, "pipeline cancel")
+    }
+
+    #[tool(
+        description = "Delete a GitLab pipeline and all its jobs. Requires at least Maintainer role. This action is permanent."
+    )]
+    async fn gitlab_pipelines_delete(
+        &self,
+        Parameters(p): Parameters<pipelines::PipelineDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, pipelines::pipeline_delete, p, "pipeline")
+    }
+
+    #[tool(
+        description = "Update the name of a GitLab pipeline. Required: project_id, pipeline_id, name (new pipeline name)."
+    )]
+    async fn gitlab_pipelines_update_metadata(
+        &self,
+        Parameters(p): Parameters<pipelines::PipelineUpdateMetadataParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(
+            self,
+            pipelines::pipeline_update_metadata,
+            p,
+            "pipeline metadata"
+        )
+    }
+
+    #[tool(
+        description = "List jobs for a GitLab project. Optional: scope (array of states to filter by), order_by, sort, page, per_page."
+    )]
+    async fn gitlab_jobs_list(
+        &self,
+        Parameters(p): Parameters<jobs::JobListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, jobs::job_list, p, "jobs")
+    }
+
+    #[tool(
+        description = "List jobs for a specific GitLab pipeline. Optional: scope (array of states), include_retried (include non-latest attempts), page, per_page."
+    )]
+    async fn gitlab_jobs_list_for_pipeline(
+        &self,
+        Parameters(p): Parameters<jobs::JobListForPipelineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, jobs::job_list_for_pipeline, p, "pipeline jobs")
+    }
+
+    #[tool(
+        description = "List bridge (downstream trigger) jobs for a GitLab pipeline. Optional: scope (array of states), page, per_page."
+    )]
+    async fn gitlab_jobs_list_bridges(
+        &self,
+        Parameters(p): Parameters<jobs::JobListBridgesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, jobs::job_list_bridges, p, "pipeline bridges")
+    }
+
+    #[tool(
+        description = "Get a single GitLab job by project ID and job ID. Returns full job metadata including stage, status, runner, timings, and artifacts."
+    )]
+    async fn gitlab_jobs_get(
+        &self,
+        Parameters(p): Parameters<jobs::JobGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, jobs::job_get, p, "job")
+    }
+
+    #[tool(
+        description = "Get the raw log output (trace) of a GitLab job as plain text."
+    )]
+    async fn gitlab_jobs_get_trace(
+        &self,
+        Parameters(p): Parameters<jobs::JobGetTraceParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let client = self.get_client()?;
+        match jobs::job_get_trace(client, p).await {
+            Ok(text) => Ok(CallToolResult::success(vec![Content::text(text)])),
+            Err(e) => tool_error(&format!("getting job trace: {}", e.to_tool_message())),
+        }
+    }
+
+    #[tool(
+        description = "Cancel a running GitLab job. Optional: force (force-cancel a job already in \"canceling\" state)."
+    )]
+    async fn gitlab_jobs_cancel(
+        &self,
+        Parameters(p): Parameters<jobs::JobCancelParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, jobs::job_cancel, p, "job cancel")
+    }
+
+    #[tool(description = "Retry a failed or canceled GitLab job, creating a new job run.")]
+    async fn gitlab_jobs_retry(
+        &self,
+        Parameters(p): Parameters<jobs::JobRetryParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, jobs::job_retry, p, "job retry")
+    }
+
+    #[tool(
+        description = "Erase a GitLab job — removes the job log and artifacts. The job must be finished."
+    )]
+    async fn gitlab_jobs_erase(
+        &self,
+        Parameters(p): Parameters<jobs::JobEraseParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, jobs::job_erase, p, "job erase")
+    }
+
+    #[tool(
+        description = "Trigger a manual GitLab job. Optional: job_variables_attributes (array of {key, value, variable_type} objects to override job variables)."
+    )]
+    async fn gitlab_jobs_play(
+        &self,
+        Parameters(p): Parameters<jobs::JobPlayParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, jobs::job_play, p, "job play")
     }
 
     #[tool(
