@@ -4,6 +4,10 @@ use serde_json::{Value, json};
 use crate::client::{GitlabClient, GitlabError};
 use crate::tools::{PaginationParams, QueryBuilder, encode_project_id};
 
+fn default_true() -> bool {
+    true
+}
+
 // --------------------------------------------------------------------------
 // List merge requests
 // --------------------------------------------------------------------------
@@ -119,10 +123,12 @@ pub struct MrCreateParams {
     pub labels: Option<String>,
     #[schemars(description = "Milestone ID to associate with the MR")]
     pub milestone_id: Option<u64>,
-    #[schemars(description = "Squash commits on merge (true/false)")]
-    pub squash: Option<bool>,
-    #[schemars(description = "Remove source branch after merge (true/false)")]
-    pub remove_source_branch: Option<bool>,
+    #[serde(default = "default_true")]
+    #[schemars(description = "Squash commits on merge (default: true)")]
+    pub squash: bool,
+    #[serde(default = "default_true")]
+    #[schemars(description = "Remove source branch after merge (default: true)")]
+    pub remove_source_branch: bool,
     #[schemars(description = "Mark as draft (true/false)")]
     pub draft: Option<bool>,
 }
@@ -136,6 +142,8 @@ pub async fn mr_create(client: &GitlabClient, p: MrCreateParams) -> Result<Value
         "source_branch": p.source_branch,
         "target_branch": p.target_branch,
         "title": p.title,
+        "squash": p.squash,
+        "remove_source_branch": p.remove_source_branch,
     });
     let obj = body.as_object_mut().unwrap();
     if let Some(v) = p.description {
@@ -152,12 +160,6 @@ pub async fn mr_create(client: &GitlabClient, p: MrCreateParams) -> Result<Value
     }
     if let Some(v) = p.milestone_id {
         obj.insert("milestone_id".into(), json!(v));
-    }
-    if let Some(v) = p.squash {
-        obj.insert("squash".into(), json!(v));
-    }
-    if let Some(v) = p.remove_source_branch {
-        obj.insert("remove_source_branch".into(), json!(v));
     }
     if let Some(v) = p.draft {
         obj.insert("draft".into(), json!(v));
