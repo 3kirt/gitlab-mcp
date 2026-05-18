@@ -126,44 +126,38 @@ impl BodyBuilder {
 // Delegation macros
 // --------------------------------------------------------------------------
 
-macro_rules! delegate_list {
-    ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {{
+macro_rules! delegate_json {
+    ($self:expr, $domain_fn:path, $p:expr, $verb:literal, $noun:literal) => {{
         let client = $self.get_client()?;
         match $domain_fn(client, $p).await {
             Ok(v) => json_result(v),
-            Err(e) => tool_error(&format!("listing {}: {}", $noun, e.to_tool_message())),
+            Err(e) => tool_error(&format!("{} {}: {}", $verb, $noun, e.to_tool_message())),
         }
     }};
+}
+
+macro_rules! delegate_list {
+    ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {
+        delegate_json!($self, $domain_fn, $p, "listing", $noun)
+    };
 }
 
 macro_rules! delegate_get {
-    ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {{
-        let client = $self.get_client()?;
-        match $domain_fn(client, $p).await {
-            Ok(v) => json_result(v),
-            Err(e) => tool_error(&format!("getting {}: {}", $noun, e.to_tool_message())),
-        }
-    }};
+    ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {
+        delegate_json!($self, $domain_fn, $p, "getting", $noun)
+    };
 }
 
 macro_rules! delegate_create {
-    ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {{
-        let client = $self.get_client()?;
-        match $domain_fn(client, $p).await {
-            Ok(v) => json_result(v),
-            Err(e) => tool_error(&format!("creating {}: {}", $noun, e.to_tool_message())),
-        }
-    }};
+    ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {
+        delegate_json!($self, $domain_fn, $p, "creating", $noun)
+    };
 }
 
 macro_rules! delegate_update {
-    ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {{
-        let client = $self.get_client()?;
-        match $domain_fn(client, $p).await {
-            Ok(v) => json_result(v),
-            Err(e) => tool_error(&format!("updating {}: {}", $noun, e.to_tool_message())),
-        }
-    }};
+    ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {
+        delegate_json!($self, $domain_fn, $p, "updating", $noun)
+    };
 }
 
 macro_rules! delegate_delete {
@@ -641,7 +635,7 @@ impl GitlabMcpServer {
         &self,
         Parameters(p): Parameters<pipelines::PipelineRetryParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_create!(self, pipelines::pipeline_retry, p, "pipeline retry")
+        delegate_json!(self, pipelines::pipeline_retry, p, "retrying", "pipeline")
     }
 
     #[tool(description = "Cancel all running jobs in a GitLab pipeline.")]
@@ -649,7 +643,7 @@ impl GitlabMcpServer {
         &self,
         Parameters(p): Parameters<pipelines::PipelineCancelParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_create!(self, pipelines::pipeline_cancel, p, "pipeline cancel")
+        delegate_json!(self, pipelines::pipeline_cancel, p, "canceling", "pipeline")
     }
 
     #[tool(
@@ -738,7 +732,7 @@ impl GitlabMcpServer {
         &self,
         Parameters(p): Parameters<jobs::JobCancelParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_create!(self, jobs::job_cancel, p, "job cancel")
+        delegate_json!(self, jobs::job_cancel, p, "canceling", "job")
     }
 
     #[tool(description = "Retry a failed or canceled GitLab job, creating a new job run.")]
@@ -746,7 +740,7 @@ impl GitlabMcpServer {
         &self,
         Parameters(p): Parameters<jobs::JobRetryParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_create!(self, jobs::job_retry, p, "job retry")
+        delegate_json!(self, jobs::job_retry, p, "retrying", "job")
     }
 
     #[tool(
@@ -756,7 +750,7 @@ impl GitlabMcpServer {
         &self,
         Parameters(p): Parameters<jobs::JobEraseParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_create!(self, jobs::job_erase, p, "job erase")
+        delegate_json!(self, jobs::job_erase, p, "erasing", "job")
     }
 
     #[tool(
@@ -766,7 +760,7 @@ impl GitlabMcpServer {
         &self,
         Parameters(p): Parameters<jobs::JobPlayParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_create!(self, jobs::job_play, p, "job play")
+        delegate_json!(self, jobs::job_play, p, "triggering", "job")
     }
 
     #[tool(

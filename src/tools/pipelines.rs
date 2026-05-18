@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{PaginationParams, QueryBuilder, encode_project_id};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
 
 // --------------------------------------------------------------------------
 // List pipelines
@@ -236,14 +236,11 @@ pub async fn pipeline_create(
         "/api/v4/projects/{}/pipeline",
         encode_project_id(&p.project_id)
     );
-    let mut body = json!({ "ref": p.ref_ });
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.variables {
-        obj.insert("variables".into(), json!(v));
-    }
-    if let Some(v) = p.inputs {
-        obj.insert("inputs".into(), v);
-    }
+    let body = BodyBuilder::new()
+        .req("ref", &p.ref_)
+        .opt("variables", p.variables)
+        .opt("inputs", p.inputs)
+        .build();
     client.post(&path, &body).await
 }
 

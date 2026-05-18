@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{PaginationParams, QueryBuilder, encode_project_id};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
 
 // --------------------------------------------------------------------------
 // List project jobs
@@ -181,11 +181,7 @@ pub async fn job_cancel(client: &GitlabClient, p: JobCancelParams) -> Result<Val
         encode_project_id(&p.project_id),
         p.job_id
     );
-    let body = if let Some(true) = p.force {
-        json!({ "force": true })
-    } else {
-        json!({})
-    };
+    let body = BodyBuilder::new().opt("force", p.force).build();
     client.post(&path, &body).await
 }
 
@@ -253,10 +249,8 @@ pub async fn job_play(client: &GitlabClient, p: JobPlayParams) -> Result<Value, 
         encode_project_id(&p.project_id),
         p.job_id
     );
-    let body = if let Some(vars) = p.job_variables_attributes {
-        json!({ "job_variables_attributes": vars })
-    } else {
-        json!({})
-    };
+    let body = BodyBuilder::new()
+        .opt("job_variables_attributes", p.job_variables_attributes)
+        .build();
     client.post(&path, &body).await
 }
