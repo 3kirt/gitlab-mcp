@@ -2,7 +2,7 @@
 
 This document describes how to verify all Issues, Branches, Merge Requests, and Repository/Files API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`).
 
-**Unit-test coverage (not retested here):** `encode_project_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are all covered by `cargo test`.
+**Automated coverage (not retested here):** `encode_project_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, and cross-resource consistency.
 
 ---
 
@@ -312,12 +312,6 @@ gitlab_issues_update(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<scratch 
 ```
 Returned `due_date == "2027-01-01"`.
 
-### 4.7 No-op update (empty body)
-```
-gitlab_issues_update(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<scratch iid>)
-```
-GitLab returns `400 Bad Request`; tool surfaces an error containing `400`; no crash.
-
 ---
 
 ## Section 5: Issues — Delete
@@ -415,12 +409,6 @@ gitlab_branches_create(project_id="3kirt1/gitlab-mcp-testing", branch="branch-te
 gitlab_branches_delete(project_id="3kirt1/gitlab-mcp-testing", branch="branch-test-1")
 ```
 Returns a success text message. A subsequent `gitlab_branches_get` returns a `404` error.
-
-### 10.2 Attempt to delete a protected branch
-```
-gitlab_branches_delete(project_id="3kirt1/gitlab-mcp-testing", branch="main")
-```
-Tool surfaces a `403` error; no crash.
 
 Delete scratch branches from Section 9 (`branch-test-scratch`, `branch-test-from-seed`).
 
@@ -616,12 +604,6 @@ gitlab_mrs_merge(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid 
 ```
 Returned `state == "merged"`, `merged_at` non-null, `merge_commit_sha` present.
 
-### 17.2 Attempt to merge an already-closed MR
-```
-gitlab_mrs_merge(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid of mr-seed-3>)
-```
-GitLab returns 405 or 406; tool surfaces an error; no crash.
-
 > After Section 17, proceed to Section 11 (Branches — Delete Merged).
 
 ---
@@ -652,12 +634,6 @@ gitlab_repo_tree(project_id="3kirt1/gitlab-mcp-testing", ref="mr-test-merge", pa
 ```
 Returns both `sample.txt` and `feature.txt`.
 
-### 18.5 Non-existent path
-```
-gitlab_repo_tree(project_id="3kirt1/gitlab-mcp-testing", ref="main", path="nonexistent-dir")
-```
-Returns `[]` or a `404` error; no crash.
-
 ---
 
 ## Section 19: Repository — Blob Get and Raw
@@ -675,12 +651,6 @@ gitlab_repo_blob_get(project_id="3kirt1/gitlab-mcp-testing", sha=<blob SHA of sa
 gitlab_repo_blob_raw(project_id="3kirt1/gitlab-mcp-testing", sha=<blob SHA of sample.txt>)
 ```
 Returns `{"content": "line one\nline two\nline three\nline four"}`.
-
-### 19.3 Invalid SHA returns error
-```
-gitlab_repo_blob_get(project_id="3kirt1/gitlab-mcp-testing", sha="0000000000000000000000000000000000000000")
-```
-Tool surfaces a `404` error; no crash.
 
 ---
 
@@ -742,12 +712,6 @@ Returns a commit object with `id`, `short_id`, `title`, `author_name`, `committe
 gitlab_repo_merge_base(project_id="3kirt1/gitlab-mcp-testing", refs=["main", "mr-test-open", "mr-test-draft"])
 ```
 Returns a commit object. Since all branches were created from the same `main` commit, the merge base is that commit.
-
-### 22.3 Invalid ref returns error
-```
-gitlab_repo_merge_base(project_id="3kirt1/gitlab-mcp-testing", refs=["main", "nonexistent-branch-xyz"])
-```
-Tool surfaces a `400` or `404` error; no crash.
 
 ---
 
@@ -814,12 +778,6 @@ gitlab_file_get(
 )
 ```
 Content decodes to `"line one\nline two\nline three"` (3-line version).
-
-### 25.4 File not found returns error
-```
-gitlab_file_get(project_id="3kirt1/gitlab-mcp-testing", file_path="nonexistent/file.txt", ref_name="main")
-```
-Tool surfaces a `404` error; no crash.
 
 ---
 
@@ -898,18 +856,6 @@ gitlab_file_create(
 ```
 `gitlab_file_raw(..., file_path="testing/scratch-b64.txt")` returns `content == "Hello from Base64."`.
 
-### 28.3 Duplicate file returns error
-```
-gitlab_file_create(
-  project_id="3kirt1/gitlab-mcp-testing",
-  file_path="testing/sample.txt",
-  branch="main",
-  commit_message="Should fail",
-  content="duplicate"
-)
-```
-Tool surfaces a `400` error; no crash.
-
 ---
 
 ## Section 29: Repository Files — Update
@@ -942,18 +888,6 @@ gitlab_file_update(
 ```
 Succeeds.
 
-### 29.3 Update non-existent file returns error
-```
-gitlab_file_update(
-  project_id="3kirt1/gitlab-mcp-testing",
-  file_path="testing/nonexistent.txt",
-  branch="main",
-  commit_message="Should fail",
-  content="x"
-)
-```
-Tool surfaces a `400` or `404` error; no crash.
-
 ---
 
 ## Section 30: Repository Files — Delete
@@ -979,17 +913,6 @@ gitlab_file_delete(
 )
 ```
 Returns success.
-
-### 30.3 Delete non-existent file returns error
-```
-gitlab_file_delete(
-  project_id="3kirt1/gitlab-mcp-testing",
-  file_path="testing/nonexistent.txt",
-  branch="main",
-  commit_message="Should fail"
-)
-```
-Tool surfaces a `400` or `404` error; no crash.
 
 ---
 
@@ -1031,56 +954,3 @@ Tool surfaces a `400` or `404` error; no crash.
 3. Verify: merge base `id` differs from the commit on `mr-test-merge` (it has commits ahead of the base)
 4. `gitlab_repo_contributors(..., order_by="commits", sort="desc")` — top contributor has ≥ 3 commits (seed Steps 1a, 1b, 3)
 
----
-
-## Error Handling Checks
-
-**Issues:**
-
-| Scenario | Expected |
-|---|---|
-| `gitlab_issues_get(..., issue_iid=999999)` | Error containing `404`; no crash |
-| `gitlab_issues_list(project_id="nonexistent-group/nonexistent-repo")` | Error containing `404`; no crash |
-| `gitlab_issues_delete(..., issue_iid=999999)` | Error; no crash |
-| `gitlab_issues_update(..., issue_iid=999999, title="x")` | Error containing `404`; no crash |
-| `gitlab_issues_list(..., state="invalid_value")` | Error containing `400`; no crash |
-
-**Branches:**
-
-| Scenario | Expected |
-|---|---|
-| `gitlab_branches_get(..., branch="nonexistent-branch")` | Error containing `404`; no crash |
-| `gitlab_branches_list(project_id="nonexistent-group/nonexistent-repo")` | Error containing `404`; no crash |
-| `gitlab_branches_delete(..., branch="nonexistent-branch")` | Error containing `404`; no crash |
-| `gitlab_branches_delete(..., branch="main")` | Error containing `403`; no crash |
-| `gitlab_branches_create(..., branch="new", ref="nonexistent-ref")` | Error; no crash |
-
-**Merge requests:**
-
-| Scenario | Expected |
-|---|---|
-| `gitlab_mrs_get(..., merge_request_iid=999999)` | Error containing `404`; no crash |
-| `gitlab_mrs_list(project_id="nonexistent-group/nonexistent-repo")` | Error containing `404`; no crash |
-| `gitlab_mrs_delete(..., merge_request_iid=999999)` | Error; no crash |
-| `gitlab_mrs_update(..., merge_request_iid=999999, title="x")` | Error containing `404`; no crash |
-| `gitlab_mrs_merge(..., merge_request_iid=999999)` | Error containing `404`; no crash |
-
-**Repository:**
-
-| Scenario | Expected |
-|---|---|
-| `gitlab_repo_tree(..., ref="nonexistent-branch")` | Error; no crash |
-| `gitlab_repo_blob_get(..., sha="0000000000000000000000000000000000000000")` | Error containing `404`; no crash |
-| `gitlab_repo_compare(..., to="nonexistent-branch")` | Error; no crash |
-| `gitlab_repo_merge_base(..., refs=["main", "nonexistent-branch"])` | Error; no crash |
-
-**Repository files:**
-
-| Scenario | Expected |
-|---|---|
-| `gitlab_file_get(..., file_path="nonexistent.txt", ref_name="main")` | Error containing `404`; no crash |
-| `gitlab_file_raw(..., file_path="nonexistent.txt")` | Error containing `404`; no crash |
-| `gitlab_file_blame(..., file_path="nonexistent.txt", ref_name="main")` | Error containing `404`; no crash |
-| `gitlab_file_create(..., file_path="testing/sample.txt", ...)` | Error containing `400`; no crash |
-| `gitlab_file_update(..., file_path="nonexistent.txt", ...)` | Error; no crash |
-| `gitlab_file_delete(..., file_path="nonexistent.txt", ...)` | Error; no crash |
