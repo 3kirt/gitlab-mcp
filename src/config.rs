@@ -98,9 +98,13 @@ fn enforce_https(url: &str) -> anyhow::Result<()> {
     if url.starts_with("https://") {
         return Ok(());
     }
-    let is_local = url.starts_with("http://localhost") || url.starts_with("http://127.0.0.1");
-    if is_local {
-        return Ok(());
+    if url.starts_with("http://") {
+        let parsed = url::Url::parse(url)
+            .with_context(|| format!("invalid GitLab URL: {url}"))?;
+        let host = parsed.host_str().unwrap_or("");
+        if host == "localhost" || host == "127.0.0.1" {
+            return Ok(());
+        }
     }
     bail!(
         "GitLab URL must use HTTPS, got: {}  \
@@ -144,10 +148,9 @@ mod tests {
         assert!(enforce_https("gitlab.com").is_err());
     }
 
-    // Current prefix-match bug: these pass today but should be rejected (see TODO #3).
     #[test]
-    fn localhost_prefix_bypass_current_behavior() {
-        assert!(enforce_https("http://localhost.evil.com").is_ok());
-        assert!(enforce_https("http://127.0.0.1.evil.com").is_ok());
+    fn localhost_prefix_bypass_is_rejected() {
+        assert!(enforce_https("http://localhost.evil.com").is_err());
+        assert!(enforce_https("http://127.0.0.1.evil.com").is_err());
     }
 }

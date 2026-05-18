@@ -39,7 +39,7 @@ Three identical helpers:
 
 All are `s.replace('/', "%2F")`. Promote one (e.g. `encode_path_segment`) into [src/tools/mod.rs](src/tools/mod.rs) next to `encode_project_id` and delete the others.
 
-## 3. Fix `enforce_https` localhost prefix bypass (security)
+## ~~3. Fix `enforce_https` localhost prefix bypass (security)~~ ✓
 
 [src/config.rs:97-110](src/config.rs#L97-L110) uses bare prefix matching:
 
