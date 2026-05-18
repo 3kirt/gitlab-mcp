@@ -1,12 +1,8 @@
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{PaginationParams, QueryBuilder, encode_project_id};
-
-fn encode_ref(sha: &str) -> String {
-    sha.replace('/', "%2F")
-}
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_path_segment, encode_project_id};
 
 // --------------------------------------------------------------------------
 // List commits
@@ -138,56 +134,30 @@ pub async fn commit_create(
         .actions
         .into_iter()
         .map(|a| {
-            let mut obj = json!({ "action": a.action, "file_path": a.file_path });
-            let m = obj.as_object_mut().unwrap();
-            if let Some(v) = a.content {
-                m.insert("content".into(), json!(v));
-            }
-            if let Some(v) = a.encoding {
-                m.insert("encoding".into(), json!(v));
-            }
-            if let Some(v) = a.previous_path {
-                m.insert("previous_path".into(), json!(v));
-            }
-            if let Some(v) = a.last_commit_id {
-                m.insert("last_commit_id".into(), json!(v));
-            }
-            if let Some(v) = a.execute_filemode {
-                m.insert("execute_filemode".into(), json!(v));
-            }
-            obj
+            BodyBuilder::new()
+                .req("action", &a.action)
+                .req("file_path", &a.file_path)
+                .opt("content", a.content)
+                .opt("encoding", a.encoding)
+                .opt("previous_path", a.previous_path)
+                .opt("last_commit_id", a.last_commit_id)
+                .opt("execute_filemode", a.execute_filemode)
+                .build()
         })
         .collect();
-    let mut body = json!({
-        "branch": p.branch,
-        "commit_message": p.commit_message,
-        "actions": actions_arr,
-    });
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.start_branch {
-        obj.insert("start_branch".into(), json!(v));
-    }
-    if let Some(v) = p.start_sha {
-        obj.insert("start_sha".into(), json!(v));
-    }
-    if let Some(v) = p.start_project {
-        obj.insert("start_project".into(), json!(v));
-    }
-    if let Some(v) = p.author_name {
-        obj.insert("author_name".into(), json!(v));
-    }
-    if let Some(v) = p.author_email {
-        obj.insert("author_email".into(), json!(v));
-    }
-    if let Some(v) = p.force {
-        obj.insert("force".into(), json!(v));
-    }
-    if let Some(v) = p.allow_empty {
-        obj.insert("allow_empty".into(), json!(v));
-    }
-    if let Some(v) = p.stats {
-        obj.insert("stats".into(), json!(v));
-    }
+    let body = BodyBuilder::new()
+        .req("branch", &p.branch)
+        .req("commit_message", &p.commit_message)
+        .req("actions", actions_arr)
+        .opt("start_branch", p.start_branch)
+        .opt("start_sha", p.start_sha)
+        .opt("start_project", p.start_project)
+        .opt("author_name", p.author_name)
+        .opt("author_email", p.author_email)
+        .opt("force", p.force)
+        .opt("allow_empty", p.allow_empty)
+        .opt("stats", p.stats)
+        .build();
     client.post(&path, &body).await
 }
 
@@ -209,7 +179,7 @@ pub async fn commit_get(client: &GitlabClient, p: CommitGetParams) -> Result<Val
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}",
         encode_project_id(&p.project_id),
-        encode_ref(&p.sha)
+        encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
         .opt("stats", p.stats)
@@ -240,7 +210,7 @@ pub async fn commit_refs(
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/refs",
         encode_project_id(&p.project_id),
-        encode_ref(&p.sha)
+        encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
         .opt("type", p.r#type)
@@ -271,7 +241,7 @@ pub async fn commit_sequence(
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/sequence",
         encode_project_id(&p.project_id),
-        encode_ref(&p.sha)
+        encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
         .opt("first_parent", p.first_parent)
@@ -304,16 +274,13 @@ pub async fn commit_cherry_pick(
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/cherry_pick",
         encode_project_id(&p.project_id),
-        encode_ref(&p.sha)
+        encode_path_segment(&p.sha)
     );
-    let mut body = json!({ "branch": p.branch });
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.dry_run {
-        obj.insert("dry_run".into(), json!(v));
-    }
-    if let Some(v) = p.message {
-        obj.insert("message".into(), json!(v));
-    }
+    let body = BodyBuilder::new()
+        .req("branch", &p.branch)
+        .opt("dry_run", p.dry_run)
+        .opt("message", p.message)
+        .build();
     client.post(&path, &body).await
 }
 
@@ -340,13 +307,12 @@ pub async fn commit_revert(
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/revert",
         encode_project_id(&p.project_id),
-        encode_ref(&p.sha)
+        encode_path_segment(&p.sha)
     );
-    let mut body = json!({ "branch": p.branch });
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.dry_run {
-        obj.insert("dry_run".into(), json!(v));
-    }
+    let body = BodyBuilder::new()
+        .req("branch", &p.branch)
+        .opt("dry_run", p.dry_run)
+        .build();
     client.post(&path, &body).await
 }
 
@@ -371,7 +337,7 @@ pub async fn commit_diff(
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/diff",
         encode_project_id(&p.project_id),
-        encode_ref(&p.sha)
+        encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
         .opt("unidiff", p.unidiff)
@@ -400,7 +366,7 @@ pub async fn commit_comments_list(
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/comments",
         encode_project_id(&p.project_id),
-        encode_ref(&p.sha)
+        encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
         .opt("page", p.pagination.page)
@@ -436,19 +402,14 @@ pub async fn commit_comment_create(
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/comments",
         encode_project_id(&p.project_id),
-        encode_ref(&p.sha)
+        encode_path_segment(&p.sha)
     );
-    let mut body = json!({ "note": p.note });
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.path {
-        obj.insert("path".into(), json!(v));
-    }
-    if let Some(v) = p.line {
-        obj.insert("line".into(), json!(v));
-    }
-    if let Some(v) = p.line_type {
-        obj.insert("line_type".into(), json!(v));
-    }
+    let body = BodyBuilder::new()
+        .req("note", &p.note)
+        .opt("path", p.path)
+        .opt("line", p.line)
+        .opt("line_type", p.line_type)
+        .build();
     client.post(&path, &body).await
 }
 
@@ -473,7 +434,7 @@ pub async fn commit_discussions_list(
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/discussions",
         encode_project_id(&p.project_id),
-        encode_ref(&p.sha)
+        encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
         .opt("page", p.pagination.page)
@@ -521,7 +482,7 @@ pub async fn commit_statuses_list(
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/statuses",
         encode_project_id(&p.project_id),
-        encode_ref(&p.sha)
+        encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
         .opt("ref", p.r#ref)
@@ -572,28 +533,17 @@ pub async fn commit_status_set(
     let path = format!(
         "/api/v4/projects/{}/statuses/{}",
         encode_project_id(&p.project_id),
-        encode_ref(&p.sha)
+        encode_path_segment(&p.sha)
     );
-    let mut body = json!({ "state": p.state });
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.name {
-        obj.insert("name".into(), json!(v));
-    }
-    if let Some(v) = p.r#ref {
-        obj.insert("ref".into(), json!(v));
-    }
-    if let Some(v) = p.description {
-        obj.insert("description".into(), json!(v));
-    }
-    if let Some(v) = p.target_url {
-        obj.insert("target_url".into(), json!(v));
-    }
-    if let Some(v) = p.coverage {
-        obj.insert("coverage".into(), json!(v));
-    }
-    if let Some(v) = p.pipeline_id {
-        obj.insert("pipeline_id".into(), json!(v));
-    }
+    let body = BodyBuilder::new()
+        .req("state", &p.state)
+        .opt("name", p.name)
+        .opt("ref", p.r#ref)
+        .opt("description", p.description)
+        .opt("target_url", p.target_url)
+        .opt("coverage", p.coverage)
+        .opt("pipeline_id", p.pipeline_id)
+        .build();
     client.post(&path, &body).await
 }
 
@@ -620,7 +570,7 @@ pub async fn commit_merge_requests(
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/merge_requests",
         encode_project_id(&p.project_id),
-        encode_ref(&p.sha)
+        encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
         .opt("state", p.state)
@@ -647,7 +597,7 @@ pub async fn commit_signature(
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/signature",
         encode_project_id(&p.project_id),
-        encode_ref(&p.sha)
+        encode_path_segment(&p.sha)
     );
     client.get(&path).await
 }

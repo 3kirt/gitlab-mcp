@@ -1,8 +1,8 @@
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{PaginationParams, QueryBuilder, encode_project_id};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
 
 fn default_true() -> bool {
     true
@@ -138,32 +138,19 @@ pub async fn mr_create(client: &GitlabClient, p: MrCreateParams) -> Result<Value
         "/api/v4/projects/{}/merge_requests",
         encode_project_id(&p.project_id)
     );
-    let mut body = json!({
-        "source_branch": p.source_branch,
-        "target_branch": p.target_branch,
-        "title": p.title,
-        "squash": p.squash,
-        "remove_source_branch": p.remove_source_branch,
-    });
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.description {
-        obj.insert("description".into(), json!(v));
-    }
-    if let Some(v) = p.assignee_id {
-        obj.insert("assignee_id".into(), json!(v));
-    }
-    if let Some(v) = p.reviewer_ids {
-        obj.insert("reviewer_ids".into(), json!(v));
-    }
-    if let Some(v) = p.labels {
-        obj.insert("labels".into(), json!(v));
-    }
-    if let Some(v) = p.milestone_id {
-        obj.insert("milestone_id".into(), json!(v));
-    }
-    if let Some(v) = p.draft {
-        obj.insert("draft".into(), json!(v));
-    }
+    let body = BodyBuilder::new()
+        .req("source_branch", &p.source_branch)
+        .req("target_branch", &p.target_branch)
+        .req("title", &p.title)
+        .req("squash", p.squash)
+        .req("remove_source_branch", p.remove_source_branch)
+        .opt("description", p.description)
+        .opt("assignee_id", p.assignee_id)
+        .opt("reviewer_ids", p.reviewer_ids)
+        .opt("labels", p.labels)
+        .opt("milestone_id", p.milestone_id)
+        .opt("draft", p.draft)
+        .build();
     client.post(&path, &body).await
 }
 
@@ -205,38 +192,18 @@ pub async fn mr_update(client: &GitlabClient, p: MrUpdateParams) -> Result<Value
         encode_project_id(&p.project_id),
         p.merge_request_iid
     );
-    let mut body = json!({});
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.title {
-        obj.insert("title".into(), json!(v));
-    }
-    if let Some(v) = p.description {
-        obj.insert("description".into(), json!(v));
-    }
-    if let Some(v) = p.state_event {
-        obj.insert("state_event".into(), json!(v));
-    }
-    if let Some(v) = p.target_branch {
-        obj.insert("target_branch".into(), json!(v));
-    }
-    if let Some(v) = p.assignee_id {
-        obj.insert("assignee_id".into(), json!(v));
-    }
-    if let Some(v) = p.reviewer_ids {
-        obj.insert("reviewer_ids".into(), json!(v));
-    }
-    if let Some(v) = p.labels {
-        obj.insert("labels".into(), json!(v));
-    }
-    if let Some(v) = p.milestone_id {
-        obj.insert("milestone_id".into(), json!(v));
-    }
-    if let Some(v) = p.squash {
-        obj.insert("squash".into(), json!(v));
-    }
-    if let Some(v) = p.draft {
-        obj.insert("draft".into(), json!(v));
-    }
+    let body = BodyBuilder::new()
+        .opt("title", p.title)
+        .opt("description", p.description)
+        .opt("state_event", p.state_event)
+        .opt("target_branch", p.target_branch)
+        .opt("assignee_id", p.assignee_id)
+        .opt("reviewer_ids", p.reviewer_ids)
+        .opt("labels", p.labels)
+        .opt("milestone_id", p.milestone_id)
+        .opt("squash", p.squash)
+        .opt("draft", p.draft)
+        .build();
     client.put(&path, &body).await
 }
 
@@ -287,19 +254,11 @@ pub async fn mr_merge(client: &GitlabClient, p: MrMergeParams) -> Result<Value, 
         encode_project_id(&p.project_id),
         p.merge_request_iid
     );
-    let mut body = json!({});
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.merge_commit_message {
-        obj.insert("merge_commit_message".into(), json!(v));
-    }
-    if let Some(v) = p.squash {
-        obj.insert("squash".into(), json!(v));
-    }
-    if let Some(v) = p.should_remove_source_branch {
-        obj.insert("should_remove_source_branch".into(), json!(v));
-    }
-    if let Some(v) = p.merge_when_pipeline_succeeds {
-        obj.insert("merge_when_pipeline_succeeds".into(), json!(v));
-    }
+    let body = BodyBuilder::new()
+        .opt("merge_commit_message", p.merge_commit_message)
+        .opt("squash", p.squash)
+        .opt("should_remove_source_branch", p.should_remove_source_branch)
+        .opt("merge_when_pipeline_succeeds", p.merge_when_pipeline_succeeds)
+        .build();
     client.put(&path, &body).await
 }

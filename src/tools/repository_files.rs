@@ -2,11 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{QueryBuilder, encode_project_id};
-
-fn encode_file_path(path: &str) -> String {
-    path.replace('/', "%2F")
-}
+use crate::tools::{BodyBuilder, QueryBuilder, encode_path_segment, encode_project_id};
 
 // --------------------------------------------------------------------------
 // Get file (metadata + Base64 content)
@@ -32,7 +28,7 @@ pub async fn file_get(client: &GitlabClient, p: FileGetParams) -> Result<Value, 
     let path = format!(
         "/api/v4/projects/{}/repository/files/{}",
         encode_project_id(&p.project_id),
-        encode_file_path(&p.file_path)
+        encode_path_segment(&p.file_path)
     );
     let params = QueryBuilder::new()
         .opt("ref", Some(p.ref_name))
@@ -64,7 +60,7 @@ pub async fn file_raw(client: &GitlabClient, p: FileRawParams) -> Result<Value, 
     let path = format!(
         "/api/v4/projects/{}/repository/files/{}/raw",
         encode_project_id(&p.project_id),
-        encode_file_path(&p.file_path)
+        encode_path_segment(&p.file_path)
     );
     let params = QueryBuilder::new()
         .opt("ref", p.ref_name)
@@ -100,7 +96,7 @@ pub async fn file_blame(client: &GitlabClient, p: FileBlameParams) -> Result<Val
     let path = format!(
         "/api/v4/projects/{}/repository/files/{}/blame",
         encode_project_id(&p.project_id),
-        encode_file_path(&p.file_path)
+        encode_path_segment(&p.file_path)
     );
     let params = QueryBuilder::new()
         .opt("ref", Some(p.ref_name))
@@ -146,29 +142,18 @@ pub async fn file_create(client: &GitlabClient, p: FileCreateParams) -> Result<V
     let path = format!(
         "/api/v4/projects/{}/repository/files/{}",
         encode_project_id(&p.project_id),
-        encode_file_path(&p.file_path)
+        encode_path_segment(&p.file_path)
     );
-    let mut body = json!({
-        "branch": p.branch,
-        "commit_message": p.commit_message,
-        "content": p.content,
-    });
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.encoding {
-        obj.insert("encoding".into(), json!(v));
-    }
-    if let Some(v) = p.author_name {
-        obj.insert("author_name".into(), json!(v));
-    }
-    if let Some(v) = p.author_email {
-        obj.insert("author_email".into(), json!(v));
-    }
-    if let Some(v) = p.execute_filemode {
-        obj.insert("execute_filemode".into(), json!(v));
-    }
-    if let Some(v) = p.start_branch {
-        obj.insert("start_branch".into(), json!(v));
-    }
+    let body = BodyBuilder::new()
+        .req("branch", &p.branch)
+        .req("commit_message", &p.commit_message)
+        .req("content", &p.content)
+        .opt("encoding", p.encoding)
+        .opt("author_name", p.author_name)
+        .opt("author_email", p.author_email)
+        .opt("execute_filemode", p.execute_filemode)
+        .opt("start_branch", p.start_branch)
+        .build();
     client.post(&path, &body).await
 }
 
@@ -212,32 +197,19 @@ pub async fn file_update(client: &GitlabClient, p: FileUpdateParams) -> Result<V
     let path = format!(
         "/api/v4/projects/{}/repository/files/{}",
         encode_project_id(&p.project_id),
-        encode_file_path(&p.file_path)
+        encode_path_segment(&p.file_path)
     );
-    let mut body = json!({
-        "branch": p.branch,
-        "commit_message": p.commit_message,
-        "content": p.content,
-    });
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.encoding {
-        obj.insert("encoding".into(), json!(v));
-    }
-    if let Some(v) = p.author_name {
-        obj.insert("author_name".into(), json!(v));
-    }
-    if let Some(v) = p.author_email {
-        obj.insert("author_email".into(), json!(v));
-    }
-    if let Some(v) = p.execute_filemode {
-        obj.insert("execute_filemode".into(), json!(v));
-    }
-    if let Some(v) = p.last_commit_id {
-        obj.insert("last_commit_id".into(), json!(v));
-    }
-    if let Some(v) = p.start_branch {
-        obj.insert("start_branch".into(), json!(v));
-    }
+    let body = BodyBuilder::new()
+        .req("branch", &p.branch)
+        .req("commit_message", &p.commit_message)
+        .req("content", &p.content)
+        .opt("encoding", p.encoding)
+        .opt("author_name", p.author_name)
+        .opt("author_email", p.author_email)
+        .opt("execute_filemode", p.execute_filemode)
+        .opt("last_commit_id", p.last_commit_id)
+        .opt("start_branch", p.start_branch)
+        .build();
     client.put(&path, &body).await
 }
 
@@ -275,25 +247,16 @@ pub async fn file_delete(client: &GitlabClient, p: FileDeleteParams) -> Result<(
     let path = format!(
         "/api/v4/projects/{}/repository/files/{}",
         encode_project_id(&p.project_id),
-        encode_file_path(&p.file_path)
+        encode_path_segment(&p.file_path)
     );
-    let mut body = json!({
-        "branch": p.branch,
-        "commit_message": p.commit_message,
-    });
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.author_name {
-        obj.insert("author_name".into(), json!(v));
-    }
-    if let Some(v) = p.author_email {
-        obj.insert("author_email".into(), json!(v));
-    }
-    if let Some(v) = p.last_commit_id {
-        obj.insert("last_commit_id".into(), json!(v));
-    }
-    if let Some(v) = p.start_branch {
-        obj.insert("start_branch".into(), json!(v));
-    }
+    let body = BodyBuilder::new()
+        .req("branch", &p.branch)
+        .req("commit_message", &p.commit_message)
+        .opt("author_name", p.author_name)
+        .opt("author_email", p.author_email)
+        .opt("last_commit_id", p.last_commit_id)
+        .opt("start_branch", p.start_branch)
+        .build();
     client.delete_with_body(&path, &body).await?;
     Ok(())
 }

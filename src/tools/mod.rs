@@ -62,6 +62,10 @@ pub(crate) fn encode_project_id(id: &str) -> String {
     }
 }
 
+pub(crate) fn encode_path_segment(s: &str) -> String {
+    s.replace('/', "%2F")
+}
+
 pub struct QueryBuilder {
     params: Vec<(&'static str, String)>,
 }
@@ -89,6 +93,32 @@ impl QueryBuilder {
 
     pub fn into_params(self) -> Vec<(&'static str, String)> {
         self.params
+    }
+}
+
+pub struct BodyBuilder {
+    map: serde_json::Map<String, Value>,
+}
+
+impl BodyBuilder {
+    pub fn new() -> Self {
+        Self { map: serde_json::Map::new() }
+    }
+
+    pub fn req<T: serde::Serialize>(mut self, key: &'static str, v: T) -> Self {
+        self.map.insert(key.to_string(), serde_json::to_value(v).unwrap());
+        self
+    }
+
+    pub fn opt<T: serde::Serialize>(mut self, key: &'static str, v: Option<T>) -> Self {
+        if let Some(v) = v {
+            self.map.insert(key.to_string(), serde_json::to_value(v).unwrap());
+        }
+        self
+    }
+
+    pub fn build(self) -> Value {
+        Value::Object(self.map)
     }
 }
 

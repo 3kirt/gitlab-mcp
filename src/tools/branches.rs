@@ -2,11 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{PaginationParams, QueryBuilder, encode_project_id};
-
-fn encode_branch_name(branch: &str) -> String {
-    branch.replace('/', "%2F")
-}
+use crate::tools::{PaginationParams, QueryBuilder, encode_path_segment, encode_project_id};
 
 // --------------------------------------------------------------------------
 // List branches
@@ -59,7 +55,7 @@ pub async fn branch_get(client: &GitlabClient, p: BranchGetParams) -> Result<Val
     let path = format!(
         "/api/v4/projects/{}/repository/branches/{}",
         encode_project_id(&p.project_id),
-        encode_branch_name(&p.branch)
+        encode_path_segment(&p.branch)
     );
     client.get(&path).await
 }
@@ -118,7 +114,7 @@ pub async fn branch_delete(
     let path = format!(
         "/api/v4/projects/{}/repository/branches/{}",
         encode_project_id(&p.project_id),
-        encode_branch_name(&p.branch)
+        encode_path_segment(&p.branch)
     );
     client.delete(&path).await
 }

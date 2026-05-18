@@ -1,8 +1,8 @@
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{PaginationParams, QueryBuilder, encode_project_id};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
 
 // --------------------------------------------------------------------------
 // List issues
@@ -113,26 +113,15 @@ pub async fn issue_create(
         "/api/v4/projects/{}/issues",
         encode_project_id(&p.project_id)
     );
-    let mut body = json!({ "title": p.title });
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.description {
-        obj.insert("description".into(), json!(v));
-    }
-    if let Some(v) = p.labels {
-        obj.insert("labels".into(), json!(v));
-    }
-    if let Some(v) = p.assignee_ids {
-        obj.insert("assignee_ids".into(), json!(v));
-    }
-    if let Some(v) = p.milestone_id {
-        obj.insert("milestone_id".into(), json!(v));
-    }
-    if let Some(v) = p.due_date {
-        obj.insert("due_date".into(), json!(v));
-    }
-    if let Some(v) = p.weight {
-        obj.insert("weight".into(), json!(v));
-    }
+    let body = BodyBuilder::new()
+        .req("title", &p.title)
+        .opt("description", p.description)
+        .opt("labels", p.labels)
+        .opt("assignee_ids", p.assignee_ids)
+        .opt("milestone_id", p.milestone_id)
+        .opt("due_date", p.due_date)
+        .opt("weight", p.weight)
+        .build();
     client.post(&path, &body).await
 }
 
@@ -173,32 +162,16 @@ pub async fn issue_update(
         encode_project_id(&p.project_id),
         p.issue_iid
     );
-    let mut body = json!({});
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.title {
-        obj.insert("title".into(), json!(v));
-    }
-    if let Some(v) = p.description {
-        obj.insert("description".into(), json!(v));
-    }
-    if let Some(v) = p.state_event {
-        obj.insert("state_event".into(), json!(v));
-    }
-    if let Some(v) = p.labels {
-        obj.insert("labels".into(), json!(v));
-    }
-    if let Some(v) = p.assignee_ids {
-        obj.insert("assignee_ids".into(), json!(v));
-    }
-    if let Some(v) = p.milestone_id {
-        obj.insert("milestone_id".into(), json!(v));
-    }
-    if let Some(v) = p.due_date {
-        obj.insert("due_date".into(), json!(v));
-    }
-    if let Some(v) = p.weight {
-        obj.insert("weight".into(), json!(v));
-    }
+    let body = BodyBuilder::new()
+        .opt("title", p.title)
+        .opt("description", p.description)
+        .opt("state_event", p.state_event)
+        .opt("labels", p.labels)
+        .opt("assignee_ids", p.assignee_ids)
+        .opt("milestone_id", p.milestone_id)
+        .opt("due_date", p.due_date)
+        .opt("weight", p.weight)
+        .build();
     client.put(&path, &body).await
 }
 

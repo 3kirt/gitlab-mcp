@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{PaginationParams, QueryBuilder, encode_project_id};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
 
 // --------------------------------------------------------------------------
 // List repository tree
@@ -303,35 +303,18 @@ pub async fn repo_changelog_add(
         "/api/v4/projects/{}/repository/changelog",
         encode_project_id(&p.project_id)
     );
-    let mut body = json!({"version": p.version});
-    let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.branch {
-        obj.insert("branch".into(), json!(v));
-    }
-    if let Some(v) = p.config_file {
-        obj.insert("config_file".into(), json!(v));
-    }
-    if let Some(v) = p.config_file_ref {
-        obj.insert("config_file_ref".into(), json!(v));
-    }
-    if let Some(v) = p.file {
-        obj.insert("file".into(), json!(v));
-    }
-    if let Some(v) = p.from {
-        obj.insert("from".into(), json!(v));
-    }
-    if let Some(v) = p.to {
-        obj.insert("to".into(), json!(v));
-    }
-    if let Some(v) = p.message {
-        obj.insert("message".into(), json!(v));
-    }
-    if let Some(v) = p.trailer {
-        obj.insert("trailer".into(), json!(v));
-    }
-    if let Some(v) = p.date {
-        obj.insert("date".into(), json!(v));
-    }
+    let body = BodyBuilder::new()
+        .req("version", &p.version)
+        .opt("branch", p.branch)
+        .opt("config_file", p.config_file)
+        .opt("config_file_ref", p.config_file_ref)
+        .opt("file", p.file)
+        .opt("from", p.from)
+        .opt("to", p.to)
+        .opt("message", p.message)
+        .opt("trailer", p.trailer)
+        .opt("date", p.date)
+        .build();
     client.post(&path, &body).await
 }
 
