@@ -10,9 +10,13 @@ use crate::tools::{PaginationParams, QueryBuilder, encode_project_id};
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssuesListParams {
-    #[schemars(description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")")]
+    #[schemars(
+        description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")"
+    )]
     pub project_id: String,
-    #[schemars(description = "Filter by state: \"opened\", \"closed\", or \"all\" (default: \"all\" — GitLab returns all issues when omitted)")]
+    #[schemars(
+        description = "Filter by state: \"opened\", \"closed\", or \"all\" (default: \"all\" — GitLab returns all issues when omitted)"
+    )]
     pub state: Option<String>,
     #[schemars(description = "Comma-separated label names to filter by")]
     pub labels: Option<String>,
@@ -36,11 +40,11 @@ pub struct IssuesListParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn issues_list(
-    client: &GitlabClient,
-    p: IssuesListParams,
-) -> Result<Value, GitlabError> {
-    let path = format!("/api/v4/projects/{}/issues", encode_project_id(&p.project_id));
+pub async fn issues_list(client: &GitlabClient, p: IssuesListParams) -> Result<Value, GitlabError> {
+    let path = format!(
+        "/api/v4/projects/{}/issues",
+        encode_project_id(&p.project_id)
+    );
     let params = QueryBuilder::new()
         .opt("state", p.state)
         .opt("labels", p.labels)
@@ -105,7 +109,10 @@ pub async fn issue_create(
     client: &GitlabClient,
     p: IssueCreateParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!("/api/v4/projects/{}/issues", encode_project_id(&p.project_id));
+    let path = format!(
+        "/api/v4/projects/{}/issues",
+        encode_project_id(&p.project_id)
+    );
     let mut body = json!({ "title": p.title });
     let obj = body.as_object_mut().unwrap();
     if let Some(v) = p.description {
@@ -215,4 +222,3 @@ pub async fn issue_delete(client: &GitlabClient, p: IssueDeleteParams) -> Result
     );
     client.delete(&path).await
 }
-

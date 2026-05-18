@@ -11,10 +11,7 @@ use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 #[derive(Parser)]
-#[command(
-    name = "gitlab-mcp",
-    about = "MCP server for the GitLab API"
-)]
+#[command(name = "gitlab-mcp", about = "MCP server for the GitLab API")]
 struct Args {
     /// Path to the configuration file (default: ~/.gitlab_mcp.json)
     #[arg(long)]

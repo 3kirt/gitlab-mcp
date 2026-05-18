@@ -112,7 +112,11 @@ impl GitlabClient {
     }
 
     /// GET {base_url}{path}?{params} — returns the raw text response body (for non-JSON endpoints).
-    pub async fn get_text_with_params(&self, path: &str, params: &[(&str, String)]) -> Result<String, GitlabError> {
+    pub async fn get_text_with_params(
+        &self,
+        path: &str,
+        params: &[(&str, String)],
+    ) -> Result<String, GitlabError> {
         let url = self.url(path);
         let resp = self.http.get(&url).query(params).send().await?;
         let status = resp.status();

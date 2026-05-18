@@ -14,11 +14,17 @@ fn encode_file_path(path: &str) -> String {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FileGetParams {
-    #[schemars(description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")")]
+    #[schemars(
+        description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")"
+    )]
     pub project_id: String,
-    #[schemars(description = "Full path to the file (e.g. \"src/main.rs\"); slashes are encoded automatically")]
+    #[schemars(
+        description = "Full path to the file (e.g. \"src/main.rs\"); slashes are encoded automatically"
+    )]
     pub file_path: String,
-    #[schemars(description = "Branch, tag, or commit SHA to read from; use \"HEAD\" for the default branch")]
+    #[schemars(
+        description = "Branch, tag, or commit SHA to read from; use \"HEAD\" for the default branch"
+    )]
     pub ref_name: String,
 }
 
@@ -42,11 +48,15 @@ pub async fn file_get(client: &GitlabClient, p: FileGetParams) -> Result<Value, 
 pub struct FileRawParams {
     #[schemars(description = "Project ID or URL-encoded path")]
     pub project_id: String,
-    #[schemars(description = "Full path to the file (e.g. \"src/main.rs\"); slashes are encoded automatically")]
+    #[schemars(
+        description = "Full path to the file (e.g. \"src/main.rs\"); slashes are encoded automatically"
+    )]
     pub file_path: String,
     #[schemars(description = "Branch, tag, or commit SHA (default: HEAD of default branch)")]
     pub ref_name: Option<String>,
-    #[schemars(description = "Return Git LFS object contents instead of the pointer (default: false)")]
+    #[schemars(
+        description = "Return Git LFS object contents instead of the pointer (default: false)"
+    )]
     pub lfs: Option<bool>,
 }
 
@@ -72,9 +82,13 @@ pub async fn file_raw(client: &GitlabClient, p: FileRawParams) -> Result<Value, 
 pub struct FileBlameParams {
     #[schemars(description = "Project ID or URL-encoded path")]
     pub project_id: String,
-    #[schemars(description = "Full path to the file (e.g. \"src/main.rs\"); slashes are encoded automatically")]
+    #[schemars(
+        description = "Full path to the file (e.g. \"src/main.rs\"); slashes are encoded automatically"
+    )]
     pub file_path: String,
-    #[schemars(description = "Branch, tag, or commit SHA to read from; use \"HEAD\" for the default branch")]
+    #[schemars(
+        description = "Branch, tag, or commit SHA to read from; use \"HEAD\" for the default branch"
+    )]
     pub ref_name: String,
     #[schemars(description = "First line number of the blame range (1-based, inclusive)")]
     pub range_start: Option<u64>,
@@ -104,7 +118,9 @@ pub async fn file_blame(client: &GitlabClient, p: FileBlameParams) -> Result<Val
 pub struct FileCreateParams {
     #[schemars(description = "Project ID or URL-encoded path")]
     pub project_id: String,
-    #[schemars(description = "Full path to the new file (e.g. \"src/main.rs\"); slashes are encoded automatically")]
+    #[schemars(
+        description = "Full path to the new file (e.g. \"src/main.rs\"); slashes are encoded automatically"
+    )]
     pub file_path: String,
     #[schemars(description = "Branch to commit the new file to")]
     pub branch: String,
@@ -120,7 +136,9 @@ pub struct FileCreateParams {
     pub author_email: Option<String>,
     #[schemars(description = "Set the execute bit on the file (default: false)")]
     pub execute_filemode: Option<bool>,
-    #[schemars(description = "Base branch to create the target branch from if it does not yet exist")]
+    #[schemars(
+        description = "Base branch to create the target branch from if it does not yet exist"
+    )]
     pub start_branch: Option<String>,
 }
 
@@ -136,11 +154,21 @@ pub async fn file_create(client: &GitlabClient, p: FileCreateParams) -> Result<V
         "content": p.content,
     });
     let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.encoding { obj.insert("encoding".into(), json!(v)); }
-    if let Some(v) = p.author_name { obj.insert("author_name".into(), json!(v)); }
-    if let Some(v) = p.author_email { obj.insert("author_email".into(), json!(v)); }
-    if let Some(v) = p.execute_filemode { obj.insert("execute_filemode".into(), json!(v)); }
-    if let Some(v) = p.start_branch { obj.insert("start_branch".into(), json!(v)); }
+    if let Some(v) = p.encoding {
+        obj.insert("encoding".into(), json!(v));
+    }
+    if let Some(v) = p.author_name {
+        obj.insert("author_name".into(), json!(v));
+    }
+    if let Some(v) = p.author_email {
+        obj.insert("author_email".into(), json!(v));
+    }
+    if let Some(v) = p.execute_filemode {
+        obj.insert("execute_filemode".into(), json!(v));
+    }
+    if let Some(v) = p.start_branch {
+        obj.insert("start_branch".into(), json!(v));
+    }
     client.post(&path, &body).await
 }
 
@@ -152,7 +180,9 @@ pub async fn file_create(client: &GitlabClient, p: FileCreateParams) -> Result<V
 pub struct FileUpdateParams {
     #[schemars(description = "Project ID or URL-encoded path")]
     pub project_id: String,
-    #[schemars(description = "Full path to the file (e.g. \"src/main.rs\"); slashes are encoded automatically")]
+    #[schemars(
+        description = "Full path to the file (e.g. \"src/main.rs\"); slashes are encoded automatically"
+    )]
     pub file_path: String,
     #[schemars(description = "Branch to commit the update to")]
     pub branch: String,
@@ -168,9 +198,13 @@ pub struct FileUpdateParams {
     pub author_email: Option<String>,
     #[schemars(description = "Set the execute bit on the file")]
     pub execute_filemode: Option<bool>,
-    #[schemars(description = "Last known commit ID for the file; used to prevent overwriting concurrent changes")]
+    #[schemars(
+        description = "Last known commit ID for the file; used to prevent overwriting concurrent changes"
+    )]
     pub last_commit_id: Option<String>,
-    #[schemars(description = "Base branch to create the target branch from if it does not yet exist")]
+    #[schemars(
+        description = "Base branch to create the target branch from if it does not yet exist"
+    )]
     pub start_branch: Option<String>,
 }
 
@@ -186,12 +220,24 @@ pub async fn file_update(client: &GitlabClient, p: FileUpdateParams) -> Result<V
         "content": p.content,
     });
     let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.encoding { obj.insert("encoding".into(), json!(v)); }
-    if let Some(v) = p.author_name { obj.insert("author_name".into(), json!(v)); }
-    if let Some(v) = p.author_email { obj.insert("author_email".into(), json!(v)); }
-    if let Some(v) = p.execute_filemode { obj.insert("execute_filemode".into(), json!(v)); }
-    if let Some(v) = p.last_commit_id { obj.insert("last_commit_id".into(), json!(v)); }
-    if let Some(v) = p.start_branch { obj.insert("start_branch".into(), json!(v)); }
+    if let Some(v) = p.encoding {
+        obj.insert("encoding".into(), json!(v));
+    }
+    if let Some(v) = p.author_name {
+        obj.insert("author_name".into(), json!(v));
+    }
+    if let Some(v) = p.author_email {
+        obj.insert("author_email".into(), json!(v));
+    }
+    if let Some(v) = p.execute_filemode {
+        obj.insert("execute_filemode".into(), json!(v));
+    }
+    if let Some(v) = p.last_commit_id {
+        obj.insert("last_commit_id".into(), json!(v));
+    }
+    if let Some(v) = p.start_branch {
+        obj.insert("start_branch".into(), json!(v));
+    }
     client.put(&path, &body).await
 }
 
@@ -203,7 +249,9 @@ pub async fn file_update(client: &GitlabClient, p: FileUpdateParams) -> Result<V
 pub struct FileDeleteParams {
     #[schemars(description = "Project ID or URL-encoded path")]
     pub project_id: String,
-    #[schemars(description = "Full path to the file to delete (e.g. \"src/main.rs\"); slashes are encoded automatically")]
+    #[schemars(
+        description = "Full path to the file to delete (e.g. \"src/main.rs\"); slashes are encoded automatically"
+    )]
     pub file_path: String,
     #[schemars(description = "Branch to commit the deletion to")]
     pub branch: String,
@@ -213,9 +261,13 @@ pub struct FileDeleteParams {
     pub author_name: Option<String>,
     #[schemars(description = "Email of the commit author")]
     pub author_email: Option<String>,
-    #[schemars(description = "Last known commit ID for the file; used to prevent overwriting concurrent changes")]
+    #[schemars(
+        description = "Last known commit ID for the file; used to prevent overwriting concurrent changes"
+    )]
     pub last_commit_id: Option<String>,
-    #[schemars(description = "Base branch to create the target branch from if it does not yet exist")]
+    #[schemars(
+        description = "Base branch to create the target branch from if it does not yet exist"
+    )]
     pub start_branch: Option<String>,
 }
 
@@ -230,10 +282,18 @@ pub async fn file_delete(client: &GitlabClient, p: FileDeleteParams) -> Result<(
         "commit_message": p.commit_message,
     });
     let obj = body.as_object_mut().unwrap();
-    if let Some(v) = p.author_name { obj.insert("author_name".into(), json!(v)); }
-    if let Some(v) = p.author_email { obj.insert("author_email".into(), json!(v)); }
-    if let Some(v) = p.last_commit_id { obj.insert("last_commit_id".into(), json!(v)); }
-    if let Some(v) = p.start_branch { obj.insert("start_branch".into(), json!(v)); }
+    if let Some(v) = p.author_name {
+        obj.insert("author_name".into(), json!(v));
+    }
+    if let Some(v) = p.author_email {
+        obj.insert("author_email".into(), json!(v));
+    }
+    if let Some(v) = p.last_commit_id {
+        obj.insert("last_commit_id".into(), json!(v));
+    }
+    if let Some(v) = p.start_branch {
+        obj.insert("start_branch".into(), json!(v));
+    }
     client.delete_with_body(&path, &body).await?;
     Ok(())
 }

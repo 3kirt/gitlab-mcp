@@ -128,9 +128,10 @@ macro_rules! delegate_delete {
     ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {{
         let client = $self.get_client()?;
         match $domain_fn(client, $p).await {
-            Ok(()) => Ok(CallToolResult::success(vec![Content::text(
-                format!("{} deleted", $noun),
-            )])),
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text(format!(
+                "{} deleted",
+                $noun
+            ))])),
             Err(e) => tool_error(&format!("deleting {}: {}", $noun, e.to_tool_message())),
         }
     }};
@@ -395,7 +396,12 @@ impl GitlabMcpServer {
         &self,
         Parameters(p): Parameters<repositories::RepoContributorsListParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_list!(self, repositories::repo_contributors_list, p, "contributors")
+        delegate_list!(
+            self,
+            repositories::repo_contributors_list,
+            p,
+            "contributors"
+        )
     }
 
     #[tool(
@@ -514,12 +520,8 @@ impl GitlabMcpServer {}
 #[prompt_handler]
 impl ServerHandler for GitlabMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(
-            ServerCapabilities::builder()
-                .enable_tools()
-                .build(),
-        )
-        .with_server_info(Implementation::new("gitlab-mcp", env!("CARGO_PKG_VERSION")))
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new("gitlab-mcp", env!("CARGO_PKG_VERSION")))
     }
 
     async fn initialize(

@@ -10,9 +10,13 @@ use crate::tools::{PaginationParams, QueryBuilder, encode_project_id};
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrsListParams {
-    #[schemars(description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")")]
+    #[schemars(
+        description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")"
+    )]
     pub project_id: String,
-    #[schemars(description = "Filter by state: \"opened\", \"closed\", \"merged\", \"locked\", or \"all\" (default: \"all\")")]
+    #[schemars(
+        description = "Filter by state: \"opened\", \"closed\", \"merged\", \"locked\", or \"all\" (default: \"all\")"
+    )]
     pub state: Option<String>,
     #[schemars(description = "Filter by source branch name")]
     pub source_branch: Option<String>,
@@ -30,9 +34,13 @@ pub struct MrsListParams {
     pub search: Option<String>,
     #[schemars(description = "Filter by draft status (true/false)")]
     pub draft: Option<bool>,
-    #[schemars(description = "Scope: \"created_by_me\", \"assigned_to_me\", \"reviews_for_me\", or \"all\" (default: \"all\")")]
+    #[schemars(
+        description = "Scope: \"created_by_me\", \"assigned_to_me\", \"reviews_for_me\", or \"all\" (default: \"all\")"
+    )]
     pub scope: Option<String>,
-    #[schemars(description = "Order by: \"created_at\", \"updated_at\", \"merged_at\", \"title\" (default: \"created_at\")")]
+    #[schemars(
+        description = "Order by: \"created_at\", \"updated_at\", \"merged_at\", \"title\" (default: \"created_at\")"
+    )]
     pub order_by: Option<String>,
     #[schemars(description = "Sort direction: \"asc\" or \"desc\" (default: \"desc\")")]
     pub sort: Option<String>,
@@ -72,7 +80,9 @@ pub async fn mrs_list(client: &GitlabClient, p: MrsListParams) -> Result<Value, 
 pub struct MrGetParams {
     #[schemars(description = "Project ID or URL-encoded path")]
     pub project_id: String,
-    #[schemars(description = "Merge request internal ID (IID) — the number shown in the GitLab UI")]
+    #[schemars(
+        description = "Merge request internal ID (IID) — the number shown in the GitLab UI"
+    )]
     pub merge_request_iid: u64,
 }
 

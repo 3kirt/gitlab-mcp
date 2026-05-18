@@ -14,7 +14,9 @@ fn encode_branch_name(branch: &str) -> String {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct BranchesListParams {
-    #[schemars(description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")")]
+    #[schemars(
+        description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")"
+    )]
     pub project_id: String,
     #[schemars(description = "Return branches with names matching this re2 regular expression")]
     pub regex: Option<String>,
@@ -24,7 +26,10 @@ pub struct BranchesListParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn branches_list(client: &GitlabClient, p: BranchesListParams) -> Result<Value, GitlabError> {
+pub async fn branches_list(
+    client: &GitlabClient,
+    p: BranchesListParams,
+) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/branches",
         encode_project_id(&p.project_id)
@@ -70,11 +75,17 @@ pub struct BranchCreateParams {
     #[schemars(description = "New branch name")]
     pub branch: String,
     #[serde(rename = "ref")]
-    #[schemars(rename = "ref", description = "Source branch name or commit SHA to branch from")]
+    #[schemars(
+        rename = "ref",
+        description = "Source branch name or commit SHA to branch from"
+    )]
     pub source_ref: String,
 }
 
-pub async fn branch_create(client: &GitlabClient, p: BranchCreateParams) -> Result<Value, GitlabError> {
+pub async fn branch_create(
+    client: &GitlabClient,
+    p: BranchCreateParams,
+) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/branches",
         encode_project_id(&p.project_id)
@@ -94,11 +105,16 @@ pub async fn branch_create(client: &GitlabClient, p: BranchCreateParams) -> Resu
 pub struct BranchDeleteParams {
     #[schemars(description = "Project ID or URL-encoded path")]
     pub project_id: String,
-    #[schemars(description = "Branch name to delete (cannot delete default or protected branches)")]
+    #[schemars(
+        description = "Branch name to delete (cannot delete default or protected branches)"
+    )]
     pub branch: String,
 }
 
-pub async fn branch_delete(client: &GitlabClient, p: BranchDeleteParams) -> Result<(), GitlabError> {
+pub async fn branch_delete(
+    client: &GitlabClient,
+    p: BranchDeleteParams,
+) -> Result<(), GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/branches/{}",
         encode_project_id(&p.project_id),
