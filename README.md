@@ -6,7 +6,7 @@ Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Crea
 
 - **Full CRUD** — create, read, update, and delete GitLab resources
 - **Two transports** — stdio (local subprocess) or HTTP (remote/shared)
-- **Issues, Merge Requests & Branches** — full CRUD plus merge, draft, and branch management support
+- **Eight domains** — Issues, Merge Requests, Branches, Pipelines, Jobs, Commits, Repository Files, and Repositories
 
 ---
 
@@ -47,6 +47,15 @@ cargo install --path .
 ```
 
 Installs the `gitlab-mcp` binary to `$CARGO_HOME/bin` (typically `~/.cargo/bin`).
+
+### Docker
+
+```sh
+docker build -t gitlab-mcp .
+docker run -e GITLAB_URL=https://gitlab.com -p 8080:8080 gitlab-mcp
+```
+
+The container defaults to HTTP transport on port 8080. See [Remote MCP](#remote-mcp-http-transport) for client setup.
 
 ---
 
@@ -137,10 +146,16 @@ claude mcp add --transport stdio --scope project \
 
 gitlab-mcp can run as a remote MCP server over the Streamable HTTP transport. Each session authenticates with its own GitLab personal access token via an `Authorization: Bearer` header — no server-side token is configured.
 
-### Running from the binary
+### Running the server
 
+**Binary:**
 ```sh
 GITLAB_URL=https://gitlab.com gitlab-mcp --listen 0.0.0.0:8080
+```
+
+**Docker:**
+```sh
+docker run -e GITLAB_URL=https://gitlab.com -p 8080:8080 gitlab-mcp
 ```
 
 ### Registering with Claude Code (HTTP)
@@ -164,38 +179,113 @@ claude mcp add --transport http \
 
 ## Available tools
 
-All tools accept `project_id` as either a numeric ID (e.g. `42`) or a URL-encoded namespace path (e.g. `mygroup%2Fmyproject`).
+All tools accept `project_id` as either a numeric ID (`42`) or a namespace path (`mygroup/myrepo`). List operations support `page`/`per_page` pagination.
 
 ### Issues
 
-| Tool | Method | Description |
-|---|---|---|
-| `gitlab_issues_list` | GET | List issues for a project. Filters: `state`, `labels`, `search`, `scope`, `assignee_id`, `author_id`, `order_by`, `sort`. Paginate with `page`/`per_page`. |
-| `gitlab_issues_get` | GET | Get a single issue by project ID and issue IID. |
-| `gitlab_issues_create` | POST | Create a new issue. Required: `project_id`, `title`. Optional: `description`, `labels`, `assignee_ids`, `milestone_id`, `due_date`. |
-| `gitlab_issues_update` | PUT | Update an existing issue. Use `state_event: "close"` or `"reopen"` to change state. |
-| `gitlab_issues_delete` | DELETE | Permanently delete an issue. Requires Maintainer role or higher. |
+| Tool | Description |
+|---|---|
+| `gitlab_issues_list` | List issues. Filters: `state`, `labels`, `search`, `scope`, `assignee_id`, `author_id`. |
+| `gitlab_issues_get` | Get a single issue by IID. |
+| `gitlab_issues_create` | Create an issue (`title` required). |
+| `gitlab_issues_update` | Update an issue. Use `state_event: "close"` or `"reopen"` to change state. |
+| `gitlab_issues_delete` | Delete an issue (Maintainer role required). |
 
 ### Merge Requests
 
-| Tool | Method | Description |
-|---|---|---|
-| `gitlab_mrs_list` | GET | List merge requests for a project. Filters: `state`, `source_branch`, `target_branch`, `author_id`, `assignee_id`, `reviewer_id`, `labels`, `search`, `draft`, `scope`, `order_by`, `sort`. Paginate with `page`/`per_page`. |
-| `gitlab_mrs_get` | GET | Get a single merge request by project ID and MR IID. |
-| `gitlab_mrs_create` | POST | Create a new merge request. Required: `project_id`, `source_branch`, `target_branch`, `title`. Optional: `description`, `assignee_id`, `reviewer_ids`, `labels`, `milestone_id`, `squash`, `remove_source_branch`, `draft`. |
-| `gitlab_mrs_update` | PUT | Update an existing merge request. Use `state_event: "close"` or `"reopen"` to change state; `draft: true/false` to toggle draft status. |
-| `gitlab_mrs_delete` | DELETE | Permanently delete a merge request. Requires Maintainer role or higher. |
-| `gitlab_mrs_merge` | PUT | Accept and merge a merge request. Optional: `merge_commit_message`, `squash`, `should_remove_source_branch`, `merge_when_pipeline_succeeds`. |
+| Tool | Description |
+|---|---|
+| `gitlab_mrs_list` | List MRs. Filters: `state`, `source_branch`, `target_branch`, `draft`, `labels`, `scope`. |
+| `gitlab_mrs_get` | Get a single MR by IID. |
+| `gitlab_mrs_create` | Create an MR (`source_branch`, `target_branch`, `title` required). |
+| `gitlab_mrs_update` | Update an MR. Use `state_event` to close/reopen; `draft` to toggle draft status. |
+| `gitlab_mrs_delete` | Delete an MR (Maintainer role required). |
+| `gitlab_mrs_merge` | Accept and merge an MR. |
 
 ### Branches
 
-| Tool | Method | Description |
-|---|---|---|
-| `gitlab_branches_list` | GET | List branches for a project, sorted alphabetically. Optional: `search` (substring), `regex` (re2 pattern). Paginate with `page`/`per_page`. |
-| `gitlab_branches_get` | GET | Get a single branch by name. Returns commit details and protection status. |
-| `gitlab_branches_create` | POST | Create a new branch. Required: `project_id`, `branch` (new name), `ref` (source branch or commit SHA). |
-| `gitlab_branches_delete` | DELETE | Delete a branch by name. Cannot delete default or protected branches. |
-| `gitlab_branches_delete_merged` | DELETE | Delete all branches that have been merged into the default branch (protected branches are excluded). |
+| Tool | Description |
+|---|---|
+| `gitlab_branches_list` | List branches. Optional `search` (substring) or `regex` filter. |
+| `gitlab_branches_get` | Get a branch with commit details and protection status. |
+| `gitlab_branches_create` | Create a branch from a source branch or commit SHA. |
+| `gitlab_branches_delete` | Delete a branch (protected branches excluded). |
+| `gitlab_branches_delete_merged` | Delete all merged branches (protected branches excluded). |
+
+### Pipelines
+
+| Tool | Description |
+|---|---|
+| `gitlab_pipelines_list` | List pipelines. Filters: `status`, `source`, `ref`, `sha`. |
+| `gitlab_pipelines_get` | Get a single pipeline by ID. |
+| `gitlab_pipelines_get_latest` | Get the latest pipeline for a ref. |
+| `gitlab_pipelines_get_variables` | List variables for a pipeline. |
+| `gitlab_pipelines_get_test_report` | Get the full test report for a pipeline. |
+| `gitlab_pipelines_get_test_report_summary` | Get a summary of the test report. |
+| `gitlab_pipelines_create` | Trigger a new pipeline on a ref. |
+| `gitlab_pipelines_retry` | Retry failed jobs in a pipeline. |
+| `gitlab_pipelines_cancel` | Cancel all running jobs in a pipeline. |
+| `gitlab_pipelines_delete` | Delete a pipeline. |
+| `gitlab_pipelines_update_metadata` | Update pipeline metadata (e.g. name). |
+
+### Jobs
+
+| Tool | Description |
+|---|---|
+| `gitlab_jobs_list` | List jobs for a project. |
+| `gitlab_jobs_list_for_pipeline` | List jobs for a specific pipeline. |
+| `gitlab_jobs_list_bridges` | List bridge (trigger) jobs for a pipeline. |
+| `gitlab_jobs_get` | Get a single job by ID. |
+| `gitlab_jobs_get_trace` | Get the raw log output for a job. |
+| `gitlab_jobs_cancel` | Cancel a running job. |
+| `gitlab_jobs_retry` | Retry a failed or canceled job. |
+| `gitlab_jobs_erase` | Erase a job's artifacts and trace. |
+| `gitlab_jobs_play` | Trigger a manual job. |
+
+### Commits
+
+| Tool | Description |
+|---|---|
+| `gitlab_commits_list` | List commits for a branch or path. |
+| `gitlab_commits_create` | Create a commit with multiple file actions. |
+| `gitlab_commits_get` | Get a single commit by SHA. |
+| `gitlab_commits_diff` | Get the diff for a commit. |
+| `gitlab_commits_refs` | List branches and tags a commit belongs to. |
+| `gitlab_commits_sequence` | Check if one commit is an ancestor of another. |
+| `gitlab_commits_cherry_pick` | Cherry-pick a commit onto a branch. |
+| `gitlab_commits_revert` | Revert a commit. |
+| `gitlab_commits_comments_list` | List comments on a commit. |
+| `gitlab_commits_comment_create` | Add a comment to a commit. |
+| `gitlab_commits_discussions_list` | List threaded discussions on a commit. |
+| `gitlab_commits_statuses_list` | List CI statuses for a commit. |
+| `gitlab_commits_status_set` | Set a CI status on a commit. |
+| `gitlab_commits_merge_requests` | List MRs that include a commit. |
+| `gitlab_commits_signature` | Get the GPG/SSH signature for a commit. |
+
+### Repository Files
+
+| Tool | Description |
+|---|---|
+| `gitlab_file_get` | Get file content and metadata at a ref. |
+| `gitlab_file_raw` | Get raw file content at a ref. |
+| `gitlab_file_blame` | Get blame information for a file. |
+| `gitlab_file_create` | Create a new file with a commit message. |
+| `gitlab_file_update` | Update an existing file with a commit message. |
+| `gitlab_file_delete` | Delete a file with a commit message. |
+
+### Repositories
+
+| Tool | Description |
+|---|---|
+| `gitlab_repo_tree` | List files and directories at a path. |
+| `gitlab_repo_blob_get` | Get a blob by SHA (metadata + content). |
+| `gitlab_repo_blob_raw` | Get raw blob content by SHA. |
+| `gitlab_repo_compare` | Compare two refs (diff, commits, diffs). |
+| `gitlab_repo_contributors` | List repository contributors. |
+| `gitlab_repo_merge_base` | Find the common ancestor of two refs. |
+| `gitlab_repo_changelog_get` | Get the changelog for a version. |
+| `gitlab_repo_changelog_add` | Generate and commit a changelog entry. |
+| `gitlab_repo_health` | Check repository health status. |
 
 ---
 
