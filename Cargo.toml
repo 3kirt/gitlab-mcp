@@ -32,6 +32,9 @@ url = "2"
 clap = { version = "4", features = ["derive"] }
 tokio-util = "0.7"
 
+[dev-dependencies]
+wiremock = "0.6"
+
 [profile.release]
 lto = true
 opt-level = "z"

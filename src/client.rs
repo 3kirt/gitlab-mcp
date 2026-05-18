@@ -150,6 +150,12 @@ impl GitlabClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use wiremock::matchers::{body_json, header, method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn mock_client(server: &MockServer) -> GitlabClient {
+        GitlabClient::new(server.uri(), "test-token").unwrap()
+    }
 
     fn api_err(status: StatusCode, body: &str) -> GitlabError {
         GitlabError::Api { status, body: body.to_string() }
@@ -189,5 +195,203 @@ mod tests {
         assert!(msg.contains("(truncated)"));
         // Result must be valid UTF-8 (would panic on display if not)
         let _ = msg.len();
+    }
+
+    // --- HTTP behaviour tests (wiremock) ---
+
+    #[tokio::test]
+    async fn get_sends_private_token_header() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects"))
+            .and(header("PRIVATE-TOKEN", "test-token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server)
+            .await;
+
+        let result = mock_client(&server).get("/api/v4/projects").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn get_returns_parsed_json() {
+        let server = MockServer::start().await;
+        let body = serde_json::json!({"id": 1, "title": "Test"});
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/1/issues/1"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body.clone()))
+            .mount(&server)
+            .await;
+
+        let result = mock_client(&server).get("/api/v4/projects/1/issues/1").await.unwrap();
+        assert_eq!(result, body);
+    }
+
+    #[tokio::test]
+    async fn get_maps_error_status_and_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/99/issues/1"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+
+        let err = mock_client(&server).get("/api/v4/projects/99/issues/1").await.unwrap_err();
+        match err {
+            GitlabError::Api { status, body } => {
+                assert_eq!(status, StatusCode::NOT_FOUND);
+                assert_eq!(body, "Not found");
+            }
+            other => panic!("expected GitlabError::Api, got {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_with_params_sends_query_params() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/1/issues"))
+            .and(query_param("state", "opened"))
+            .and(query_param("page", "2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server)
+            .await;
+
+        let params = &[("state", "opened".to_string()), ("page", "2".to_string())];
+        let result = mock_client(&server).get_with_params("/api/v4/projects/1/issues", params).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn post_sends_json_body_and_returns_response() {
+        let server = MockServer::start().await;
+        let req_body = serde_json::json!({"title": "New Issue"});
+        Mock::given(method("POST"))
+            .and(path("/api/v4/projects/1/issues"))
+            .and(body_json(req_body.clone()))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({"iid": 5})))
+            .mount(&server)
+            .await;
+
+        let result = mock_client(&server).post("/api/v4/projects/1/issues", &req_body).await.unwrap();
+        assert_eq!(result["iid"], 5);
+    }
+
+    #[tokio::test]
+    async fn put_sends_json_body_and_returns_response() {
+        let server = MockServer::start().await;
+        let req_body = serde_json::json!({"title": "Updated"});
+        Mock::given(method("PUT"))
+            .and(path("/api/v4/projects/1/issues/1"))
+            .and(body_json(req_body.clone()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"title": "Updated"})))
+            .mount(&server)
+            .await;
+
+        let result = mock_client(&server).put("/api/v4/projects/1/issues/1", &req_body).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn handle_response_204_no_content_returns_null() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/api/v4/projects/1/issues/1"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+
+        let result = mock_client(&server)
+            .put("/api/v4/projects/1/issues/1", &serde_json::json!({}))
+            .await
+            .unwrap();
+        assert_eq!(result, Value::Null);
+    }
+
+    #[tokio::test]
+    async fn delete_success_returns_unit() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/api/v4/projects/1/issues/1"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+
+        let result = mock_client(&server).delete("/api/v4/projects/1/issues/1").await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn delete_error_returns_api_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/api/v4/projects/1/issues/99"))
+            .respond_with(ResponseTemplate::new(403).set_body_string("Forbidden"))
+            .mount(&server)
+            .await;
+
+        let err = mock_client(&server).delete("/api/v4/projects/1/issues/99").await.unwrap_err();
+        match err {
+            GitlabError::Api { status, body } => {
+                assert_eq!(status, StatusCode::FORBIDDEN);
+                assert_eq!(body, "Forbidden");
+            }
+            other => panic!("expected GitlabError::Api, got {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn delete_with_body_sends_json_body() {
+        let server = MockServer::start().await;
+        let req_body = serde_json::json!({"branch": "old-feature"});
+        Mock::given(method("DELETE"))
+            .and(path("/api/v4/projects/1/repository/merged_branches"))
+            .and(body_json(req_body.clone()))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+
+        let result = mock_client(&server)
+            .delete_with_body("/api/v4/projects/1/repository/merged_branches", &req_body)
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn get_text_returns_raw_text() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/1/repository/files/README/raw"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("# Hello"))
+            .mount(&server)
+            .await;
+
+        let result = mock_client(&server)
+            .get_text("/api/v4/projects/1/repository/files/README/raw", &[])
+            .await
+            .unwrap();
+        assert_eq!(result, "# Hello");
+    }
+
+    #[tokio::test]
+    async fn get_text_error_returns_api_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/1/repository/files/MISSING/raw"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("File not found"))
+            .mount(&server)
+            .await;
+
+        let err = mock_client(&server)
+            .get_text("/api/v4/projects/1/repository/files/MISSING/raw", &[])
+            .await
+            .unwrap_err();
+        match err {
+            GitlabError::Api { status, body } => {
+                assert_eq!(status, StatusCode::NOT_FOUND);
+                assert_eq!(body, "File not found");
+            }
+            other => panic!("expected GitlabError::Api, got {other}"),
+        }
     }
 }
