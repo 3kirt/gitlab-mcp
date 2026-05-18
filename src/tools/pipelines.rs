@@ -85,7 +85,7 @@ pub async fn pipeline_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -134,7 +134,7 @@ pub async fn pipeline_get_latest(
         encode_project_id(&p.project_id)
     );
     let params = QueryBuilder::new().opt("ref", p.ref_).into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -158,7 +158,7 @@ pub async fn pipeline_get_variables(
         encode_project_id(&p.project_id),
         p.pipeline_id
     );
-    client.list(&path, &[]).await
+    client.get_with_params(&path, &[]).await
 }
 
 // --------------------------------------------------------------------------

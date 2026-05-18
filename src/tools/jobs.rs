@@ -38,7 +38,7 @@ pub async fn job_list(client: &GitlabClient, p: JobListParams) -> Result<Value, 
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -76,7 +76,7 @@ pub async fn job_list_for_pipeline(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -111,7 +111,7 @@ pub async fn job_list_bridges(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -156,7 +156,7 @@ pub async fn job_get_trace(
         encode_project_id(&p.project_id),
         p.job_id
     );
-    client.get_text(&path).await
+    client.get_text(&path, &[]).await
 }
 
 // --------------------------------------------------------------------------

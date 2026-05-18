@@ -51,7 +51,7 @@ let is_local = url.starts_with("http://localhost") || url.starts_with("http://12
 
 Fix: parse with `url::Url` (already a dependency) and compare `host_str()` exactly against `"localhost"` / `"127.0.0.1"`, or require the following char to be `:`, `/`, or end-of-string.
 
-## 4. Merge `get_text` and `get_text_with_params`
+## ~~4. Merge `get_text` and `get_text_with_params`~~ ✓
 
 [src/client.rs:103-128](src/client.rs#L103-L128) has two near-identical methods. `get_text` is `get_text_with_params(path, &[])`. Collapse to one method.
 
@@ -59,7 +59,7 @@ Fix: parse with `url::Url` (already a dependency) and compare `host_str()` exact
 
 [src/tools/mod.rs:99-150](src/tools/mod.rs#L99-L150) — `delegate_list!`, `delegate_get!`, `delegate_create!`, `delegate_update!`, `delegate_delete!` only differ by verb. Collapse to one parameterized macro plus a separate `delegate_delete!` (which has a different success branch).
 
-## 6. Rename or restructure `GitlabClient::list`
+## ~~6. Rename or restructure `GitlabClient::list`~~ ✓
 
 Several callers use `client.list(...)` for endpoints that return a single object, not a list:
 

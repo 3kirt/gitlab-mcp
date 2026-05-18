@@ -55,7 +55,7 @@ pub async fn repo_tree_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -105,7 +105,7 @@ pub async fn repo_blob_raw(
         encode_project_id(&p.project_id),
         p.sha
     );
-    let content = client.get_text(&path).await?;
+    let content = client.get_text(&path, &[]).await?;
     Ok(json!({"content": content}))
 }
 
@@ -144,7 +144,7 @@ pub async fn repo_compare(
         .opt("straight", p.straight)
         .opt("unidiff", p.unidiff)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -184,7 +184,7 @@ pub async fn repo_contributors_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -210,7 +210,7 @@ pub async fn repo_merge_base(
         encode_project_id(&p.project_id)
     );
     let params: Vec<(&str, String)> = p.refs.into_iter().map(|r| ("refs[]", r)).collect();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -258,7 +258,7 @@ pub async fn repo_changelog_get(
         .opt("trailer", p.trailer)
         .opt("date", p.date)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -340,5 +340,5 @@ pub async fn repo_health(client: &GitlabClient, p: RepoHealthParams) -> Result<V
     let params = QueryBuilder::new()
         .opt("generate", p.generate)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }

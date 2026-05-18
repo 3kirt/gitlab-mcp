@@ -33,7 +33,7 @@ pub async fn file_get(client: &GitlabClient, p: FileGetParams) -> Result<Value, 
     let params = QueryBuilder::new()
         .opt("ref", Some(p.ref_name))
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -66,7 +66,7 @@ pub async fn file_raw(client: &GitlabClient, p: FileRawParams) -> Result<Value, 
         .opt("ref", p.ref_name)
         .opt("lfs", p.lfs)
         .into_params();
-    let content = client.get_text_with_params(&path, &params).await?;
+    let content = client.get_text(&path, &params).await?;
     Ok(json!({"content": content}))
 }
 
@@ -103,7 +103,7 @@ pub async fn file_blame(client: &GitlabClient, p: FileBlameParams) -> Result<Val
         .opt("range[start]", p.range_start)
         .opt("range[end]", p.range_end)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------

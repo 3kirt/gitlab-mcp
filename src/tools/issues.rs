@@ -57,7 +57,7 @@ pub async fn issues_list(client: &GitlabClient, p: IssuesListParams) -> Result<V
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------

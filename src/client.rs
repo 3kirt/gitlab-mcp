@@ -79,7 +79,7 @@ impl GitlabClient {
     }
 
     /// GET {base_url}{path}?{params} — returns the JSON response body.
-    pub async fn list(&self, path: &str, params: &[(&str, String)]) -> Result<Value, GitlabError> {
+    pub async fn get_with_params(&self, path: &str, params: &[(&str, String)]) -> Result<Value, GitlabError> {
         let url = self.url(path);
         let resp = self.http.get(&url).query(params).send().await?;
         self.handle_response(resp).await
@@ -99,24 +99,8 @@ impl GitlabClient {
         self.handle_response(resp).await
     }
 
-    /// GET {base_url}{path} — returns the raw text response body (for non-JSON endpoints).
-    pub async fn get_text(&self, path: &str) -> Result<String, GitlabError> {
-        let url = self.url(path);
-        let resp = self.http.get(&url).send().await?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(GitlabError::Api { status, body });
-        }
-        Ok(resp.text().await?)
-    }
-
     /// GET {base_url}{path}?{params} — returns the raw text response body (for non-JSON endpoints).
-    pub async fn get_text_with_params(
-        &self,
-        path: &str,
-        params: &[(&str, String)],
-    ) -> Result<String, GitlabError> {
+    pub async fn get_text(&self, path: &str, params: &[(&str, String)]) -> Result<String, GitlabError> {
         let url = self.url(path);
         let resp = self.http.get(&url).query(params).send().await?;
         let status = resp.status();

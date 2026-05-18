@@ -61,7 +61,7 @@ pub async fn commits_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -184,7 +184,7 @@ pub async fn commit_get(client: &GitlabClient, p: CommitGetParams) -> Result<Val
     let params = QueryBuilder::new()
         .opt("stats", p.stats)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -217,7 +217,7 @@ pub async fn commit_refs(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -246,7 +246,7 @@ pub async fn commit_sequence(
     let params = QueryBuilder::new()
         .opt("first_parent", p.first_parent)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -342,7 +342,7 @@ pub async fn commit_diff(
     let params = QueryBuilder::new()
         .opt("unidiff", p.unidiff)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -372,7 +372,7 @@ pub async fn commit_comments_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -440,7 +440,7 @@ pub async fn commit_discussions_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -495,7 +495,7 @@ pub async fn commit_statuses_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -575,7 +575,7 @@ pub async fn commit_merge_requests(
     let params = QueryBuilder::new()
         .opt("state", p.state)
         .into_params();
-    client.list(&path, &params).await
+    client.get_with_params(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
