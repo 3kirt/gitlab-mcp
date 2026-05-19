@@ -17,6 +17,7 @@ use crate::client::{GitlabClient, PaginationMeta};
 
 pub mod branches;
 pub mod commits;
+pub mod discussions;
 pub mod issues;
 pub mod jobs;
 pub mod merge_requests;
@@ -924,6 +925,96 @@ impl GitlabMcpServer {
         Parameters(p): Parameters<repository_files::FileDeleteParams>,
     ) -> Result<CallToolResult, McpError> {
         delegate_delete!(self, repository_files::file_delete, p, "file")
+    }
+
+    #[tool(
+        description = "List all discussion threads on a GitLab merge request. Each thread contains an individual_note flag and a notes[] array. Paginate with page and per_page."
+    )]
+    async fn gitlab_mrs_discussions_list(
+        &self,
+        Parameters(p): Parameters<discussions::MrDiscussionsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, discussions::mr_discussions_list, p, "MR discussions")
+    }
+
+    #[tool(
+        description = "Get a single discussion thread on a GitLab merge request by discussion ID (hex string)."
+    )]
+    async fn gitlab_mrs_discussions_get(
+        &self,
+        Parameters(p): Parameters<discussions::MrDiscussionGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, discussions::mr_discussion_get, p, "MR discussion")
+    }
+
+    #[tool(
+        description = "Start a new discussion thread on a GitLab merge request. Required: project_id, merge_request_iid, body. Optional: commit_id (pin to commit SHA). Advanced diff-note position: position_base_sha, position_head_sha, position_start_sha, position_type (\"text\"/\"image\"/\"file\"), position_new_path, position_old_path, position_new_line, position_old_line."
+    )]
+    async fn gitlab_mrs_discussions_create(
+        &self,
+        Parameters(p): Parameters<discussions::MrDiscussionCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, discussions::mr_discussion_create, p, "MR discussion")
+    }
+
+    #[tool(
+        description = "Resolve or unresolve a discussion thread on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, resolved (true to resolve, false to unresolve). Requires Developer role or being the change author."
+    )]
+    async fn gitlab_mrs_discussions_resolve(
+        &self,
+        Parameters(p): Parameters<discussions::MrDiscussionResolveParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(
+            self,
+            discussions::mr_discussion_resolve,
+            p,
+            "MR discussion"
+        )
+    }
+
+    #[tool(
+        description = "Add a reply note to an existing discussion thread on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, body. Optional: created_at (ISO 8601)."
+    )]
+    async fn gitlab_mrs_discussions_note_create(
+        &self,
+        Parameters(p): Parameters<discussions::MrDiscussionNoteCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(
+            self,
+            discussions::mr_discussion_note_create,
+            p,
+            "MR discussion note"
+        )
+    }
+
+    #[tool(
+        description = "Update a note in a GitLab merge request discussion thread. Required: project_id, merge_request_iid, discussion_id, note_id. Provide exactly one of: body (new text) or resolved (true/false)."
+    )]
+    async fn gitlab_mrs_discussions_note_update(
+        &self,
+        Parameters(p): Parameters<discussions::MrDiscussionNoteUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(
+            self,
+            discussions::mr_discussion_note_update,
+            p,
+            "MR discussion note"
+        )
+    }
+
+    #[tool(
+        description = "Delete a note from a GitLab merge request discussion thread. Required: project_id, merge_request_iid, discussion_id, note_id. This action is permanent."
+    )]
+    async fn gitlab_mrs_discussions_note_delete(
+        &self,
+        Parameters(p): Parameters<discussions::MrDiscussionNoteDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(
+            self,
+            discussions::mr_discussion_note_delete,
+            p,
+            "MR discussion note"
+        )
     }
 }
 

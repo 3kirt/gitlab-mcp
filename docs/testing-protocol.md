@@ -1,6 +1,6 @@
 # GitLab MCP Testing Protocol
 
-This document describes how to verify all Issues, Branches, Merge Requests, and Repository/Files API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`).
+This document describes how to verify all Issues, Branches, Merge Requests, MR Discussions, and Repository/Files API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`).
 
 **Automated coverage (not retested here):** `encode_project_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, and cross-resource consistency.
 
@@ -91,6 +91,19 @@ Check these on every response.
 | `commit_id` | Non-empty SHA |
 | `last_commit_id` | Non-empty SHA |
 
+**MR discussions:**
+
+| Property | What to verify |
+|---|---|
+| `id` | Non-empty hex string (discussion ID) |
+| `individual_note` | `true` or `false`, never `null` |
+| `notes` | Non-empty array |
+| `notes[].id` | Positive integer (note ID) |
+| `notes[].body` | Non-empty string |
+| `notes[].author` | Collapsed to `{id, username, name}` in list responses |
+| `notes[].resolvable` | `true` or `false` |
+| List envelope shape | Standard pagination envelope; invariants apply to each entry in `items` |
+
 ---
 
 ## Seed Data
@@ -177,6 +190,18 @@ After seeding: 5 issues total; 3 opened; 2 closed. Record each `iid`.
 | mr-seed-4 | `Feature: add health check endpoint` | `mr-test-merge` | `enhancement` | false | opened (merged in Section 17) |
 
 After seeding: 4 MRs; 3 opened; 1 closed. Record each `iid`.
+
+### Step 6: Seed an MR Discussion
+
+Create a plain (non-diff) discussion on mr-seed-1 to serve as a stable seed for Sections 31–36:
+```
+gitlab_mrs_discussions_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  body="Seeded review comment for discussion testing."
+)
+```
+Record `id` as `disc-seed-1` and `notes[0].id` as `note-seed-1`.
 
 ---
 
@@ -951,6 +976,155 @@ Returns success.
 
 ---
 
+## Section 31: MR Discussions — List
+
+### 31.1 List all discussions
+```
+gitlab_mrs_discussions_list(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid of mr-seed-1>)
+```
+Returns an envelope with at least 1 item (the seeded disc-seed-1). Each item satisfies MR discussion universal invariants.
+
+### 31.2 Paginate discussions
+```
+gitlab_mrs_discussions_list(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid of mr-seed-1>, per_page=1, page=1)
+```
+`items` contains exactly 1 discussion. Envelope reports `page == 1`, `per_page == 1`.
+
+---
+
+## Section 32: MR Discussions — Get
+
+### 32.1 Get the seeded discussion
+```
+gitlab_mrs_discussions_get(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  discussion_id=<disc-seed-1>
+)
+```
+`id == disc-seed-1`, `notes[0].body == "Seeded review comment for discussion testing."`, `notes[0].id == note-seed-1`.
+
+---
+
+## Section 33: MR Discussions — Create
+
+### 33.1 Create a top-level comment
+```
+gitlab_mrs_discussions_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  body="Top-level comment for create testing."
+)
+```
+`notes[0].body == "Top-level comment for create testing."`, `notes[0].resolvable == false`. Record `id` as `disc-create-1` for use in Sections 35–37.
+
+### 33.2 Create a diff note with position params
+
+First get the diff refs from the MR that has actual code changes:
+```
+gitlab_mrs_get(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid of mr-seed-4>)
+```
+Record `diff_refs.base_sha`, `diff_refs.head_sha`, `diff_refs.start_sha`.
+
+Then create a diff note on the added file:
+```
+gitlab_mrs_discussions_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-4>,
+  body="Inline comment on feature.txt.",
+  position_base_sha=<base_sha>,
+  position_head_sha=<head_sha>,
+  position_start_sha=<start_sha>,
+  position_new_path="testing/feature.txt",
+  position_new_line=1
+)
+```
+`notes[0].resolvable == true`. `position_type` defaults to `"text"` in the assembled body. Record `id` as `disc-diff-1`.
+
+---
+
+## Section 34: MR Discussions — Resolve
+
+Uses the resolvable diff discussion `disc-diff-1` created in Section 33.2.
+
+### 34.1 Resolve a thread
+```
+gitlab_mrs_discussions_resolve(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-4>,
+  discussion_id=<disc-diff-1>,
+  resolved=true
+)
+```
+Returned `notes[0].resolved == true`.
+
+### 34.2 Unresolve a thread
+```
+gitlab_mrs_discussions_resolve(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-4>,
+  discussion_id=<disc-diff-1>,
+  resolved=false
+)
+```
+Returned `notes[0].resolved == false`.
+
+> Non-diff (plain) discussions have `notes[0].resolvable == false`; attempting to resolve them returns a `400` error from GitLab. Only diff notes are resolvable.
+
+---
+
+## Section 35: MR Discussions — Note Create
+
+Operates on `disc-create-1` from Section 33.1.
+
+### 35.1 Add a reply note
+```
+gitlab_mrs_discussions_note_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  discussion_id=<disc-create-1>,
+  body="Reply note for testing."
+)
+```
+Returns a note object with `body == "Reply note for testing."`, `id` is a positive integer. Record this `id` as `note-reply-1`.
+
+The parent discussion now has 2 notes: a `gitlab_mrs_discussions_get` call returns `notes` with 2 entries.
+
+---
+
+## Section 36: MR Discussions — Note Update
+
+Operates on `note-reply-1` from Section 35.
+
+### 36.1 Update note body
+```
+gitlab_mrs_discussions_note_update(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  discussion_id=<disc-create-1>,
+  note_id=<note-reply-1>,
+  body="Updated reply text."
+)
+```
+Returned `body == "Updated reply text."`.
+
+---
+
+## Section 37: MR Discussions — Note Delete
+
+### 37.1 Delete the reply note
+```
+gitlab_mrs_discussions_note_delete(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  discussion_id=<disc-create-1>,
+  note_id=<note-reply-1>
+)
+```
+Returns a success text message. A subsequent `gitlab_mrs_discussions_get` on `disc-create-1` returns only 1 note (the original).
+
+---
+
 ## Cross-Tool Workflows
 
 ### Workflow A: Issue lifecycle (create → update → delete)
@@ -988,4 +1162,13 @@ Returns success.
 2. `gitlab_repo_merge_base(..., refs=["main", "mr-test-merge"])` — record merge base `id`
 3. Verify: merge base `id` differs from the commit on `mr-test-merge` (it has commits ahead of the base)
 4. `gitlab_repo_contributors(..., order_by="commits", sort="desc")` — top contributor has ≥ 3 commits (seed Steps 1a, 1b, 3)
+
+### Workflow F: Discussion lifecycle (create → reply → resolve → delete)
+1. `gitlab_mrs_discussions_list(..., merge_request_iid=<iid of mr-seed-1>)` — confirms seeded disc-seed-1 is present
+2. `gitlab_mrs_discussions_create(..., merge_request_iid=<iid of mr-seed-1>, body="Workflow F thread.")` — record `id` as `disc-wf`
+3. `gitlab_mrs_discussions_note_create(..., discussion_id=<disc-wf>, body="Reply to workflow F.")` — record returned `id` as `note-wf`
+4. `gitlab_mrs_discussions_get(..., discussion_id=<disc-wf>)` — confirm `notes` has 2 entries
+5. `gitlab_mrs_discussions_note_update(..., note_id=<note-wf>, body="Edited reply.")` — confirm `body == "Edited reply."`
+6. `gitlab_mrs_discussions_note_delete(..., note_id=<note-wf>)` — confirm success message
+7. `gitlab_mrs_discussions_get(..., discussion_id=<disc-wf>)` — confirm `notes` has 1 entry (original thread-starter only)
 
