@@ -11,11 +11,11 @@ const STRIP_ALWAYS: &[&str] = &[
 /// Additional fields stripped from each item in a list response.
 /// These are expensive in bulk but available on demand via single-get endpoints.
 const STRIP_LIST_ITEM: &[&str] = &[
-    "description",    // can be 0–100 KB; use gitlab_issues_get / gitlab_mrs_get when needed
-    "pipeline",       // 2–5 KB per MR; use gitlab_pipelines_get
-    "head_pipeline",  // same
-    "diff_stats",     // addition/deletion counts; use single-get if needed
-    "time_stats",     // nearly always zeros; use single-get if needed
+    "description",   // can be 0–100 KB; use gitlab_issues_get / gitlab_mrs_get when needed
+    "pipeline",      // 2–5 KB per MR; use gitlab_pipelines_get
+    "head_pipeline", // same
+    "diff_stats",    // addition/deletion counts; use single-get if needed
+    "time_stats",    // nearly always zeros; use single-get if needed
 ];
 
 /// Keys kept when collapsing a GitLab user object.

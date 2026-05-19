@@ -42,7 +42,9 @@ pub struct MrsListParams {
         description = "Scope: \"created_by_me\", \"assigned_to_me\", \"reviews_for_me\", or \"all\" (default: \"all\")"
     )]
     pub scope: Option<String>,
-    #[schemars(description = "Return only MRs created after this datetime (ISO 8601, e.g. \"2024-01-01T00:00:00Z\")")]
+    #[schemars(
+        description = "Return only MRs created after this datetime (ISO 8601, e.g. \"2024-01-01T00:00:00Z\")"
+    )]
     pub created_after: Option<String>,
     #[schemars(description = "Return only MRs created before this datetime (ISO 8601)")]
     pub created_before: Option<String>,

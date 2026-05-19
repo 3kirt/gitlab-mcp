@@ -30,7 +30,9 @@ pub struct IssuesListParams {
     pub assignee_id: Option<u64>,
     #[schemars(description = "Filter by author user ID")]
     pub author_id: Option<u64>,
-    #[schemars(description = "Return only issues created after this datetime (ISO 8601, e.g. \"2024-01-01T00:00:00Z\")")]
+    #[schemars(
+        description = "Return only issues created after this datetime (ISO 8601, e.g. \"2024-01-01T00:00:00Z\")"
+    )]
     pub created_after: Option<String>,
     #[schemars(description = "Return only issues created before this datetime (ISO 8601)")]
     pub created_before: Option<String>,
