@@ -14,7 +14,9 @@ pub struct IssueNotesListParams {
     pub project_id: String,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
-    #[schemars(description = "Order by: \"created_at\" or \"updated_at\" (default: \"created_at\")")]
+    #[schemars(
+        description = "Order by: \"created_at\" or \"updated_at\" (default: \"created_at\")"
+    )]
     pub order_by: Option<String>,
     #[schemars(description = "Sort direction: \"asc\" or \"desc\" (default: \"desc\")")]
     pub sort: Option<String>,
@@ -76,7 +78,9 @@ pub struct IssueNoteCreateParams {
     pub issue_iid: u64,
     #[schemars(description = "Content of the note (Markdown supported)")]
     pub body: String,
-    #[schemars(description = "Set note creation time (ISO 8601); requires administrator or Owner role")]
+    #[schemars(
+        description = "Set note creation time (ISO 8601); requires administrator or Owner role"
+    )]
     pub created_at: Option<String>,
 }
 

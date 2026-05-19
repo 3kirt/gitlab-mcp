@@ -187,6 +187,18 @@ Pagination fields are populated from GitLab's `X-*` response headers. `total` an
 | `gitlab_mrs_delete` | Delete an MR (Maintainer role required). |
 | `gitlab_mrs_merge` | Accept and merge an MR. |
 
+#### MR Discussions
+
+| Tool | Description |
+|---|---|
+| `gitlab_mrs_discussions_list` | List discussion threads on an MR. Each thread has an `individual_note` flag and a `notes[]` array. |
+| `gitlab_mrs_discussions_get` | Get a single discussion thread by discussion ID (hex string). |
+| `gitlab_mrs_discussions_create` | Start a new discussion thread (`body` required). Supports optional diff-note position params for inline code review comments. |
+| `gitlab_mrs_discussions_resolve` | Resolve or unresolve a discussion thread (`resolved: true/false`). Requires Developer role or being the change author. |
+| `gitlab_mrs_discussions_note_create` | Add a reply note to an existing discussion thread. |
+| `gitlab_mrs_discussions_note_update` | Update a note body or resolved state (provide exactly one of `body` or `resolved`). |
+| `gitlab_mrs_discussions_note_delete` | Delete a note from a discussion thread (permanent). |
+
 ### Branches
 
 | Tool | Description |

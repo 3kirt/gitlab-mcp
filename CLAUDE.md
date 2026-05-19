@@ -51,6 +51,10 @@ MCP client → rmcp transport (stdio)
 
 **`src/tools/branches.rs`** — Branches domain module. Follows the same pattern as `issues.rs`. Implements list, get, create, delete, and delete-merged operations. Branch names containing slashes are percent-encoded via a module-local `encode_branch_name()` helper.
 
+**`src/tools/discussions.rs`** — MR Discussions domain module. Implements list, get, create, resolve, note-create, note-update, and note-delete. The `build_position()` helper assembles the nested `position` object for diff notes from flat params, returning `None` when no position fields are set.
+
+**`src/tools/issue_notes.rs`** — Issue Notes domain module. Implements list, get, create, update, and delete for notes on issues.
+
 **`src/config.rs`** — loads `~/.gitlab_mcp.json`; env vars `GITLAB_URL` / `GITLAB_TOKEN` take precedence. Rejects world-readable config files on Unix. Enforces HTTPS (localhost/127.0.0.1 exempted).
 
 ### Adding a new API domain
@@ -65,4 +69,4 @@ All GitLab endpoints are project-scoped. The `project_id` field accepts either a
 
 ## Testing
 
-End-to-end tool verification is documented in [`docs/testing-protocol.md`](docs/testing-protocol.md). It covers seed data setup, per-tool test cases, cross-tool workflows, and error-handling checks for Issues, Branches, and Merge Requests against the test project `3kirt1/gitlab-mcp-testing`.
+End-to-end tool verification is documented in [`docs/testing-protocol.md`](docs/testing-protocol.md). It covers seed data setup, per-tool test cases, cross-tool workflows, and error-handling checks for Issues, Issue Notes, Branches, Merge Requests, MR Discussions, and Repository/Files endpoints against the test project `3kirt1/gitlab-mcp-testing`.

@@ -299,9 +299,7 @@ impl GitlabMcpServer {
         delegate_list!(self, issue_notes::issue_notes_list, p, "issue notes")
     }
 
-    #[tool(
-        description = "Get a single note on a GitLab issue by note ID."
-    )]
+    #[tool(description = "Get a single note on a GitLab issue by note ID.")]
     async fn gitlab_issues_notes_get(
         &self,
         Parameters(p): Parameters<issue_notes::IssueNoteGetParams>,
