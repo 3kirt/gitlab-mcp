@@ -1,8 +1,30 @@
 use std::time::Duration;
 
 use reqwest::{Client, StatusCode, header};
+use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
+
+/// Pagination headers extracted from a GitLab list response.
+///
+/// GitLab omits `X-Total` and `X-Total-Pages` on large endpoints, and omits
+/// `X-Next-Page` on the last page, so all fields are optional.
+#[derive(Debug, Default, Serialize)]
+pub struct PaginationMeta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub per_page: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_pages: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_page: Option<u64>,
+}
+
+/// Result type for list endpoints — JSON body plus pagination metadata.
+pub type ListResult = Result<(Value, PaginationMeta), GitlabError>;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -89,6 +111,27 @@ impl GitlabClient {
         self.handle_response(resp).await
     }
 
+    /// GET {base_url}{path}?{params} for list endpoints — returns the JSON body
+    /// together with pagination metadata extracted from the `X-*` response headers.
+    pub async fn list(&self, path: &str, params: &[(&str, String)]) -> ListResult {
+        let url = self.url(path);
+        let resp = self.http.get(&url).query(params).send().await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(GitlabError::Api { status, body });
+        }
+        let meta = PaginationMeta {
+            page: parse_pagination_header(resp.headers(), "x-page"),
+            per_page: parse_pagination_header(resp.headers(), "x-per-page"),
+            total: parse_pagination_header(resp.headers(), "x-total"),
+            total_pages: parse_pagination_header(resp.headers(), "x-total-pages"),
+            next_page: parse_pagination_header(resp.headers(), "x-next-page"),
+        };
+        let body: Value = resp.json().await?;
+        Ok((body, meta))
+    }
+
     /// POST {base_url}{path} with a JSON body — returns the JSON response body.
     pub async fn post(&self, path: &str, body: &Value) -> Result<Value, GitlabError> {
         let url = self.url(path);
@@ -153,6 +196,13 @@ impl GitlabClient {
         }
         Ok(resp.json().await?)
     }
+}
+
+fn parse_pagination_header(headers: &header::HeaderMap, name: &str) -> Option<u64> {
+    headers
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse().ok())
 }
 
 #[cfg(test)]
@@ -421,6 +471,82 @@ mod tests {
             GitlabError::Api { status, body } => {
                 assert_eq!(status, StatusCode::NOT_FOUND);
                 assert_eq!(body, "File not found");
+            }
+            other => panic!("expected GitlabError::Api, got {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn list_extracts_pagination_headers() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/1/issues"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("x-page", "2")
+                    .insert_header("x-per-page", "20")
+                    .insert_header("x-total", "49")
+                    .insert_header("x-total-pages", "3")
+                    .insert_header("x-next-page", "3")
+                    .set_body_json(serde_json::json!([])),
+            )
+            .mount(&server)
+            .await;
+
+        let (body, meta) = mock_client(&server)
+            .list("/api/v4/projects/1/issues", &[])
+            .await
+            .unwrap();
+        assert_eq!(body, serde_json::json!([]));
+        assert_eq!(meta.page, Some(2));
+        assert_eq!(meta.per_page, Some(20));
+        assert_eq!(meta.total, Some(49));
+        assert_eq!(meta.total_pages, Some(3));
+        assert_eq!(meta.next_page, Some(3));
+    }
+
+    #[tokio::test]
+    async fn list_handles_absent_total_headers() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/1/issues"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("x-page", "1")
+                    .insert_header("x-per-page", "100")
+                    .set_body_json(serde_json::json!([])),
+            )
+            .mount(&server)
+            .await;
+
+        let (_, meta) = mock_client(&server)
+            .list("/api/v4/projects/1/issues", &[])
+            .await
+            .unwrap();
+        assert_eq!(meta.page, Some(1));
+        assert_eq!(meta.per_page, Some(100));
+        assert_eq!(meta.total, None);
+        assert_eq!(meta.total_pages, None);
+        assert_eq!(meta.next_page, None);
+    }
+
+    #[tokio::test]
+    async fn list_error_returns_api_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/99/issues"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+
+        let err = mock_client(&server)
+            .list("/api/v4/projects/99/issues", &[])
+            .await
+            .unwrap_err();
+        match err {
+            GitlabError::Api { status, body } => {
+                assert_eq!(status, StatusCode::NOT_FOUND);
+                assert_eq!(body, "Not found");
             }
             other => panic!("expected GitlabError::Api, got {other}"),
         }

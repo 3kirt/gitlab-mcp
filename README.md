@@ -141,7 +141,20 @@ claude mcp add --transport stdio --scope project \
 
 ## Available tools
 
-All tools accept `project_id` as either a numeric ID (`42`) or a namespace path (`mygroup/myrepo`). List operations support `page`/`per_page` pagination.
+All tools accept `project_id` as either a numeric ID (`42`) or a namespace path (`mygroup/myrepo`).
+
+List operations support `page`/`per_page` pagination and return an envelope:
+```json
+{
+  "items": [ /* slimmed records */ ],
+  "page": 2,
+  "per_page": 20,
+  "total": 49,
+  "total_pages": 3,
+  "next_page": 3
+}
+```
+Pagination fields are populated from GitLab's `X-*` response headers. `total` and `total_pages` are omitted by GitLab on large endpoints; `next_page` is omitted on the last page. Use the presence of `next_page` to detect "more results exist."
 
 ### Issues
 

@@ -12,7 +12,9 @@ The following behaviors apply across all sections. They are not re-stated per se
 
 **Numeric project IDs** — `encode_project_id` is unit-tested. Run one live smoke test at the start of any section using `project_id="82279422"` instead of the path form. No need to repeat the numeric-ID variant in every section.
 
-**Empty results** — Any search, filter, or regex with no matches returns `[]`; no error. Not retested per section.
+**List response shape** — Every list endpoint returns an envelope object: `{ "items": [...], "page", "per_page", "total", "total_pages", "next_page" }`. The pagination fields are populated from GitLab's `X-*` response headers and any field GitLab omits (e.g. `X-Total` on large endpoints, `X-Next-Page` on the last page) is omitted from the envelope. Item-level invariants in the tables below apply to entries in `items`.
+
+**Empty results** — Any search, filter, or regex with no matches returns `{"items": []}` (plus whatever pagination fields GitLab populates); no error. Not retested per section.
 
 **Pagination** — Covered in Section 6 (issues). The same `page`/`per_page` logic applies to all list endpoints; not retested per domain.
 
@@ -36,7 +38,7 @@ Check these on every response.
 | `state` present | Never absent or `null` |
 | `title` present | Non-empty string |
 | `web_url` present | Non-empty URL |
-| List is an array | Not an object |
+| List envelope shape | `{items: [...], page, per_page, total?, total_pages?, next_page?}` — invariants apply to each entry in `items` |
 | Delete confirmation | Success text message, not a JSON object |
 | `description` absent from lists | Stripped by list slimming; present on single-get responses |
 | `_links` / `references` absent | Stripped from all responses (list and get) |
@@ -60,7 +62,7 @@ Check these on every response.
 | `merged` | `true` or `false`, never `null` |
 | `protected` | `true` or `false`, never `null` |
 | `web_url` | Non-empty URL |
-| List is an array | Not an object |
+| List envelope shape | `{items: [...], page, per_page, total?, total_pages?, next_page?}` — invariants apply to each entry in `items` |
 | Delete confirmation | Success text message, not a JSON object |
 
 **Repository tree entries:**
@@ -72,7 +74,7 @@ Check these on every response.
 | `type` | `"blob"` or `"tree"` |
 | `path` | Non-empty string |
 | `mode` | Non-empty string |
-| List is an array | Not an object |
+| List envelope shape | `{items: [...], page, per_page, total?, total_pages?, next_page?}` — invariants apply to each entry in `items` |
 
 **Repository files (GET):**
 
@@ -354,19 +356,19 @@ Tested on issues; the same logic applies to all list endpoints.
 ```
 gitlab_issues_list(project_id="3kirt1/gitlab-mcp-testing", state="all", per_page=2, page=1)
 ```
-Returns exactly 2 issues.
+`items` contains exactly 2 issues. Envelope reports `page == 1`, `per_page == 2`, and `next_page == 2`.
 
 ### 6.2 Second page
 ```
 gitlab_issues_list(project_id="3kirt1/gitlab-mcp-testing", state="all", per_page=2, page=2)
 ```
-Returns the next 2 issues; no overlap with page 1.
+`items` contains the next 2 issues; no overlap with page 1. Envelope reports `page == 2`.
 
 ### 6.3 Beyond last page
 ```
 gitlab_issues_list(project_id="3kirt1/gitlab-mcp-testing", state="all", per_page=2, page=99)
 ```
-Returns `[]`; no error.
+`items == []`; no error. Envelope omits `next_page` (no further pages).
 
 ---
 

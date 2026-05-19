@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::client::{GitlabClient, GitlabError};
+use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{PaginationParams, QueryBuilder, encode_path_segment, encode_project_id};
 
 // --------------------------------------------------------------------------
@@ -22,10 +22,7 @@ pub struct BranchesListParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn branches_list(
-    client: &GitlabClient,
-    p: BranchesListParams,
-) -> Result<Value, GitlabError> {
+pub async fn branches_list(client: &GitlabClient, p: BranchesListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/branches",
         encode_project_id(&p.project_id)
@@ -36,7 +33,7 @@ pub async fn branches_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.get_with_params(&path, &params).await
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------

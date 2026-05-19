@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::client::{GitlabClient, GitlabError};
+use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
 
 // --------------------------------------------------------------------------
@@ -26,7 +26,7 @@ pub struct JobListParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn job_list(client: &GitlabClient, p: JobListParams) -> Result<Value, GitlabError> {
+pub async fn job_list(client: &GitlabClient, p: JobListParams) -> ListResult {
     let path = format!("/api/v4/projects/{}/jobs", encode_project_id(&p.project_id));
     let params = QueryBuilder::new()
         .multi("scope[]", p.scope)
@@ -35,7 +35,7 @@ pub async fn job_list(client: &GitlabClient, p: JobListParams) -> Result<Value, 
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.get_with_params(&path, &params).await
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -61,7 +61,7 @@ pub struct JobListForPipelineParams {
 pub async fn job_list_for_pipeline(
     client: &GitlabClient,
     p: JobListForPipelineParams,
-) -> Result<Value, GitlabError> {
+) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/pipelines/{}/jobs",
         encode_project_id(&p.project_id),
@@ -73,7 +73,7 @@ pub async fn job_list_for_pipeline(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.get_with_params(&path, &params).await
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -94,10 +94,7 @@ pub struct JobListBridgesParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn job_list_bridges(
-    client: &GitlabClient,
-    p: JobListBridgesParams,
-) -> Result<Value, GitlabError> {
+pub async fn job_list_bridges(client: &GitlabClient, p: JobListBridgesParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/pipelines/{}/bridges",
         encode_project_id(&p.project_id),
@@ -108,7 +105,7 @@ pub async fn job_list_bridges(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.get_with_params(&path, &params).await
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------

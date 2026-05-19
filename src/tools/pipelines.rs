@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::client::{GitlabClient, GitlabError};
+use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
 
 // --------------------------------------------------------------------------
@@ -59,10 +59,7 @@ pub struct PipelineListParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn pipeline_list(
-    client: &GitlabClient,
-    p: PipelineListParams,
-) -> Result<Value, GitlabError> {
+pub async fn pipeline_list(client: &GitlabClient, p: PipelineListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/pipelines",
         encode_project_id(&p.project_id)
@@ -85,7 +82,7 @@ pub async fn pipeline_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.get_with_params(&path, &params).await
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -147,18 +144,24 @@ pub struct PipelineGetVariablesParams {
     pub project_id: String,
     #[schemars(description = "Pipeline ID")]
     pub pipeline_id: u64,
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 pub async fn pipeline_get_variables(
     client: &GitlabClient,
     p: PipelineGetVariablesParams,
-) -> Result<Value, GitlabError> {
+) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/pipelines/{}/variables",
         encode_project_id(&p.project_id),
         p.pipeline_id
     );
-    client.get_with_params(&path, &[]).await
+    let params = QueryBuilder::new()
+        .opt("page", p.pagination.page)
+        .opt("per_page", p.pagination.per_page)
+        .into_params();
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------

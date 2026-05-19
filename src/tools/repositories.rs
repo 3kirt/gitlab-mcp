@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::client::{GitlabClient, GitlabError};
+use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
 
 // --------------------------------------------------------------------------
@@ -38,10 +38,7 @@ pub struct RepoTreeListParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn repo_tree_list(
-    client: &GitlabClient,
-    p: RepoTreeListParams,
-) -> Result<Value, GitlabError> {
+pub async fn repo_tree_list(client: &GitlabClient, p: RepoTreeListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/tree",
         encode_project_id(&p.project_id)
@@ -55,7 +52,7 @@ pub async fn repo_tree_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.get_with_params(&path, &params).await
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -172,7 +169,7 @@ pub struct RepoContributorsListParams {
 pub async fn repo_contributors_list(
     client: &GitlabClient,
     p: RepoContributorsListParams,
-) -> Result<Value, GitlabError> {
+) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/contributors",
         encode_project_id(&p.project_id)
@@ -184,7 +181,7 @@ pub async fn repo_contributors_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.get_with_params(&path, &params).await
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------

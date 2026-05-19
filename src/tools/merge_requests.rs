@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::client::{GitlabClient, GitlabError};
+use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
 
 fn default_true() -> bool {
@@ -62,7 +62,7 @@ pub struct MrsListParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn mrs_list(client: &GitlabClient, p: MrsListParams) -> Result<Value, GitlabError> {
+pub async fn mrs_list(client: &GitlabClient, p: MrsListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/merge_requests",
         encode_project_id(&p.project_id)
@@ -87,7 +87,7 @@ pub async fn mrs_list(client: &GitlabClient, p: MrsListParams) -> Result<Value, 
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.get_with_params(&path, &params).await
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::client::{GitlabClient, GitlabError};
+use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
 
 // --------------------------------------------------------------------------
@@ -50,7 +50,7 @@ pub struct IssuesListParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn issues_list(client: &GitlabClient, p: IssuesListParams) -> Result<Value, GitlabError> {
+pub async fn issues_list(client: &GitlabClient, p: IssuesListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/issues",
         encode_project_id(&p.project_id)
@@ -71,7 +71,7 @@ pub async fn issues_list(client: &GitlabClient, p: IssuesListParams) -> Result<V
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.get_with_params(&path, &params).await
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------

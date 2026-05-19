@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::client::{GitlabClient, GitlabError};
+use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
     BodyBuilder, PaginationParams, QueryBuilder, encode_path_segment, encode_project_id,
 };
@@ -46,10 +46,7 @@ pub struct CommitsListParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn commits_list(
-    client: &GitlabClient,
-    p: CommitsListParams,
-) -> Result<Value, GitlabError> {
+pub async fn commits_list(client: &GitlabClient, p: CommitsListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/commits",
         encode_project_id(&p.project_id)
@@ -69,7 +66,7 @@ pub async fn commits_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.get_with_params(&path, &params).await
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -209,7 +206,7 @@ pub struct CommitRefsParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn commit_refs(client: &GitlabClient, p: CommitRefsParams) -> Result<Value, GitlabError> {
+pub async fn commit_refs(client: &GitlabClient, p: CommitRefsParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/refs",
         encode_project_id(&p.project_id),
@@ -220,7 +217,7 @@ pub async fn commit_refs(client: &GitlabClient, p: CommitRefsParams) -> Result<V
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.get_with_params(&path, &params).await
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -331,16 +328,22 @@ pub struct CommitDiffParams {
     pub sha: String,
     #[schemars(description = "If true, use unified diff format (default: false)")]
     pub unidiff: Option<bool>,
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
-pub async fn commit_diff(client: &GitlabClient, p: CommitDiffParams) -> Result<Value, GitlabError> {
+pub async fn commit_diff(client: &GitlabClient, p: CommitDiffParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/diff",
         encode_project_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
-    let params = QueryBuilder::new().opt("unidiff", p.unidiff).into_params();
-    client.get_with_params(&path, &params).await
+    let params = QueryBuilder::new()
+        .opt("unidiff", p.unidiff)
+        .opt("page", p.pagination.page)
+        .opt("per_page", p.pagination.per_page)
+        .into_params();
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -360,7 +363,7 @@ pub struct CommitCommentsListParams {
 pub async fn commit_comments_list(
     client: &GitlabClient,
     p: CommitCommentsListParams,
-) -> Result<Value, GitlabError> {
+) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/comments",
         encode_project_id(&p.project_id),
@@ -370,7 +373,7 @@ pub async fn commit_comments_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.get_with_params(&path, &params).await
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -428,7 +431,7 @@ pub struct CommitDiscussionsListParams {
 pub async fn commit_discussions_list(
     client: &GitlabClient,
     p: CommitDiscussionsListParams,
-) -> Result<Value, GitlabError> {
+) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/discussions",
         encode_project_id(&p.project_id),
@@ -438,7 +441,7 @@ pub async fn commit_discussions_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.get_with_params(&path, &params).await
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -476,7 +479,7 @@ pub struct CommitStatusesListParams {
 pub async fn commit_statuses_list(
     client: &GitlabClient,
     p: CommitStatusesListParams,
-) -> Result<Value, GitlabError> {
+) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/statuses",
         encode_project_id(&p.project_id),
@@ -493,7 +496,7 @@ pub async fn commit_statuses_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.get_with_params(&path, &params).await
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------
@@ -557,19 +560,25 @@ pub struct CommitMergeRequestsParams {
     pub sha: String,
     #[schemars(description = "Filter by state: \"opened\", \"closed\", \"locked\", or \"merged\"")]
     pub state: Option<String>,
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 pub async fn commit_merge_requests(
     client: &GitlabClient,
     p: CommitMergeRequestsParams,
-) -> Result<Value, GitlabError> {
+) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/merge_requests",
         encode_project_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
-    let params = QueryBuilder::new().opt("state", p.state).into_params();
-    client.get_with_params(&path, &params).await
+    let params = QueryBuilder::new()
+        .opt("state", p.state)
+        .opt("page", p.pagination.page)
+        .opt("per_page", p.pagination.per_page)
+        .into_params();
+    client.list(&path, &params).await
 }
 
 // --------------------------------------------------------------------------

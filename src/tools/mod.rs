@@ -9,11 +9,11 @@ use rmcp::{
     service::RequestContext,
     tool, tool_handler, tool_router,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
-use crate::client::GitlabClient;
+use crate::client::{GitlabClient, PaginationMeta};
 
 pub mod branches;
 pub mod commits;
@@ -45,9 +45,19 @@ pub fn json_result(v: Value) -> Result<CallToolResult, McpError> {
     Ok(CallToolResult::success(vec![Content::text(text)]))
 }
 
-pub fn json_list_result(v: Value) -> Result<CallToolResult, McpError> {
-    let v = slim::slim_list(v);
-    let text = serde_json::to_string_pretty(&v)
+#[derive(Serialize)]
+struct ListEnvelope {
+    items: Value,
+    #[serde(flatten)]
+    meta: PaginationMeta,
+}
+
+pub fn json_list_result(v: Value, meta: PaginationMeta) -> Result<CallToolResult, McpError> {
+    let envelope = ListEnvelope {
+        items: slim::slim_list(v),
+        meta,
+    };
+    let text = serde_json::to_string_pretty(&envelope)
         .map_err(|e| McpError::internal_error(format!("marshalling response: {e}"), None))?;
     Ok(CallToolResult::success(vec![Content::text(text)]))
 }
@@ -153,7 +163,7 @@ macro_rules! delegate_list {
     ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {{
         let client = $self.get_client()?;
         match $domain_fn(client, $p).await {
-            Ok(v) => json_list_result(v),
+            Ok((v, meta)) => json_list_result(v, meta),
             Err(e) => tool_error(&format!("listing {}: {}", $noun, e.to_tool_message())),
         }
     }};
@@ -458,7 +468,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get the diff introduced by a specific commit. Optional: unidiff (use unified diff format, default false)."
+        description = "Get the diff introduced by a specific commit. Optional: unidiff (use unified diff format, default false), page, per_page."
     )]
     async fn gitlab_commits_diff(
         &self,
@@ -521,7 +531,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List merge requests that introduced a specific commit. Optional: state (opened/closed/locked/merged)."
+        description = "List merge requests that introduced a specific commit. Optional: state (opened/closed/locked/merged), page, per_page."
     )]
     async fn gitlab_commits_merge_requests(
         &self,
@@ -574,7 +584,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List variables defined on a specific GitLab pipeline run. Returns key/value pairs used when the pipeline was triggered."
+        description = "List variables defined on a specific GitLab pipeline run. Returns key/value pairs used when the pipeline was triggered. Paginate with page and per_page."
     )]
     async fn gitlab_pipelines_get_variables(
         &self,
@@ -1068,5 +1078,79 @@ mod tests {
     fn query_builder_multi_none_omits() {
         let params = QueryBuilder::new().multi("labels[]", None).into_params();
         assert!(params.is_empty());
+    }
+
+    // json_list_result
+
+    fn parse_result(result: Result<CallToolResult, McpError>) -> Value {
+        let result = result.unwrap();
+        let text = &result.content[0].as_text().unwrap().text;
+        serde_json::from_str(text).unwrap()
+    }
+
+    #[test]
+    fn json_list_result_includes_all_meta_fields_when_present() {
+        let meta = PaginationMeta {
+            page: Some(2),
+            per_page: Some(20),
+            total: Some(49),
+            total_pages: Some(3),
+            next_page: Some(3),
+        };
+        let v = parse_result(json_list_result(json!([{"iid": 1}, {"iid": 2}]), meta));
+        assert_eq!(v["items"], json!([{"iid": 1}, {"iid": 2}]));
+        assert_eq!(v["page"], json!(2));
+        assert_eq!(v["per_page"], json!(20));
+        assert_eq!(v["total"], json!(49));
+        assert_eq!(v["total_pages"], json!(3));
+        assert_eq!(v["next_page"], json!(3));
+    }
+
+    #[test]
+    fn json_list_result_omits_absent_meta_fields() {
+        let v = parse_result(json_list_result(json!([]), PaginationMeta::default()));
+        assert_eq!(v["items"], json!([]));
+        assert!(v.get("page").is_none());
+        assert!(v.get("per_page").is_none());
+        assert!(v.get("total").is_none());
+        assert!(v.get("total_pages").is_none());
+        assert!(v.get("next_page").is_none());
+    }
+
+    #[test]
+    fn json_list_result_partial_meta_only_includes_present_fields() {
+        // GitLab omits x-total / x-total-pages on large endpoints; meta should mirror that.
+        let meta = PaginationMeta {
+            page: Some(1),
+            per_page: Some(100),
+            total: None,
+            total_pages: None,
+            next_page: Some(2),
+        };
+        let v = parse_result(json_list_result(json!([]), meta));
+        assert_eq!(v["page"], json!(1));
+        assert_eq!(v["per_page"], json!(100));
+        assert_eq!(v["next_page"], json!(2));
+        assert!(v.get("total").is_none());
+        assert!(v.get("total_pages").is_none());
+    }
+
+    #[test]
+    fn json_list_result_slims_items() {
+        // slim_list strips description, _links, etc. from each item.
+        let v = parse_result(json_list_result(
+            json!([{
+                "iid": 1,
+                "title": "x",
+                "description": "long",
+                "_links": {"self": "https://example.com"},
+            }]),
+            PaginationMeta::default(),
+        ));
+        let item = &v["items"][0];
+        assert_eq!(item["iid"], json!(1));
+        assert_eq!(item["title"], json!("x"));
+        assert!(item.get("description").is_none());
+        assert!(item.get("_links").is_none());
     }
 }
