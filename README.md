@@ -5,7 +5,6 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that co
 Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Create a merge request from feature-branch to main"*, or *"Close MR #42"* — the server translates them into real GitLab API calls and returns structured results.
 
 - **Full CRUD** — create, read, update, and delete GitLab resources
-- **Two transports** — stdio (local subprocess) or HTTP (remote/shared)
 - **Eight domains** — Issues, Merge Requests, Branches, Pipelines, Jobs, Commits, Repository Files, and Repositories
 
 ---
@@ -18,7 +17,6 @@ Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Crea
 - [Client setup](#client-setup)
   - [Claude Desktop](#claude-desktop)
   - [Claude Code](#claude-code)
-- [Remote MCP (HTTP transport)](#remote-mcp-http-transport)
 - [Available tools](#available-tools)
 - [Development](#development)
 
@@ -52,10 +50,8 @@ Installs the `gitlab-mcp` binary to `$CARGO_HOME/bin` (typically `~/.cargo/bin`)
 
 ```sh
 docker build -t gitlab-mcp .
-docker run -e GITLAB_URL=https://gitlab.com -p 8080:8080 gitlab-mcp
+docker run -e GITLAB_URL=https://gitlab.com -e GITLAB_TOKEN=your-personal-access-token gitlab-mcp
 ```
-
-The container defaults to HTTP transport on port 8080. See [Remote MCP](#remote-mcp-http-transport) for client setup.
 
 ---
 
@@ -139,41 +135,6 @@ claude mcp add --transport stdio --scope project \
   --env GITLAB_URL=https://gitlab.com \
   gitlab -- gitlab-mcp
 ```
-
----
-
-## Remote MCP (HTTP transport)
-
-gitlab-mcp can run as a remote MCP server over the Streamable HTTP transport. Each session authenticates with its own GitLab personal access token via an `Authorization: Bearer` header — no server-side token is configured.
-
-### Running the server
-
-**Binary:**
-```sh
-GITLAB_URL=https://gitlab.com gitlab-mcp --listen 0.0.0.0:8080
-```
-
-**Docker:**
-```sh
-docker run -e GITLAB_URL=https://gitlab.com -p 8080:8080 gitlab-mcp
-```
-
-### Registering with Claude Code (HTTP)
-
-```sh
-claude mcp add --transport http \
-  --header "Authorization: Bearer your-personal-access-token" \
-  gitlab https://gitlab-mcp.example.com/mcp
-```
-
-### Health endpoints
-
-| Endpoint | Purpose | Success response |
-|---|---|---|
-| `GET /healthz` | Liveness — server is running | `{"status":"ok","version":"..."}` |
-| `GET /readyz` | Readiness — GitLab hostname resolves | HTTP 200 |
-
-> **TLS note:** The HTTP listener does not terminate TLS. In production, place it behind a reverse proxy (nginx, Caddy) or a platform that provides HTTPS.
 
 ---
 

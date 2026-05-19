@@ -1,6 +1,5 @@
 mod client;
 mod config;
-mod server;
 mod tools;
 
 use std::path::PathBuf;
@@ -16,11 +15,6 @@ struct Args {
     /// Path to the configuration file (default: ~/.gitlab_mcp.json)
     #[arg(long)]
     config: Option<PathBuf>,
-
-    /// Address to listen on for HTTP transport (e.g. 0.0.0.0:8080).
-    /// When omitted, the server runs in stdio transport mode.
-    #[arg(long)]
-    listen: Option<String>,
 }
 
 #[tokio::main]
@@ -34,20 +28,15 @@ async fn main() -> anyhow::Result<()> {
 
     let cfg = config::Config::load(args.config.as_deref())?;
     let url = cfg.resolve_url()?;
+    let token = cfg.resolve_token()?;
 
-    if let Some(listen) = args.listen {
-        info!(mode = "http", listen = %listen, gitlab_url = %url, "starting gitlab-mcp");
-        server::http::run(&listen, url).await?;
-    } else {
-        let token = cfg.resolve_token()?;
-        info!(mode = "stdio", gitlab_url = %url, "starting gitlab-mcp");
-        let server = tools::GitlabMcpServer::new_stdio(url, token)?;
-        server
-            .serve(rmcp::transport::io::stdio())
-            .await?
-            .waiting()
-            .await?;
-    }
+    info!(mode = "stdio", gitlab_url = %url, "starting gitlab-mcp");
+    let server = tools::GitlabMcpServer::new_stdio(url, token)?;
+    server
+        .serve(rmcp::transport::io::stdio())
+        .await?
+        .waiting()
+        .await?;
 
     Ok(())
 }

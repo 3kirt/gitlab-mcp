@@ -19,7 +19,4 @@ FROM debian:trixie-slim
 
 COPY --from=builder /build/target/release/gitlab-mcp /usr/local/bin/gitlab-mcp
 
-EXPOSE 8080
-
 ENTRYPOINT ["gitlab-mcp"]
-CMD ["--listen", "0.0.0.0:8080"]

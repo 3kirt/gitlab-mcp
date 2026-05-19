@@ -15,27 +15,19 @@ cargo fmt --check                # check formatting without writing
 cargo run -- --help              # show CLI flags
 ```
 
-To run in stdio mode (requires env vars or `~/.gitlab_mcp.json`):
+To run (requires env vars or `~/.gitlab_mcp.json`):
 ```sh
 GITLAB_URL=https://gitlab.com GITLAB_TOKEN=glpat-xxx cargo run
 ```
 
-To run in HTTP mode:
-```sh
-GITLAB_URL=https://gitlab.com cargo run -- --listen 127.0.0.1:8080
-```
-
 ## Architecture
 
-The server supports two transport modes selected at startup:
-
-- **stdio** — token is read from config at startup; `GitlabMcpServer::new_stdio()` initialises the client immediately.
-- **HTTP** — `GitlabMcpServer::new_http()` creates the server without a token; the per-session Bearer token is extracted from the `Authorization` header inside `ServerHandler::initialize()` and used to create a `GitlabClient` stored in an `Arc<OnceLock<GitlabClient>>`.
+The server runs in stdio transport mode. The token is read from config at startup; `GitlabMcpServer::new_stdio()` initialises the client immediately.
 
 ### Request flow
 
 ```
-MCP client → rmcp transport (stdio or Axum/StreamableHTTP)
+MCP client → rmcp transport (stdio)
            → GitlabMcpServer (tool_router macro dispatch)
            → domain function in tools/issues.rs, tools/merge_requests.rs, or tools/branches.rs
            → GitlabClient (reqwest, PRIVATE-TOKEN header)
@@ -47,20 +39,17 @@ MCP client → rmcp transport (stdio or Axum/StreamableHTTP)
 **`src/client.rs`** — thin `reqwest` wrapper. Sends `PRIVATE-TOKEN: <token>` on every request. Methods: `get`, `list` (with query params), `post`, `put`, `delete`. All return `serde_json::Value` so tools pass JSON straight through to the MCP client without intermediate typed structs. `GitlabError::to_tool_message()` truncates API error bodies to 300 chars.
 
 **`src/tools/mod.rs`** — MCP server struct and all glue. Contains:
-- `GitlabMcpServer` struct with `new_stdio` / `new_http` constructors
+- `GitlabMcpServer` struct with `new_stdio` constructor
 - `#[tool_router]` impl block — one `async fn` per tool, each calling a delegation macro
 - Five delegation macros (`delegate_list!`, `delegate_get!`, `delegate_create!`, `delegate_update!`, `delegate_delete!`) that fetch the client, call the domain function, and map the result to `CallToolResult`
 - `QueryBuilder` — fluent helper for building `&[(&str, String)]` query param slices
 - `PaginationParams` — shared `page`/`per_page` struct flattened into list param structs
-- `#[tool_handler] #[prompt_handler] impl ServerHandler` — handles HTTP-mode token injection in `initialize()`
 
 **`src/tools/issues.rs`** — Issues domain module. Each operation has a `*Params` struct (derives `Deserialize` + `JsonSchema`) and an `async fn` that builds the URL path, assembles query params or a JSON body, and calls the appropriate `GitlabClient` method.
 
 **`src/tools/merge_requests.rs`** — Merge Requests domain module. Follows the same pattern as `issues.rs`. Implements list, get, create, update, delete, and merge (accept) operations.
 
 **`src/tools/branches.rs`** — Branches domain module. Follows the same pattern as `issues.rs`. Implements list, get, create, delete, and delete-merged operations. Branch names containing slashes are percent-encoded via a module-local `encode_branch_name()` helper.
-
-**`src/server/http.rs`** — Axum router wrapping `StreamableHttpService`. Middleware enforces a non-empty Bearer header on all routes except `/healthz` and `/readyz`. `/readyz` does a DNS lookup of the configured GitLab host.
 
 **`src/config.rs`** — loads `~/.gitlab_mcp.json`; env vars `GITLAB_URL` / `GITLAB_TOKEN` take precedence. Rejects world-readable config files on Unix. Enforces HTTPS (localhost/127.0.0.1 exempted).
 

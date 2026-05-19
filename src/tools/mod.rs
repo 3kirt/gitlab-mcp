@@ -183,10 +183,7 @@ macro_rules! delegate_delete {
 
 #[derive(Clone)]
 pub struct GitlabMcpServer {
-    /// Shared GitLab client. In HTTP mode this is populated in `initialize()`
-    /// once the per-session bearer token has been extracted from request headers.
     client: Arc<OnceLock<GitlabClient>>,
-    base_url: String,
     #[allow(dead_code)]
     tool_router: ToolRouter<GitlabMcpServer>,
     #[allow(dead_code)]
@@ -194,26 +191,14 @@ pub struct GitlabMcpServer {
 }
 
 impl GitlabMcpServer {
-    /// Create a server with an already-known token (stdio mode).
     pub fn new_stdio(base_url: String, token: String) -> anyhow::Result<Self> {
         let cell = OnceLock::new();
-        let _ = cell.set(GitlabClient::new(base_url.clone(), token)?);
+        let _ = cell.set(GitlabClient::new(base_url, token)?);
         Ok(Self {
             client: Arc::new(cell),
-            base_url,
             tool_router: Self::tool_router(),
             prompt_router: Self::prompt_router(),
         })
-    }
-
-    /// Create a server without a token (HTTP mode — token injected in `initialize()`).
-    pub fn new_http(base_url: String) -> Self {
-        Self {
-            client: Arc::new(OnceLock::new()),
-            base_url,
-            tool_router: Self::tool_router(),
-            prompt_router: Self::prompt_router(),
-        }
     }
 
     fn get_client(&self) -> Result<&GitlabClient, McpError> {
@@ -941,30 +926,8 @@ impl ServerHandler for GitlabMcpServer {
     async fn initialize(
         &self,
         _request: InitializeRequestParams,
-        context: RequestContext<RoleServer>,
+        _context: RequestContext<RoleServer>,
     ) -> Result<InitializeResult, McpError> {
-        // In HTTP mode, extract the bearer token from the request headers and
-        // create the per-session GitlabClient. OnceLock::set is idempotent so
-        // a re-initialize call is a silent no-op rather than a panic.
-        if let Some(parts) = context.extensions.get::<axum::http::request::Parts>()
-            && let Some(token) = parts
-                .headers
-                .get(axum::http::header::AUTHORIZATION)
-                .and_then(|v| v.to_str().ok())
-                .and_then(|v| v.strip_prefix("Bearer "))
-        {
-            match GitlabClient::new(self.base_url.clone(), token) {
-                Ok(client) => {
-                    let _ = self.client.set(client);
-                }
-                Err(e) => {
-                    return Err(McpError::internal_error(
-                        format!("invalid token: {e}"),
-                        None,
-                    ));
-                }
-            }
-        }
         Ok(self.get_info())
     }
 }
