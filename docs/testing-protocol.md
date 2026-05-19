@@ -16,6 +16,8 @@ The following behaviors apply across all sections. They are not re-stated per se
 
 **Pagination** — Covered in Section 6 (issues). The same `page`/`per_page` logic applies to all list endpoints; not retested per domain.
 
+**Response slimming** — List endpoints apply heavy slimming to every item: `description`, `pipeline`, `head_pipeline`, `diff_stats`, `time_stats`, `_links`, and `references` are stripped, null fields are removed, and user objects (`author`, `assignee`, `reviewers`, etc.) are collapsed to `{id, username, name}`. Single-get, create, and update responses apply a lighter pass: only nulls, `_links`, and `references` are removed, and user objects are still collapsed, but `description` and `pipeline` are preserved. Do not expect stripped fields to be present in list responses; use the corresponding single-get endpoint when full detail is needed.
+
 **Verify-after-delete** — Each delete test ends with a get against the deleted resource and expects a `404` error. This is noted inline, not as a separate numbered step.
 
 ---
@@ -36,6 +38,8 @@ Check these on every response.
 | `web_url` present | Non-empty URL |
 | List is an array | Not an object |
 | Delete confirmation | Success text message, not a JSON object |
+| `description` absent from lists | Stripped by list slimming; present on single-get responses |
+| `_links` / `references` absent | Stripped from all responses (list and get) |
 
 **Merge requests only:**
 
@@ -43,7 +47,9 @@ Check these on every response.
 |---|---|
 | `source_branch` | Non-empty string |
 | `target_branch` | Non-empty string |
-| `author` | Object with at least `id` and `username` |
+| `author` in lists | Collapsed to `{id, username, name}` only — no `avatar_url`, `web_url`, `state` |
+| `author` in single-get | Same collapsed form |
+| `pipeline` / `head_pipeline` absent from lists | Stripped by list slimming; present on single-get responses |
 
 **Branches:**
 
@@ -215,6 +221,22 @@ Returns seed-3.
 gitlab_issues_list(project_id="3kirt1/gitlab-mcp-testing", state="all", order_by="created_at", sort="asc")
 ```
 First result is issue #1 (earliest). Each subsequent issue has `created_at >= previous`.
+
+### 1.8 Date range filters
+```
+gitlab_issues_list(project_id="3kirt1/gitlab-mcp-testing", state="all", created_after="2026-01-01T00:00:00Z")
+```
+Returns all seed issues (created after Jan 1 2026). Count ≥ 5.
+
+```
+gitlab_issues_list(project_id="3kirt1/gitlab-mcp-testing", state="all", created_after="2030-01-01T00:00:00Z")
+```
+Returns `[]` (no issues created that far in the future).
+
+```
+gitlab_issues_list(project_id="3kirt1/gitlab-mcp-testing", state="all", created_after="2026-01-01T00:00:00Z", created_before="2030-01-01T00:00:00Z")
+```
+Same result as the first call above; both bounds applied.
 
 ---
 
@@ -475,6 +497,17 @@ Returns mr-seed-2 only; `draft == true`.
 gitlab_mrs_list(project_id="3kirt1/gitlab-mcp-testing", state="all", search="health")
 ```
 Returns mr-seed-4.
+
+### 12.9 Date range filters
+```
+gitlab_mrs_list(project_id="3kirt1/gitlab-mcp-testing", state="all", created_after="2026-01-01T00:00:00Z")
+```
+Returns all seed MRs (created after Jan 1 2026). Count ≥ 4.
+
+```
+gitlab_mrs_list(project_id="3kirt1/gitlab-mcp-testing", state="all", created_after="2030-01-01T00:00:00Z")
+```
+Returns `[]` (no MRs created that far in the future).
 
 ---
 
