@@ -6,6 +6,7 @@ Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Crea
 
 - **Full CRUD** — create, read, update, and delete GitLab resources
 - **Eight domains** — Issues, Merge Requests, Branches, Pipelines, Jobs, Commits, Repository Files, and Repositories
+- **Token-efficient responses** — list results are automatically slimmed (descriptions, pipelines, and other bulk fields stripped); use single-get tools when full detail is needed
 
 ---
 
@@ -146,7 +147,7 @@ All tools accept `project_id` as either a numeric ID (`42`) or a namespace path 
 
 | Tool | Description |
 |---|---|
-| `gitlab_issues_list` | List issues. Filters: `state`, `labels`, `search`, `scope`, `assignee_id`, `author_id`. |
+| `gitlab_issues_list` | List issues. Filters: `state`, `labels`, `search`, `scope`, `assignee_id`, `author_id`, `created_after`/`created_before`, `updated_after`/`updated_before` (ISO 8601). |
 | `gitlab_issues_get` | Get a single issue by IID. |
 | `gitlab_issues_create` | Create an issue (`title` required). |
 | `gitlab_issues_update` | Update an issue. Use `state_event: "close"` or `"reopen"` to change state. |
@@ -156,7 +157,7 @@ All tools accept `project_id` as either a numeric ID (`42`) or a namespace path 
 
 | Tool | Description |
 |---|---|
-| `gitlab_mrs_list` | List MRs. Filters: `state`, `source_branch`, `target_branch`, `draft`, `labels`, `scope`. |
+| `gitlab_mrs_list` | List MRs. Filters: `state`, `source_branch`, `target_branch`, `draft`, `labels`, `scope`, `created_after`/`created_before`, `updated_after`/`updated_before` (ISO 8601). |
 | `gitlab_mrs_get` | Get a single MR by IID. |
 | `gitlab_mrs_create` | Create an MR (`source_branch`, `target_branch`, `title` required). |
 | `gitlab_mrs_update` | Update an MR. Use `state_event` to close/reopen; `draft` to toggle draft status. |
