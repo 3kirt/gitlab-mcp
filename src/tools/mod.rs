@@ -964,12 +964,7 @@ impl GitlabMcpServer {
         &self,
         Parameters(p): Parameters<discussions::MrDiscussionResolveParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_update!(
-            self,
-            discussions::mr_discussion_resolve,
-            p,
-            "MR discussion"
-        )
+        delegate_update!(self, discussions::mr_discussion_resolve, p, "MR discussion")
     }
 
     #[tool(

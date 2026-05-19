@@ -18,10 +18,7 @@ pub struct MrDiscussionsListParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn mr_discussions_list(
-    client: &GitlabClient,
-    p: MrDiscussionsListParams,
-) -> ListResult {
+pub async fn mr_discussions_list(client: &GitlabClient, p: MrDiscussionsListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/merge_requests/{}/discussions",
         encode_project_id(&p.project_id),
@@ -125,10 +122,7 @@ fn build_position(p: &MrDiscussionCreateParams) -> Option<Value> {
     }
     obj.insert(
         "position_type".into(),
-        json!(p
-            .position_type
-            .as_deref()
-            .unwrap_or("text")),
+        json!(p.position_type.as_deref().unwrap_or("text")),
     );
     if let Some(v) = &p.position_new_path {
         obj.insert("new_path".into(), json!(v));
