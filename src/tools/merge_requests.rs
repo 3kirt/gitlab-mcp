@@ -42,6 +42,14 @@ pub struct MrsListParams {
         description = "Scope: \"created_by_me\", \"assigned_to_me\", \"reviews_for_me\", or \"all\" (default: \"all\")"
     )]
     pub scope: Option<String>,
+    #[schemars(description = "Return only MRs created after this datetime (ISO 8601, e.g. \"2024-01-01T00:00:00Z\")")]
+    pub created_after: Option<String>,
+    #[schemars(description = "Return only MRs created before this datetime (ISO 8601)")]
+    pub created_before: Option<String>,
+    #[schemars(description = "Return only MRs updated after this datetime (ISO 8601)")]
+    pub updated_after: Option<String>,
+    #[schemars(description = "Return only MRs updated before this datetime (ISO 8601)")]
+    pub updated_before: Option<String>,
     #[schemars(
         description = "Order by: \"created_at\", \"updated_at\", \"merged_at\", \"title\" (default: \"created_at\")"
     )]
@@ -68,6 +76,10 @@ pub async fn mrs_list(client: &GitlabClient, p: MrsListParams) -> Result<Value, 
         .opt("search", p.search)
         .opt("draft", p.draft)
         .opt("scope", p.scope)
+        .opt("created_after", p.created_after)
+        .opt("created_before", p.created_before)
+        .opt("updated_after", p.updated_after)
+        .opt("updated_before", p.updated_before)
         .opt("order_by", p.order_by)
         .opt("sort", p.sort)
         .opt("page", p.pagination.page)

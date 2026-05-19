@@ -30,6 +30,14 @@ pub struct IssuesListParams {
     pub assignee_id: Option<u64>,
     #[schemars(description = "Filter by author user ID")]
     pub author_id: Option<u64>,
+    #[schemars(description = "Return only issues created after this datetime (ISO 8601, e.g. \"2024-01-01T00:00:00Z\")")]
+    pub created_after: Option<String>,
+    #[schemars(description = "Return only issues created before this datetime (ISO 8601)")]
+    pub created_before: Option<String>,
+    #[schemars(description = "Return only issues updated after this datetime (ISO 8601)")]
+    pub updated_after: Option<String>,
+    #[schemars(description = "Return only issues updated before this datetime (ISO 8601)")]
+    pub updated_before: Option<String>,
     #[schemars(
         description = "Order by: \"created_at\", \"updated_at\", \"title\", \"priority\" (default: \"created_at\")"
     )]
@@ -52,6 +60,10 @@ pub async fn issues_list(client: &GitlabClient, p: IssuesListParams) -> Result<V
         .opt("scope", p.scope)
         .opt("assignee_id", p.assignee_id)
         .opt("author_id", p.author_id)
+        .opt("created_after", p.created_after)
+        .opt("created_before", p.created_before)
+        .opt("updated_after", p.updated_after)
+        .opt("updated_before", p.updated_before)
         .opt("order_by", p.order_by)
         .opt("sort", p.sort)
         .opt("page", p.pagination.page)

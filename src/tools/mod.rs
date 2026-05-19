@@ -23,6 +23,7 @@ pub mod merge_requests;
 pub mod pipelines;
 pub mod repositories;
 pub mod repository_files;
+mod slim;
 
 // --------------------------------------------------------------------------
 // Shared helpers
@@ -38,6 +39,14 @@ pub(crate) struct PaginationParams {
 }
 
 pub fn json_result(v: Value) -> Result<CallToolResult, McpError> {
+    let v = slim::slim_get(v);
+    let text = serde_json::to_string_pretty(&v)
+        .map_err(|e| McpError::internal_error(format!("marshalling response: {e}"), None))?;
+    Ok(CallToolResult::success(vec![Content::text(text)]))
+}
+
+pub fn json_list_result(v: Value) -> Result<CallToolResult, McpError> {
+    let v = slim::slim_list(v);
     let text = serde_json::to_string_pretty(&v)
         .map_err(|e| McpError::internal_error(format!("marshalling response: {e}"), None))?;
     Ok(CallToolResult::success(vec![Content::text(text)]))
@@ -141,9 +150,13 @@ macro_rules! delegate_json {
 }
 
 macro_rules! delegate_list {
-    ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {
-        delegate_json!($self, $domain_fn, $p, "listing", $noun)
-    };
+    ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {{
+        let client = $self.get_client()?;
+        match $domain_fn(client, $p).await {
+            Ok(v) => json_list_result(v),
+            Err(e) => tool_error(&format!("listing {}: {}", $noun, e.to_tool_message())),
+        }
+    }};
 }
 
 macro_rules! delegate_get {
@@ -215,7 +228,7 @@ impl GitlabMcpServer {
 #[tool_router]
 impl GitlabMcpServer {
     #[tool(
-        description = "List issues for a GitLab project. Filters: state (opened/closed/all), labels, search, scope, assignee_id, author_id, order_by, sort. Paginate with page and per_page."
+        description = "List issues for a GitLab project. Filters: state (opened/closed/all), labels, search, scope, assignee_id, author_id, created_after/created_before, updated_after/updated_before (ISO 8601), order_by, sort. Paginate with page and per_page."
     )]
     async fn gitlab_issues_list(
         &self,
@@ -265,7 +278,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List merge requests for a GitLab project. Filters: state (opened/closed/merged/all), source_branch, target_branch, author_id, assignee_id, reviewer_id, labels, search, draft, scope, order_by, sort. Paginate with page and per_page."
+        description = "List merge requests for a GitLab project. Filters: state (opened/closed/merged/all), source_branch, target_branch, author_id, assignee_id, reviewer_id, labels, search, draft, scope, created_after/created_before, updated_after/updated_before (ISO 8601), order_by, sort. Paginate with page and per_page."
     )]
     async fn gitlab_mrs_list(
         &self,
