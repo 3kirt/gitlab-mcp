@@ -1,6 +1,6 @@
 /gitlab-mcp
 TODO.md
-.claude/
+.claude/settings.local.json
 .mcp.json
 .mcp.*.json
 
