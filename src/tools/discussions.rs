@@ -202,7 +202,7 @@ pub struct MrDiscussionNoteCreateParams {
     pub discussion_id: String,
     #[schemars(description = "Content of the reply note")]
     pub body: String,
-    #[schemars(description = "Set note creation time (ISO 8601); requires at least Reporter role")]
+    #[schemars(description = "Set note creation time (ISO 8601); requires administrator or Owner role")]
     pub created_at: Option<String>,
 }
 

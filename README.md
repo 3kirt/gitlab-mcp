@@ -166,6 +166,16 @@ Pagination fields are populated from GitLab's `X-*` response headers. `total` an
 | `gitlab_issues_update` | Update an issue. Use `state_event: "close"` or `"reopen"` to change state. |
 | `gitlab_issues_delete` | Delete an issue (Maintainer role required). |
 
+#### Issue Notes
+
+| Tool | Description |
+|---|---|
+| `gitlab_issues_notes_list` | List notes (comments) on an issue. Optional `order_by` and `sort`. |
+| `gitlab_issues_notes_get` | Get a single note by note ID. |
+| `gitlab_issues_notes_create` | Post a new note on an issue (`body` required). |
+| `gitlab_issues_notes_update` | Update the body of a note. |
+| `gitlab_issues_notes_delete` | Delete a note (permanent). |
+
 ### Merge Requests
 
 | Tool | Description |

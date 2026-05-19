@@ -18,6 +18,7 @@ use crate::client::{GitlabClient, PaginationMeta};
 pub mod branches;
 pub mod commits;
 pub mod discussions;
+pub mod issue_notes;
 pub mod issues;
 pub mod jobs;
 pub mod merge_requests;
@@ -286,6 +287,56 @@ impl GitlabMcpServer {
         Parameters(p): Parameters<issues::IssueDeleteParams>,
     ) -> Result<CallToolResult, McpError> {
         delegate_delete!(self, issues::issue_delete, p, "issue")
+    }
+
+    #[tool(
+        description = "List notes (comments) on a GitLab issue. Optional: order_by (\"created_at\" or \"updated_at\"), sort (\"asc\" or \"desc\"). Paginate with page and per_page."
+    )]
+    async fn gitlab_issues_notes_list(
+        &self,
+        Parameters(p): Parameters<issue_notes::IssueNotesListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, issue_notes::issue_notes_list, p, "issue notes")
+    }
+
+    #[tool(
+        description = "Get a single note on a GitLab issue by note ID."
+    )]
+    async fn gitlab_issues_notes_get(
+        &self,
+        Parameters(p): Parameters<issue_notes::IssueNoteGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, issue_notes::issue_note_get, p, "issue note")
+    }
+
+    #[tool(
+        description = "Create a new note (comment) on a GitLab issue. Required: project_id, issue_iid, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
+    )]
+    async fn gitlab_issues_notes_create(
+        &self,
+        Parameters(p): Parameters<issue_notes::IssueNoteCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, issue_notes::issue_note_create, p, "issue note")
+    }
+
+    #[tool(
+        description = "Update the body of a note on a GitLab issue. Required: project_id, issue_iid, note_id, body."
+    )]
+    async fn gitlab_issues_notes_update(
+        &self,
+        Parameters(p): Parameters<issue_notes::IssueNoteUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, issue_notes::issue_note_update, p, "issue note")
+    }
+
+    #[tool(
+        description = "Delete a note from a GitLab issue. Required: project_id, issue_iid, note_id. This action is permanent."
+    )]
+    async fn gitlab_issues_notes_delete(
+        &self,
+        Parameters(p): Parameters<issue_notes::IssueNoteDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, issue_notes::issue_note_delete, p, "issue note")
     }
 
     #[tool(
@@ -968,7 +1019,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Add a reply note to an existing discussion thread on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, body. Optional: created_at (ISO 8601)."
+        description = "Add a reply note to an existing discussion thread on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
     )]
     async fn gitlab_mrs_discussions_note_create(
         &self,

@@ -1,6 +1,6 @@
 # GitLab MCP Testing Protocol
 
-This document describes how to verify all Issues, Branches, Merge Requests, MR Discussions, and Repository/Files API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`).
+This document describes how to verify all Issues, Issue Notes, Branches, Merge Requests, MR Discussions, and Repository/Files API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`).
 
 **Automated coverage (not retested here):** `encode_project_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, and cross-resource consistency.
 
@@ -104,6 +104,18 @@ Check these on every response.
 | `notes[].resolvable` | `true` or `false` |
 | List envelope shape | Standard pagination envelope; invariants apply to each entry in `items` |
 
+**Issue notes:**
+
+| Property | What to verify |
+|---|---|
+| `id` | Positive integer (note ID) |
+| `body` | Non-empty string |
+| `author` | Collapsed to `{id, username, name}` in list responses |
+| `created_at` | Non-null ISO 8601 datetime |
+| `updated_at` | Non-null ISO 8601 datetime |
+| `noteable_type` | `"Issue"` |
+| List envelope shape | Standard pagination envelope; invariants apply to each entry in `items` |
+
 ---
 
 ## Seed Data
@@ -191,7 +203,19 @@ After seeding: 5 issues total; 3 opened; 2 closed. Record each `iid`.
 
 After seeding: 4 MRs; 3 opened; 1 closed. Record each `iid`.
 
-### Step 6: Seed an MR Discussion
+### Step 6: Seed an Issue Note
+
+Create a note on seed-1 to serve as a stable seed for Sections 38–42:
+```
+gitlab_issues_notes_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  body="Seeded note for issue notes testing."
+)
+```
+Record `id` as `note-issue-seed-1`.
+
+### Step 7: Seed an MR Discussion
 
 Create a plain (non-diff) discussion on mr-seed-1 to serve as a stable seed for Sections 31–36:
 ```
@@ -1163,6 +1187,14 @@ Returns a success text message. A subsequent `gitlab_mrs_discussions_get` on `di
 3. Verify: merge base `id` differs from the commit on `mr-test-merge` (it has commits ahead of the base)
 4. `gitlab_repo_contributors(..., order_by="commits", sort="desc")` — top contributor has ≥ 3 commits (seed Steps 1a, 1b, 3)
 
+### Workflow G: Issue note lifecycle (create → get → update → delete)
+1. `gitlab_issues_notes_create(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-2>, body="Workflow G note.")` — record `id` as `note-wg`
+2. `gitlab_issues_notes_get(..., issue_iid=<iid of seed-2>, note_id=<note-wg>)` — confirm `body == "Workflow G note."`
+3. `gitlab_issues_notes_update(..., note_id=<note-wg>, body="Updated workflow G note.")` — confirm `body == "Updated workflow G note."`
+4. `gitlab_issues_notes_list(..., issue_iid=<iid of seed-2>)` — confirm updated note appears in `items`
+5. `gitlab_issues_notes_delete(..., note_id=<note-wg>)` — confirm success message
+6. `gitlab_issues_notes_get(..., note_id=<note-wg>)` — confirm `404` error
+
 ### Workflow F: Discussion lifecycle (create → reply → resolve → delete)
 1. `gitlab_mrs_discussions_list(..., merge_request_iid=<iid of mr-seed-1>)` — confirms seeded disc-seed-1 is present
 2. `gitlab_mrs_discussions_create(..., merge_request_iid=<iid of mr-seed-1>, body="Workflow F thread.")` — record `id` as `disc-wf`
@@ -1171,4 +1203,114 @@ Returns a success text message. A subsequent `gitlab_mrs_discussions_get` on `di
 5. `gitlab_mrs_discussions_note_update(..., note_id=<note-wf>, body="Edited reply.")` — confirm `body == "Edited reply."`
 6. `gitlab_mrs_discussions_note_delete(..., note_id=<note-wf>)` — confirm success message
 7. `gitlab_mrs_discussions_get(..., discussion_id=<disc-wf>)` — confirm `notes` has 1 entry (original thread-starter only)
+
+---
+
+## Section 38: Issue Notes — List
+
+### 38.1 List notes on an issue with a seeded note
+```
+gitlab_issues_notes_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>)
+```
+Returns an envelope with at least 1 item (note-issue-seed-1). Each item satisfies issue note universal invariants.
+
+### 38.2 Sort ascending by created_at
+```
+gitlab_issues_notes_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>, order_by="created_at", sort="asc")
+```
+First note has the earliest `created_at`.
+
+### 38.3 Paginate
+```
+gitlab_issues_notes_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>, per_page=1, page=1)
+```
+`items` contains exactly 1 note. Envelope reports `page == 1`, `per_page == 1`.
+
+### 38.4 List on a non-existent issue
+```
+gitlab_issues_notes_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=99999)
+```
+Returns a `404` error.
+
+---
+
+## Section 39: Issue Notes — Get
+
+### 39.1 Get the seeded note
+```
+gitlab_issues_notes_get(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  note_id=<note-issue-seed-1>
+)
+```
+`body == "Seeded note for issue notes testing."`, `noteable_type == "Issue"`, `id == note-issue-seed-1`.
+
+### 39.2 Get a non-existent note
+```
+gitlab_issues_notes_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>, note_id=99999)
+```
+Returns a `404` error.
+
+---
+
+## Section 40: Issue Notes — Create
+
+### 40.1 Create a note with body only
+```
+gitlab_issues_notes_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-2>,
+  body="Test note for create testing."
+)
+```
+Returned `body == "Test note for create testing."`, `id` is a positive integer, `noteable_type == "Issue"`. Record `id` as `note-create-1`.
+
+### 40.2 Create a Markdown note
+```
+gitlab_issues_notes_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-2>,
+  body="## Findings\n\n- item one\n- item two"
+)
+```
+`body` contains the raw Markdown without escaping.
+
+---
+
+## Section 41: Issue Notes — Update
+
+Operates on `note-create-1` from Section 40.
+
+### 41.1 Update note body
+```
+gitlab_issues_notes_update(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-2>,
+  note_id=<note-create-1>,
+  body="Updated note body."
+)
+```
+Returned `body == "Updated note body."`, `updated_at` is later than `created_at`.
+
+### 41.2 Update a deleted note
+Delete the note first, then attempt to update:
+```
+gitlab_issues_notes_update(..., note_id=<note-create-1>, body="Should fail.")
+```
+Returns a `404` error.
+
+---
+
+## Section 42: Issue Notes — Delete
+
+Create a throwaway note, record its `id`, then:
+```
+gitlab_issues_notes_delete(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  note_id=<throwaway note id>
+)
+```
+Returns a success text message. A subsequent `gitlab_issues_notes_get` with the same `note_id` returns a `404` error.
 
