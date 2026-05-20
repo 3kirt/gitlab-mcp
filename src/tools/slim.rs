@@ -16,6 +16,18 @@ const STRIP_LIST_ITEM: &[&str] = &[
     "head_pipeline", // same
     "diff_stats",    // addition/deletion counts; use single-get if needed
     "time_stats",    // nearly always zeros; use single-get if needed
+    // Issue-specific noise fields — almost always zero/false/duplicate/unknown.
+    "assignees",              // array duplicates the scalar `assignee` field
+    "blocking_issues_count",  // almost always 0
+    "confidential",           // almost always false
+    "downvotes",              // rarely relevant in agentic workflows
+    "has_tasks",              // redundant with `task_completion_status`
+    "imported",               // almost always false
+    "imported_from",          // almost always "none"
+    "issue_type",             // duplicate of `type` (uppercase variant)
+    "severity",               // almost always "UNKNOWN"
+    "task_status",            // human-readable string duplicating `task_completion_status`
+    "upvotes",                // rarely relevant in agentic workflows
 ];
 
 /// Keys kept when collapsing a GitLab user object.
@@ -163,19 +175,79 @@ mod tests {
 
     #[test]
     fn list_collapses_users_in_nested_arrays() {
+        // `assignees` is stripped, so use `participants` to test nested-array user collapsing.
         let input = json!([{
             "iid": 1,
-            "assignees": [
+            "participants": [
                 {"id": 1, "username": "alice", "name": "Alice", "avatar_url": "https://a.com"},
                 {"id": 2, "username": "bob", "name": "Bob", "state": "active"},
             ],
         }]);
         let out = slim_list(input);
-        let assignees = &out[0]["assignees"];
-        assert_eq!(assignees[0]["username"], json!("alice"));
-        assert!(assignees[0].get("avatar_url").is_none());
-        assert_eq!(assignees[1]["username"], json!("bob"));
-        assert!(assignees[1].get("state").is_none());
+        let participants = &out[0]["participants"];
+        assert_eq!(participants[0]["username"], json!("alice"));
+        assert!(participants[0].get("avatar_url").is_none());
+        assert_eq!(participants[1]["username"], json!("bob"));
+        assert!(participants[1].get("state").is_none());
+    }
+
+    #[test]
+    fn list_strips_issue_noise_fields() {
+        let input = json!([{
+            "iid": 1,
+            "title": "Bug",
+            "type": "ISSUE",
+            "assignee": {"id": 1, "username": "alice", "name": "Alice"},
+            "assignees": [{"id": 1, "username": "alice", "name": "Alice"}],
+            "blocking_issues_count": 0,
+            "confidential": false,
+            "downvotes": 0,
+            "has_tasks": false,
+            "imported": false,
+            "imported_from": "none",
+            "issue_type": "issue",
+            "severity": "UNKNOWN",
+            "task_completion_status": {"count": 0, "completed_count": 0},
+            "task_status": "0 of 0 checklist items completed",
+            "upvotes": 0,
+        }]);
+        let out = slim_list(input);
+        let item = &out[0];
+        // Kept fields
+        assert_eq!(item["iid"], json!(1));
+        assert_eq!(item["title"], json!("Bug"));
+        assert_eq!(item["type"], json!("ISSUE"));
+        assert!(item.get("assignee").is_some());
+        assert!(item.get("task_completion_status").is_some());
+        // Stripped fields
+        assert!(item.get("assignees").is_none());
+        assert!(item.get("blocking_issues_count").is_none());
+        assert!(item.get("confidential").is_none());
+        assert!(item.get("downvotes").is_none());
+        assert!(item.get("has_tasks").is_none());
+        assert!(item.get("imported").is_none());
+        assert!(item.get("imported_from").is_none());
+        assert!(item.get("issue_type").is_none());
+        assert!(item.get("severity").is_none());
+        assert!(item.get("task_status").is_none());
+        assert!(item.get("upvotes").is_none());
+    }
+
+    #[test]
+    fn get_keeps_issue_noise_fields() {
+        // Issue noise fields must survive slim_get (only stripped from list responses).
+        let input = json!({
+            "iid": 1,
+            "confidential": false,
+            "severity": "UNKNOWN",
+            "task_status": "0 of 0 checklist items completed",
+            "assignees": [{"id": 1, "username": "alice", "name": "Alice"}],
+        });
+        let out = slim_get(input);
+        assert!(out.get("confidential").is_some());
+        assert!(out.get("severity").is_some());
+        assert!(out.get("task_status").is_some());
+        assert!(out.get("assignees").is_some());
     }
 
     #[test]
