@@ -33,6 +33,44 @@ fn type_name_to_gid(s: &str) -> String {
     format!("gid://gitlab/WorkItems::Type/{id}")
 }
 
+/// Look up user IDs by username(s) via GraphQL. Returns a vec of numeric user IDs in the same order
+/// as the input usernames. Unknown usernames are silently skipped.
+async fn usernames_to_ids(
+    client: &GitlabClient,
+    usernames: Vec<String>,
+) -> Result<Vec<i64>, GitlabError> {
+    if usernames.is_empty() {
+        return Ok(vec![]);
+    }
+
+    const USER_LOOKUP_QUERY: &str = r#"
+    query UsersLookup($usernames: [String!]!) {
+      users(usernames: $usernames) {
+        nodes {
+          id
+        }
+      }
+    }
+    "#;
+
+    let vars = json!({ "usernames": usernames });
+    let data = client.graphql(USER_LOOKUP_QUERY, vars).await?;
+    let ids: Vec<i64> = data["users"]["nodes"]
+        .as_array()
+        .map(|nodes| {
+            nodes
+                .iter()
+                .filter_map(|node| {
+                    node["id"]
+                        .as_str()
+                        .and_then(|gid| gid.split('/').last().and_then(|s| s.parse().ok()))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(ids)
+}
+
 /// Extract mutation-level errors from a GraphQL response payload and return
 /// `Err(GitlabError::Graphql)` if any are present.
 fn check_mutation_errors(payload: &Value, field: &str) -> Result<(), GitlabError> {
@@ -54,7 +92,7 @@ fn check_mutation_errors(payload: &Value, field: &str) -> Result<(), GitlabError
 fn add_shared_widgets(
     builder: BodyBuilder,
     description: Option<String>,
-    assignee_usernames: Option<Vec<String>>,
+    assignee_ids: Option<Vec<i64>>,
     parent_id: Option<String>,
     start_date: Option<String>,
     due_date: Option<String>,
@@ -68,7 +106,7 @@ fn add_shared_widgets(
         )
         .opt(
             "assigneesWidget",
-            assignee_usernames.map(|u| json!({ "assigneeUsernames": u })),
+            assignee_ids.map(|ids| json!({ "assigneeIds": ids })),
         )
         .opt(
             "hierarchyWidget",
@@ -338,13 +376,19 @@ pub async fn work_item_create(
     client: &GitlabClient,
     p: WorkItemCreateParams,
 ) -> Result<Value, GitlabError> {
+    let assignee_ids = if let Some(usernames) = p.assignee_usernames {
+        Some(usernames_to_ids(client, usernames).await?)
+    } else {
+        None
+    };
+
     let input = add_shared_widgets(
         BodyBuilder::new()
             .req("projectPath", p.project_path)
             .req("workItemTypeId", type_name_to_gid(&p.work_item_type))
             .req("title", p.title),
         p.description,
-        p.assignee_usernames,
+        assignee_ids,
         p.parent_id,
         p.start_date,
         p.due_date,
@@ -406,13 +450,19 @@ pub async fn work_item_update(
     client: &GitlabClient,
     p: WorkItemUpdateParams,
 ) -> Result<Value, GitlabError> {
+    let assignee_ids = if let Some(usernames) = p.assignee_usernames {
+        Some(usernames_to_ids(client, usernames).await?)
+    } else {
+        None
+    };
+
     let input = add_shared_widgets(
         BodyBuilder::new()
             .req("id", p.id)
             .opt("title", p.title)
             .opt("stateEvent", p.state_event),
         p.description,
-        p.assignee_usernames,
+        assignee_ids,
         p.parent_id,
         p.start_date,
         p.due_date,
