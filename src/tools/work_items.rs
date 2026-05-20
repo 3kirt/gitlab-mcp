@@ -441,3 +441,385 @@ pub async fn work_item_delete(
     check_mutation_errors(&data, "workItemDelete")?;
     Ok(())
 }
+
+// --------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::{
+        WorkItemCreateParams, WorkItemDeleteParams, WorkItemGetParams, WorkItemUpdateParams,
+        WorkItemsListParams, check_mutation_errors, type_name_to_gid, work_item_create,
+        work_item_delete, work_item_get, work_item_update, work_items_list,
+    };
+    use crate::client::{GitlabClient, GitlabError};
+
+    fn mock_client(server: &MockServer) -> GitlabClient {
+        GitlabClient::new(server.uri(), "test-token").unwrap()
+    }
+
+    fn graphql_ok(data: serde_json::Value) -> ResponseTemplate {
+        ResponseTemplate::new(200).set_body_json(serde_json::json!({ "data": data }))
+    }
+
+    // ------------------------------------------------------------------
+    // type_name_to_gid
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn type_name_to_gid_maps_all_known_types() {
+        let cases = [
+            ("ISSUE", 1),
+            ("INCIDENT", 2),
+            ("TEST_CASE", 3),
+            ("REQUIREMENT", 4),
+            ("TASK", 5),
+            ("OBJECTIVE", 6),
+            ("KEY_RESULT", 7),
+            ("EPIC", 8),
+            ("TICKET", 9),
+        ];
+        for (name, id) in cases {
+            assert_eq!(
+                type_name_to_gid(name),
+                format!("gid://gitlab/WorkItems::Type/{id}"),
+                "failed for {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn type_name_to_gid_is_case_insensitive() {
+        assert_eq!(type_name_to_gid("task"), "gid://gitlab/WorkItems::Type/5");
+        assert_eq!(type_name_to_gid("Task"), "gid://gitlab/WorkItems::Type/5");
+        assert_eq!(type_name_to_gid("ePiC"), "gid://gitlab/WorkItems::Type/8");
+    }
+
+    #[test]
+    fn type_name_to_gid_passes_through_existing_gid() {
+        let gid = "gid://gitlab/WorkItems::Type/5";
+        assert_eq!(type_name_to_gid(gid), gid);
+    }
+
+    #[test]
+    fn type_name_to_gid_passes_through_unknown_names() {
+        assert_eq!(type_name_to_gid("CUSTOM"), "CUSTOM");
+        assert_eq!(type_name_to_gid(""), "");
+    }
+
+    // ------------------------------------------------------------------
+    // check_mutation_errors
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn check_mutation_errors_ok_on_empty_array() {
+        let payload = serde_json::json!({ "workItemCreate": { "errors": [] } });
+        assert!(check_mutation_errors(&payload, "workItemCreate").is_ok());
+    }
+
+    #[test]
+    fn check_mutation_errors_ok_when_field_absent() {
+        let payload = serde_json::json!({ "workItemCreate": {} });
+        assert!(check_mutation_errors(&payload, "workItemCreate").is_ok());
+    }
+
+    #[test]
+    fn check_mutation_errors_err_joins_messages() {
+        let payload = serde_json::json!({
+            "workItemCreate": { "errors": ["Title can't be blank", "Type is invalid"] }
+        });
+        let err = check_mutation_errors(&payload, "workItemCreate").unwrap_err();
+        match err {
+            GitlabError::Graphql(msg) => {
+                assert!(msg.contains("Title can't be blank"), "msg: {msg}");
+                assert!(msg.contains("Type is invalid"), "msg: {msg}");
+            }
+            other => panic!("expected Graphql error, got {other}"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // work_items_list
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn work_items_list_returns_nodes_and_page_info() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({
+                "project": {
+                    "workItems": {
+                        "nodes": [
+                            { "id": "gid://gitlab/WorkItem/1", "iid": "1", "title": "Fix bug", "state": "OPEN" }
+                        ],
+                        "pageInfo": { "hasNextPage": true, "endCursor": "cursor42" }
+                    }
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let p = WorkItemsListParams {
+            project_path: "mygroup/myrepo".into(),
+            types: None, state: None, search: None, assignee_usernames: None,
+            author_username: None, label_name: None, iids: None, sort: None,
+            first: None, after: None,
+        };
+        let (nodes, page_info) = work_items_list(&mock_client(&server), p).await.unwrap();
+        assert_eq!(nodes[0]["title"], "Fix bug");
+        assert!(page_info.has_next_page);
+        assert_eq!(page_info.end_cursor.as_deref(), Some("cursor42"));
+    }
+
+    #[tokio::test]
+    async fn work_items_list_last_page_has_no_cursor() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({
+                "project": {
+                    "workItems": {
+                        "nodes": [],
+                        "pageInfo": { "hasNextPage": false, "endCursor": null }
+                    }
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let p = WorkItemsListParams {
+            project_path: "mygroup/myrepo".into(),
+            types: None, state: None, search: None, assignee_usernames: None,
+            author_username: None, label_name: None, iids: None, sort: None,
+            first: None, after: None,
+        };
+        let (nodes, page_info) = work_items_list(&mock_client(&server), p).await.unwrap();
+        assert_eq!(nodes, serde_json::json!([]));
+        assert!(!page_info.has_next_page);
+        assert!(page_info.end_cursor.is_none());
+    }
+
+    #[tokio::test]
+    async fn work_items_list_errors_when_project_null() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({ "project": null })))
+            .mount(&server)
+            .await;
+
+        let p = WorkItemsListParams {
+            project_path: "nonexistent/project".into(),
+            types: None, state: None, search: None, assignee_usernames: None,
+            author_username: None, label_name: None, iids: None, sort: None,
+            first: None, after: None,
+        };
+        let err = work_items_list(&mock_client(&server), p).await.unwrap_err();
+        assert!(matches!(err, GitlabError::Graphql(_)));
+    }
+
+    // ------------------------------------------------------------------
+    // work_item_get
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn work_item_get_returns_item() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({
+                "workItem": {
+                    "id": "gid://gitlab/WorkItem/42",
+                    "iid": "5",
+                    "title": "Fix the bug",
+                    "state": "OPEN"
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let p = WorkItemGetParams { id: "gid://gitlab/WorkItem/42".into() };
+        let item = work_item_get(&mock_client(&server), p).await.unwrap();
+        assert_eq!(item["id"], "gid://gitlab/WorkItem/42");
+        assert_eq!(item["title"], "Fix the bug");
+    }
+
+    #[tokio::test]
+    async fn work_item_get_errors_when_null() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({ "workItem": null })))
+            .mount(&server)
+            .await;
+
+        let p = WorkItemGetParams { id: "gid://gitlab/WorkItem/999".into() };
+        let err = work_item_get(&mock_client(&server), p).await.unwrap_err();
+        assert!(matches!(err, GitlabError::Graphql(_)));
+    }
+
+    // ------------------------------------------------------------------
+    // work_item_create
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn work_item_create_returns_item_on_success() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({
+                "workItemCreate": {
+                    "workItem": {
+                        "id": "gid://gitlab/WorkItem/99",
+                        "iid": "10",
+                        "title": "New task",
+                        "state": "OPEN"
+                    },
+                    "errors": []
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let p = WorkItemCreateParams {
+            project_path: "mygroup/myrepo".into(),
+            work_item_type: "TASK".into(),
+            title: "New task".into(),
+            description: Some("Do the thing".into()),
+            assignee_usernames: None, parent_id: None,
+            start_date: None, due_date: None,
+        };
+        let item = work_item_create(&mock_client(&server), p).await.unwrap();
+        assert_eq!(item["id"], "gid://gitlab/WorkItem/99");
+        assert_eq!(item["title"], "New task");
+    }
+
+    #[tokio::test]
+    async fn work_item_create_errors_on_mutation_errors() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({
+                "workItemCreate": {
+                    "workItem": null,
+                    "errors": ["Title can't be blank"]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let p = WorkItemCreateParams {
+            project_path: "mygroup/myrepo".into(),
+            work_item_type: "TASK".into(),
+            title: "".into(),
+            description: None, assignee_usernames: None,
+            parent_id: None, start_date: None, due_date: None,
+        };
+        let err = work_item_create(&mock_client(&server), p).await.unwrap_err();
+        match err {
+            GitlabError::Graphql(msg) => assert!(msg.contains("Title can't be blank")),
+            other => panic!("expected Graphql error, got {other}"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // work_item_update
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn work_item_update_returns_item_on_success() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({
+                "workItemUpdate": {
+                    "workItem": {
+                        "id": "gid://gitlab/WorkItem/1",
+                        "iid": "1",
+                        "title": "Updated title",
+                        "state": "CLOSED"
+                    },
+                    "errors": []
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let p = WorkItemUpdateParams {
+            id: "gid://gitlab/WorkItem/1".into(),
+            title: Some("Updated title".into()),
+            state_event: Some("CLOSE".into()),
+            description: None, assignee_usernames: None,
+            parent_id: None, start_date: None, due_date: None,
+        };
+        let item = work_item_update(&mock_client(&server), p).await.unwrap();
+        assert_eq!(item["title"], "Updated title");
+        assert_eq!(item["state"], "CLOSED");
+    }
+
+    #[tokio::test]
+    async fn work_item_update_errors_on_mutation_errors() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({
+                "workItemUpdate": {
+                    "workItem": null,
+                    "errors": ["Work item not found"]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let p = WorkItemUpdateParams {
+            id: "gid://gitlab/WorkItem/999".into(),
+            title: None, description: None, state_event: None,
+            assignee_usernames: None, parent_id: None,
+            start_date: None, due_date: None,
+        };
+        let err = work_item_update(&mock_client(&server), p).await.unwrap_err();
+        assert!(matches!(err, GitlabError::Graphql(_)));
+    }
+
+    // ------------------------------------------------------------------
+    // work_item_delete
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn work_item_delete_returns_ok_on_success() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({
+                "workItemDelete": { "errors": [] }
+            })))
+            .mount(&server)
+            .await;
+
+        let p = WorkItemDeleteParams { id: "gid://gitlab/WorkItem/1".into() };
+        assert!(work_item_delete(&mock_client(&server), p).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn work_item_delete_errors_on_mutation_errors() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({
+                "workItemDelete": {
+                    "errors": ["You don't have permission to delete this work item"]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let p = WorkItemDeleteParams { id: "gid://gitlab/WorkItem/1".into() };
+        let err = work_item_delete(&mock_client(&server), p).await.unwrap_err();
+        assert!(matches!(err, GitlabError::Graphql(_)));
+    }
+}
