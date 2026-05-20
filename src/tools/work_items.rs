@@ -57,7 +57,10 @@ async fn usernames_to_ids(
 
     let vars = json!({ "usernames": &usernames });
     let data = client.graphql(USER_LOOKUP_QUERY, vars).await?;
-    let nodes = data["users"]["nodes"].as_array().cloned().unwrap_or_default();
+    let nodes = data["users"]["nodes"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
 
     let mut ids = Vec::with_capacity(nodes.len());
     let mut found: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -654,12 +657,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let mut ids = usernames_to_ids(
-            &mock_client(&server),
-            vec!["alice".into(), "bob".into()],
-        )
-        .await
-        .unwrap();
+        let mut ids = usernames_to_ids(&mock_client(&server), vec!["alice".into(), "bob".into()])
+            .await
+            .unwrap();
         ids.sort();
         assert_eq!(ids, vec![5, 42]);
     }
