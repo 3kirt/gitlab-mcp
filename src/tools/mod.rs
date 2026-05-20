@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
-use crate::client::{GitlabClient, PaginationMeta};
+use crate::client::{GitlabClient, GraphqlPageInfo, PaginationMeta};
 
 pub mod branches;
 pub mod commits;
@@ -25,6 +25,7 @@ pub mod merge_requests;
 pub mod pipelines;
 pub mod repositories;
 pub mod repository_files;
+pub mod work_items;
 mod slim;
 
 // --------------------------------------------------------------------------
@@ -66,6 +67,28 @@ pub fn json_list_result(v: Value, meta: PaginationMeta) -> Result<CallToolResult
 
 pub fn tool_error(msg: &str) -> Result<CallToolResult, McpError> {
     Ok(CallToolResult::error(vec![Content::text(msg)]))
+}
+
+#[derive(Serialize)]
+struct GraphqlListEnvelope {
+    items: Value,
+    has_next_page: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    end_cursor: Option<String>,
+}
+
+pub fn json_graphql_list_result(
+    v: Value,
+    page_info: GraphqlPageInfo,
+) -> Result<CallToolResult, McpError> {
+    let envelope = GraphqlListEnvelope {
+        items: v,
+        has_next_page: page_info.has_next_page,
+        end_cursor: page_info.end_cursor,
+    };
+    let text = serde_json::to_string_pretty(&envelope)
+        .map_err(|e| McpError::internal_error(format!("marshalling response: {e}"), None))?;
+    Ok(CallToolResult::success(vec![Content::text(text)]))
 }
 
 // --------------------------------------------------------------------------
@@ -187,6 +210,16 @@ macro_rules! delegate_update {
     ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {
         delegate_json!($self, $domain_fn, $p, "updating", $noun)
     };
+}
+
+macro_rules! delegate_graphql_list {
+    ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {{
+        let client = $self.get_client()?;
+        match $domain_fn(client, $p).await {
+            Ok((v, page_info)) => json_graphql_list_result(v, page_info),
+            Err(e) => tool_error(&format!("listing {}: {}", $noun, e.to_tool_message())),
+        }
+    }};
 }
 
 macro_rules! delegate_delete {
@@ -1059,6 +1092,56 @@ impl GitlabMcpServer {
             p,
             "MR discussion note"
         )
+    }
+
+    #[tool(
+        description = "List work items (issues, tasks, epics, tickets, etc.) in a GitLab project via GraphQL. Required: project_path (full path e.g. \"mygroup/myproject\"). Filter by types (ISSUE, TASK, EPIC, TICKET, INCIDENT, TEST_CASE, REQUIREMENT, OBJECTIVE, KEY_RESULT), state (opened/closed), search, assignee_usernames, author_username, label_name, or iids. Paginate with first (count) and after (end_cursor from a previous response). Returns items with id, iid, title, state, workItemType, and key widget data (description, assignees, labels, hierarchy, dates)."
+    )]
+    async fn gitlab_work_items_list(
+        &self,
+        Parameters(p): Parameters<work_items::WorkItemsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_graphql_list!(self, work_items::work_items_list, p, "work items")
+    }
+
+    #[tool(
+        description = "Get a single GitLab work item by its global ID (e.g. \"gid://gitlab/WorkItem/123\"). Returns full details including description, assignees, labels, milestone, hierarchy (parent and children), start/due dates, time tracking, and weight."
+    )]
+    async fn gitlab_work_item_get(
+        &self,
+        Parameters(p): Parameters<work_items::WorkItemGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, work_items::work_item_get, p, "work item")
+    }
+
+    #[tool(
+        description = "Create a new work item in a GitLab project. Required: project_path (full path e.g. \"mygroup/myproject\"), work_item_type (ISSUE, TASK, EPIC, TICKET, INCIDENT, TEST_CASE, REQUIREMENT, OBJECTIVE, KEY_RESULT, or a \"gid://\" type ID), title. Optional: description (Markdown), assignee_usernames, parent_id (global ID for hierarchy), start_date, due_date (ISO 8601)."
+    )]
+    async fn gitlab_work_item_create(
+        &self,
+        Parameters(p): Parameters<work_items::WorkItemCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, work_items::work_item_create, p, "work item")
+    }
+
+    #[tool(
+        description = "Update a GitLab work item by global ID. All fields are optional. Use state_event=\"CLOSE\" or \"REOPEN\" to change state. Providing assignee_usernames replaces the full assignee list (pass an empty list to clear all assignees). Providing parent_id sets or changes the hierarchy parent."
+    )]
+    async fn gitlab_work_item_update(
+        &self,
+        Parameters(p): Parameters<work_items::WorkItemUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, work_items::work_item_update, p, "work item")
+    }
+
+    #[tool(
+        description = "Delete a GitLab work item by its global ID (e.g. \"gid://gitlab/WorkItem/123\"). This action is permanent and cannot be undone."
+    )]
+    async fn gitlab_work_item_delete(
+        &self,
+        Parameters(p): Parameters<work_items::WorkItemDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, work_items::work_item_delete, p, "work item")
     }
 }
 
