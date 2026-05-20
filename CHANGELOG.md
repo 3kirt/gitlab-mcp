@@ -4,6 +4,35 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.8.0] — 2026-05-20
+
+### Added
+- **Work Items domain** — five new tools covering tasks, epics, tickets,
+  incidents, test cases, requirements, objectives, and key results via the
+  GraphQL API: `gitlab_work_items_list`, `gitlab_work_items_get`,
+  `gitlab_work_items_create`, `gitlab_work_items_update`,
+  `gitlab_work_items_delete`. List pagination is cursor-based (`first` /
+  `after`) and tools accept the full `project_path` rather than `project_id`.
+- `GitlabClient::graphql()` — wraps `POST /api/graphql`, returns the `data`
+  field, maps top-level GraphQL errors to `GitlabError::Graphql`, and leaves
+  mutation-level errors for callers to check via `check_mutation_errors()`.
+
+### Changed
+- `assignee_usernames` on work item create/update now resolves names to user
+  IDs via GraphQL before submitting the mutation. Unknown usernames cause the
+  call to fail with `"unknown username(s): …"` rather than being silently
+  dropped from the assignee list. Match is case-insensitive.
+
+### Documentation
+- README: added Work Items section explaining `project_path`, cursor pagination,
+  and the global-ID requirement; bumped headline from eight to nine domains.
+- CLAUDE.md: added `work_items.rs` to key modules, documented the `graphql()`
+  client method, and generalized the request-flow diagram to include GraphQL.
+- Testing protocol: added Work Items coverage across seed setup, sections 45–47,
+  workflow H, and §46.6 covering the unknown-username error path.
+
+---
+
 ## [0.7.0] — 2026-05-20
 
 ### Changed
