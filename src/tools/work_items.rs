@@ -33,8 +33,9 @@ fn type_name_to_gid(s: &str) -> String {
     format!("gid://gitlab/WorkItems::Type/{id}")
 }
 
-/// Look up user IDs by username(s) via GraphQL. Returns a vec of numeric user IDs in the same order
-/// as the input usernames. Unknown usernames are silently skipped.
+/// Look up user IDs by username(s) via GraphQL. Returns numeric user IDs (order unspecified).
+/// Returns an error if any input username does not resolve to a GitLab user — this prevents
+/// a typo from silently dropping an assignee.
 async fn usernames_to_ids(
     client: &GitlabClient,
     usernames: Vec<String>,
@@ -48,26 +49,43 @@ async fn usernames_to_ids(
       users(usernames: $usernames) {
         nodes {
           id
+          username
         }
       }
     }
     "#;
 
-    let vars = json!({ "usernames": usernames });
+    let vars = json!({ "usernames": &usernames });
     let data = client.graphql(USER_LOOKUP_QUERY, vars).await?;
-    let ids: Vec<i64> = data["users"]["nodes"]
-        .as_array()
-        .map(|nodes| {
-            nodes
-                .iter()
-                .filter_map(|node| {
-                    node["id"]
-                        .as_str()
-                        .and_then(|gid| gid.split('/').last().and_then(|s| s.parse().ok()))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let nodes = data["users"]["nodes"].as_array().cloned().unwrap_or_default();
+
+    let mut ids = Vec::with_capacity(nodes.len());
+    let mut found: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for node in &nodes {
+        if let Some(u) = node["username"].as_str() {
+            found.insert(u.to_lowercase());
+        }
+        if let Some(id) = node["id"]
+            .as_str()
+            .and_then(|gid| gid.rsplit('/').next())
+            .and_then(|s| s.parse().ok())
+        {
+            ids.push(id);
+        }
+    }
+
+    let missing: Vec<&str> = usernames
+        .iter()
+        .filter(|u| !found.contains(&u.to_lowercase()))
+        .map(String::as_str)
+        .collect();
+    if !missing.is_empty() {
+        return Err(GitlabError::Graphql(format!(
+            "unknown username(s): {}",
+            missing.join(", ")
+        )));
+    }
+
     Ok(ids)
 }
 
@@ -343,7 +361,9 @@ pub struct WorkItemCreateParams {
     pub title: String,
     #[schemars(description = "Work item description (Markdown)")]
     pub description: Option<String>,
-    #[schemars(description = "Assignee usernames")]
+    #[schemars(
+        description = "Assignee usernames. Every username must resolve to a real GitLab user; the call fails with \"unknown username(s): …\" if any do not."
+    )]
     pub assignee_usernames: Option<Vec<String>>,
     #[schemars(
         description = "Parent work item global ID (e.g. \"gid://gitlab/WorkItem/123\") to set a hierarchy parent"
@@ -416,7 +436,7 @@ pub struct WorkItemUpdateParams {
     #[schemars(description = "State change: \"CLOSE\" or \"REOPEN\"")]
     pub state_event: Option<String>,
     #[schemars(
-        description = "Replace the full assignee list with these usernames. Pass an empty list to clear all assignees."
+        description = "Replace the full assignee list with these usernames. Pass an empty list to clear all assignees. Every supplied username must resolve to a real GitLab user; the call fails with \"unknown username(s): …\" if any do not."
     )]
     pub assignee_usernames: Option<Vec<String>>,
     #[schemars(
@@ -514,8 +534,8 @@ mod tests {
 
     use super::{
         WorkItemCreateParams, WorkItemDeleteParams, WorkItemGetParams, WorkItemUpdateParams,
-        WorkItemsListParams, check_mutation_errors, type_name_to_gid, work_item_create,
-        work_item_delete, work_item_get, work_item_update, work_items_list,
+        WorkItemsListParams, check_mutation_errors, type_name_to_gid, usernames_to_ids,
+        work_item_create, work_item_delete, work_item_get, work_item_update, work_items_list,
     };
     use crate::client::{GitlabClient, GitlabError};
 
@@ -598,6 +618,125 @@ mod tests {
             GitlabError::Graphql(msg) => {
                 assert!(msg.contains("Title can't be blank"), "msg: {msg}");
                 assert!(msg.contains("Type is invalid"), "msg: {msg}");
+            }
+            other => panic!("expected Graphql error, got {other}"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // usernames_to_ids
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn usernames_to_ids_empty_input_skips_request() {
+        // No mock is mounted — if the function sent a request, wiremock would 404 and the
+        // call would error. Returning Ok(vec![]) proves the short-circuit fired.
+        let server = MockServer::start().await;
+        let ids = usernames_to_ids(&mock_client(&server), vec![])
+            .await
+            .unwrap();
+        assert!(ids.is_empty());
+    }
+
+    #[tokio::test]
+    async fn usernames_to_ids_extracts_numeric_ids_from_gids() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({
+                "users": {
+                    "nodes": [
+                        { "id": "gid://gitlab/User/5", "username": "alice" },
+                        { "id": "gid://gitlab/User/42", "username": "bob" }
+                    ]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let mut ids = usernames_to_ids(
+            &mock_client(&server),
+            vec!["alice".into(), "bob".into()],
+        )
+        .await
+        .unwrap();
+        ids.sort();
+        assert_eq!(ids, vec![5, 42]);
+    }
+
+    #[tokio::test]
+    async fn usernames_to_ids_matches_case_insensitively() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({
+                "users": {
+                    "nodes": [
+                        { "id": "gid://gitlab/User/5", "username": "alice" }
+                    ]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let ids = usernames_to_ids(&mock_client(&server), vec!["Alice".into()])
+            .await
+            .unwrap();
+        assert_eq!(ids, vec![5]);
+    }
+
+    #[tokio::test]
+    async fn usernames_to_ids_errors_on_unknown_username() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({
+                "users": { "nodes": [] }
+            })))
+            .mount(&server)
+            .await;
+
+        let err = usernames_to_ids(&mock_client(&server), vec!["ghost".into()])
+            .await
+            .unwrap_err();
+        match err {
+            GitlabError::Graphql(msg) => {
+                assert!(msg.contains("unknown username"), "msg: {msg}");
+                assert!(msg.contains("ghost"), "msg: {msg}");
+            }
+            other => panic!("expected Graphql error, got {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn usernames_to_ids_partial_mismatch_names_only_missing() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(graphql_ok(serde_json::json!({
+                "users": {
+                    "nodes": [
+                        { "id": "gid://gitlab/User/5", "username": "alice" }
+                    ]
+                }
+            })))
+            .mount(&server)
+            .await;
+
+        let err = usernames_to_ids(
+            &mock_client(&server),
+            vec!["alice".into(), "ghost".into(), "phantom".into()],
+        )
+        .await
+        .unwrap_err();
+        match err {
+            GitlabError::Graphql(msg) => {
+                assert!(msg.contains("ghost"), "msg: {msg}");
+                assert!(msg.contains("phantom"), "msg: {msg}");
+                assert!(
+                    !msg.contains("alice"),
+                    "should not mention resolved username: {msg}"
+                );
             }
             other => panic!("expected Graphql error, got {other}"),
         }

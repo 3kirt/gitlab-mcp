@@ -1549,7 +1549,13 @@ gitlab_work_items_update(id=<wi-desc-gid>, assignee_usernames=[])
 ```
 Confirm via `gitlab_work_items_get`: ASSIGNEES widget has `assignees.nodes == []`.
 
-### 46.6 Update dates
+### 46.6 Reject unknown assignee username
+```
+gitlab_work_items_update(id=<wi-desc-gid>, assignee_usernames=["3kirt1", "definitely-not-a-real-user"])
+```
+Returns an error text result containing `unknown username(s): definitely-not-a-real-user`. The known username (`3kirt1`) must not appear in the error message. Confirm via `gitlab_work_items_get`: ASSIGNEES widget is unchanged from §46.5 (still empty) — the mutation was not partially applied.
+
+### 46.7 Update dates
 ```
 gitlab_work_items_update(id=<wi-dates-gid>, start_date="2026-07-01", due_date="2026-07-31")
 ```

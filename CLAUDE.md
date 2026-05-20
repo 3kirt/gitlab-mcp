@@ -29,14 +29,14 @@ The server runs in stdio transport mode. The token is read from config at startu
 ```
 MCP client → rmcp transport (stdio)
            → GitlabMcpServer (tool_router macro dispatch)
-           → domain function in tools/issues.rs, tools/merge_requests.rs, or tools/branches.rs
+           → domain function in tools/issues.rs, tools/merge_requests.rs, etc.
            → GitlabClient (reqwest, PRIVATE-TOKEN header)
-           → GitLab REST API
+           → GitLab REST API (or GraphQL API for work items)
 ```
 
 ### Key modules
 
-**`src/client.rs`** — thin `reqwest` wrapper. Sends `PRIVATE-TOKEN: <token>` on every request. Methods: `get`, `list` (with query params), `post`, `put`, `delete`. All return `serde_json::Value` so tools pass JSON straight through to the MCP client without intermediate typed structs. `GitlabError::to_tool_message()` truncates API error bodies to 300 chars.
+**`src/client.rs`** — thin `reqwest` wrapper. Sends `PRIVATE-TOKEN: <token>` on every request. REST methods: `get`, `list` (with query params), `post`, `put`, `delete`. GraphQL: `graphql(query, variables)` posts to `/api/graphql` and returns the `data` field; top-level GraphQL `errors` are mapped to `GitlabError::Graphql`, mutation-level errors must be checked by the caller. All methods return `serde_json::Value` so tools pass JSON straight through to the MCP client without intermediate typed structs. `GitlabError::to_tool_message()` truncates API error bodies to 300 chars.
 
 **`src/tools/mod.rs`** — MCP server struct and all glue. Contains:
 - `GitlabMcpServer` struct with `new_stdio` constructor
@@ -55,6 +55,8 @@ MCP client → rmcp transport (stdio)
 
 **`src/tools/issue_notes.rs`** — Issue Notes domain module. Implements list, get, create, update, and delete for notes on issues.
 
+**`src/tools/work_items.rs`** — Work Items domain module. Unlike the other domains, this module uses the GraphQL API (`/api/graphql`) because the REST API has no equivalent for tasks/epics/objectives/etc. Each operation has a `*Params` struct plus a hard-coded GraphQL query/mutation string constant. Implements list (cursor-paginated via `first`/`after`), get, create, update, and delete. Helpers: `type_name_to_gid()` maps short type names (`TASK`, `EPIC`, ...) to `gid://gitlab/WorkItems::Type/<id>`; `usernames_to_ids()` resolves `assignee_usernames` to numeric IDs via a `users(usernames: …)` query and errors if any input doesn't resolve; `check_mutation_errors()` surfaces mutation-level `errors[]` as `GitlabError::Graphql`; `add_shared_widgets()` assembles the widget fields shared by create and update. Tools use `project_path` (full namespace path) rather than `project_id`; numeric IDs are not accepted by GraphQL.
+
 **`src/config.rs`** — loads `~/.gitlab_mcp.json`; env vars `GITLAB_URL` / `GITLAB_TOKEN` take precedence. Rejects world-readable config files on Unix. Enforces HTTPS (localhost/127.0.0.1 exempted).
 
 ### Adding a new API domain
@@ -69,4 +71,4 @@ All GitLab endpoints are project-scoped. The `project_id` field accepts either a
 
 ## Testing
 
-End-to-end tool verification is documented in [`docs/testing-protocol.md`](docs/testing-protocol.md). It covers seed data setup, per-tool test cases, cross-tool workflows, and error-handling checks for Issues, Issue Notes, Branches, Merge Requests, MR Discussions, and Repository/Files endpoints against the test project `3kirt1/gitlab-mcp-testing`.
+End-to-end tool verification is documented in [`docs/testing-protocol.md`](docs/testing-protocol.md). It covers seed data setup, per-tool test cases, cross-tool workflows, and error-handling checks for Issues, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, and Work Items endpoints against the test project `3kirt1/gitlab-mcp-testing`.

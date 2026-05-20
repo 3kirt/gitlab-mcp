@@ -1119,7 +1119,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create a new work item in a GitLab project. Required: project_path (full path e.g. \"mygroup/myproject\"), work_item_type (ISSUE, TASK, EPIC, TICKET, INCIDENT, TEST_CASE, REQUIREMENT, OBJECTIVE, KEY_RESULT, or a \"gid://\" type ID), title. Optional: description (Markdown), assignee_usernames, parent_id (global ID for hierarchy), start_date, due_date (ISO 8601)."
+        description = "Create a new work item in a GitLab project. Required: project_path (full path e.g. \"mygroup/myproject\"), work_item_type (ISSUE, TASK, EPIC, TICKET, INCIDENT, TEST_CASE, REQUIREMENT, OBJECTIVE, KEY_RESULT, or a \"gid://\" type ID), title. Optional: description (Markdown), assignee_usernames (every username must resolve to a real user or the call fails), parent_id (global ID for hierarchy), start_date, due_date (ISO 8601)."
     )]
     async fn gitlab_work_items_create(
         &self,
@@ -1129,7 +1129,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update a GitLab work item by global ID. All fields are optional. Use state_event=\"CLOSE\" or \"REOPEN\" to change state. Providing assignee_usernames replaces the full assignee list (pass an empty list to clear all assignees). Providing parent_id sets or changes the hierarchy parent."
+        description = "Update a GitLab work item by global ID. All fields are optional. Use state_event=\"CLOSE\" or \"REOPEN\" to change state. Providing assignee_usernames replaces the full assignee list (pass an empty list to clear all assignees); every supplied username must resolve to a real user or the call fails. Providing parent_id sets or changes the hierarchy parent."
     )]
     async fn gitlab_work_items_update(
         &self,
