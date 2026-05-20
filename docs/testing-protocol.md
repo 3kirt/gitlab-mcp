@@ -252,7 +252,7 @@ Record `id` as `disc-seed-1` and `notes[0].id` as `note-seed-1`.
 
 **8a.** Create the parent task:
 ```
-gitlab_work_item_create(
+gitlab_work_items_create(
   project_path="3kirt1/gitlab-mcp-testing",
   work_item_type="TASK",
   title="Implement login feature",
@@ -263,7 +263,7 @@ Record `id` (global ID) as `wi-task-1-gid` and `iid` as `wi-task-1-iid`.
 
 **8b.** Create a child task referencing the parent:
 ```
-gitlab_work_item_create(
+gitlab_work_items_create(
   project_path="3kirt1/gitlab-mcp-testing",
   work_item_type="TASK",
   title="Write unit tests for login",
@@ -274,7 +274,7 @@ Record `id` as `wi-task-2-gid`.
 
 **8c.** Create a work item of type ISSUE:
 ```
-gitlab_work_item_create(
+gitlab_work_items_create(
   project_path="3kirt1/gitlab-mcp-testing",
   work_item_type="ISSUE",
   title="Bug: login page crashes on empty password",
@@ -1444,19 +1444,19 @@ The result for `wi-task-2` has a widget with `type == "HIERARCHY"` where `parent
 
 ### 44.1 Get a task by global ID
 ```
-gitlab_work_item_get(id=<wi-task-1-gid>)
+gitlab_work_items_get(id=<wi-task-1-gid>)
 ```
 `id == <wi-task-1-gid>`, `title == "Implement login feature"`, `state == "OPEN"`, `workItemType.name == "Task"`. The response includes `author`, `namespace.fullPath`, and a `widgets` array. A widget with `type == "HIERARCHY"` is present with `hasChildren == true` and at least one entry in `children.nodes`.
 
 ### 44.2 Get an issue-type work item
 ```
-gitlab_work_item_get(id=<wi-issue-1-gid>)
+gitlab_work_items_get(id=<wi-issue-1-gid>)
 ```
 `workItemType.name == "Issue"`. A widget with `type == "DESCRIPTION"` contains `description == "Steps to reproduce: submit login form with empty password field."`.
 
 ### 44.3 Get a non-existent work item
 ```
-gitlab_work_item_get(id="gid://gitlab/WorkItem/999999999")
+gitlab_work_items_get(id="gid://gitlab/WorkItem/999999999")
 ```
 Returns a GraphQL error (not a JSON work item object).
 
@@ -1466,7 +1466,7 @@ Returns a GraphQL error (not a JSON work item object).
 
 ### 45.1 Create with required fields only
 ```
-gitlab_work_item_create(
+gitlab_work_items_create(
   project_path="3kirt1/gitlab-mcp-testing",
   work_item_type="TASK",
   title="Minimal task"
@@ -1476,7 +1476,7 @@ Returned `title == "Minimal task"`, `state == "OPEN"`, `workItemType.name == "Ta
 
 ### 45.2 Create with description and assignee
 ```
-gitlab_work_item_create(
+gitlab_work_items_create(
   project_path="3kirt1/gitlab-mcp-testing",
   work_item_type="TASK",
   title="Task with description",
@@ -1484,11 +1484,11 @@ gitlab_work_item_create(
   assignee_usernames=["3kirt1"]
 )
 ```
-`title == "Task with description"`. Confirm via `gitlab_work_item_get`: a widget with `type == "DESCRIPTION"` has `description` containing `"## Details"`. A widget with `type == "ASSIGNEES"` has a non-empty `assignees.nodes`. Record `id` as `wi-desc-gid`.
+`title == "Task with description"`. Confirm via `gitlab_work_items_get`: a widget with `type == "DESCRIPTION"` has `description` containing `"## Details"`. A widget with `type == "ASSIGNEES"` has a non-empty `assignees.nodes`. Record `id` as `wi-desc-gid`.
 
 ### 45.3 Create with start and due dates
 ```
-gitlab_work_item_create(
+gitlab_work_items_create(
   project_path="3kirt1/gitlab-mcp-testing",
   work_item_type="TASK",
   title="Task with dates",
@@ -1496,18 +1496,18 @@ gitlab_work_item_create(
   due_date="2026-06-30"
 )
 ```
-Confirm via `gitlab_work_item_get`: a widget with `type == "START_AND_DUE_DATE"` has `startDate == "2026-06-01"` and `dueDate == "2026-06-30"`. Record `id` as `wi-dates-gid`.
+Confirm via `gitlab_work_items_get`: a widget with `type == "START_AND_DUE_DATE"` has `startDate == "2026-06-01"` and `dueDate == "2026-06-30"`. Record `id` as `wi-dates-gid`.
 
 ### 45.4 Create with parent (hierarchy)
 ```
-gitlab_work_item_create(
+gitlab_work_items_create(
   project_path="3kirt1/gitlab-mcp-testing",
   work_item_type="TASK",
   title="Child of scratch task",
   parent_id=<wi-scratch-gid>
 )
 ```
-Confirm via `gitlab_work_item_get(id=<wi-scratch-gid>)`: the HIERARCHY widget now has `hasChildren == true` and the new task appears in `children.nodes`.
+Confirm via `gitlab_work_items_get(id=<wi-scratch-gid>)`: the HIERARCHY widget now has `hasChildren == true` and the new task appears in `children.nodes`.
 
 ---
 
@@ -1517,43 +1517,43 @@ Operate on `wi-scratch-gid` from Section 45.1 unless otherwise noted.
 
 ### 46.1 Update title
 ```
-gitlab_work_item_update(id=<wi-scratch-gid>, title="Updated task title")
+gitlab_work_items_update(id=<wi-scratch-gid>, title="Updated task title")
 ```
 Returned `title == "Updated task title"`.
 
 ### 46.2 Update description
 ```
-gitlab_work_item_update(id=<wi-scratch-gid>, description="Updated description.")
+gitlab_work_items_update(id=<wi-scratch-gid>, description="Updated description.")
 ```
-Confirm via `gitlab_work_item_get`: DESCRIPTION widget has `description == "Updated description."`.
+Confirm via `gitlab_work_items_get`: DESCRIPTION widget has `description == "Updated description."`.
 
 ### 46.3 Close via state_event
 ```
-gitlab_work_item_update(id=<wi-scratch-gid>, state_event="CLOSE")
+gitlab_work_items_update(id=<wi-scratch-gid>, state_event="CLOSE")
 ```
 Returned `state == "CLOSED"`.
 
 ### 46.4 Reopen via state_event
 ```
-gitlab_work_item_update(id=<wi-scratch-gid>, state_event="REOPEN")
+gitlab_work_items_update(id=<wi-scratch-gid>, state_event="REOPEN")
 ```
 Returned `state == "OPEN"`.
 
 ### 46.5 Replace assignees
 ```
-gitlab_work_item_update(id=<wi-desc-gid>, assignee_usernames=["3kirt1"])
+gitlab_work_items_update(id=<wi-desc-gid>, assignee_usernames=["3kirt1"])
 ```
-Confirm via `gitlab_work_item_get`: ASSIGNEES widget has exactly one entry with `username == "3kirt1"`. Then clear:
+Confirm via `gitlab_work_items_get`: ASSIGNEES widget has exactly one entry with `username == "3kirt1"`. Then clear:
 ```
-gitlab_work_item_update(id=<wi-desc-gid>, assignee_usernames=[])
+gitlab_work_items_update(id=<wi-desc-gid>, assignee_usernames=[])
 ```
-Confirm via `gitlab_work_item_get`: ASSIGNEES widget has `assignees.nodes == []`.
+Confirm via `gitlab_work_items_get`: ASSIGNEES widget has `assignees.nodes == []`.
 
 ### 46.6 Update dates
 ```
-gitlab_work_item_update(id=<wi-dates-gid>, start_date="2026-07-01", due_date="2026-07-31")
+gitlab_work_items_update(id=<wi-dates-gid>, start_date="2026-07-01", due_date="2026-07-31")
 ```
-Confirm via `gitlab_work_item_get`: START_AND_DUE_DATE widget has `startDate == "2026-07-01"` and `dueDate == "2026-07-31"`.
+Confirm via `gitlab_work_items_get`: START_AND_DUE_DATE widget has `startDate == "2026-07-01"` and `dueDate == "2026-07-31"`.
 
 ---
 
@@ -1562,9 +1562,9 @@ Confirm via `gitlab_work_item_get`: START_AND_DUE_DATE widget has `startDate == 
 ### 47.1 Delete a work item
 Create a throwaway work item, record its `id`, then:
 ```
-gitlab_work_item_delete(id=<throwaway-gid>)
+gitlab_work_items_delete(id=<throwaway-gid>)
 ```
-Returns a success text message. A subsequent `gitlab_work_item_get(id=<throwaway-gid>)` returns a GraphQL error (work item not found).
+Returns a success text message. A subsequent `gitlab_work_items_get(id=<throwaway-gid>)` returns a GraphQL error (work item not found).
 
 Delete the scratch items from Section 45 (`wi-scratch-gid`, `wi-desc-gid`, `wi-dates-gid`) once testing is complete.
 
@@ -1572,12 +1572,12 @@ Delete the scratch items from Section 45 (`wi-scratch-gid`, `wi-desc-gid`, `wi-d
 
 ## Workflow H: Work item lifecycle (create → get → update → close → delete)
 
-1. `gitlab_work_item_create(project_path="3kirt1/gitlab-mcp-testing", work_item_type="TASK", title="Workflow H task")` — record `id` as `wi-h-gid`
-2. `gitlab_work_item_get(id=<wi-h-gid>)` — confirm `title == "Workflow H task"`, `state == "OPEN"`
-3. `gitlab_work_item_update(id=<wi-h-gid>, title="Workflow H task — updated", description="Added in step 3.")` — confirm both fields returned
+1. `gitlab_work_items_create(project_path="3kirt1/gitlab-mcp-testing", work_item_type="TASK", title="Workflow H task")` — record `id` as `wi-h-gid`
+2. `gitlab_work_items_get(id=<wi-h-gid>)` — confirm `title == "Workflow H task"`, `state == "OPEN"`
+3. `gitlab_work_items_update(id=<wi-h-gid>, title="Workflow H task — updated", description="Added in step 3.")` — confirm both fields returned
 4. `gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing", types=["TASK"])` — confirm `wi-h-gid` appears in results
-5. `gitlab_work_item_update(id=<wi-h-gid>, state_event="CLOSE")` — confirm `state == "CLOSED"`
+5. `gitlab_work_items_update(id=<wi-h-gid>, state_event="CLOSE")` — confirm `state == "CLOSED"`
 6. `gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing", state="closed")` — confirm `wi-h-gid` appears
-7. `gitlab_work_item_delete(id=<wi-h-gid>)` — confirm success message
-8. `gitlab_work_item_get(id=<wi-h-gid>)` — confirm GraphQL error (not found)
+7. `gitlab_work_items_delete(id=<wi-h-gid>)` — confirm success message
+8. `gitlab_work_items_get(id=<wi-h-gid>)` — confirm GraphQL error (not found)
 

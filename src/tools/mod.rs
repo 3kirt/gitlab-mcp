@@ -25,8 +25,8 @@ pub mod merge_requests;
 pub mod pipelines;
 pub mod repositories;
 pub mod repository_files;
-pub mod work_items;
 mod slim;
+pub mod work_items;
 
 // --------------------------------------------------------------------------
 // Shared helpers
@@ -81,8 +81,12 @@ pub fn json_graphql_list_result(
     v: Value,
     page_info: GraphqlPageInfo,
 ) -> Result<CallToolResult, McpError> {
+    // Apply the lightweight slim pass: drops nulls, _links, references, and collapses
+    // user objects. GraphQL queries already field-select, so heavy slim_list (which
+    // strips description/pipeline/etc.) doesn't apply, but this keeps list and
+    // single-get responses consistent in shape for the same widget node.
     let envelope = GraphqlListEnvelope {
-        items: v,
+        items: slim::slim_get(v),
         has_next_page: page_info.has_next_page,
         end_cursor: page_info.end_cursor,
     };
@@ -1107,7 +1111,7 @@ impl GitlabMcpServer {
     #[tool(
         description = "Get a single GitLab work item by its global ID (e.g. \"gid://gitlab/WorkItem/123\"). Returns full details including description, assignees, labels, milestone, hierarchy (parent and children), start/due dates, time tracking, and weight."
     )]
-    async fn gitlab_work_item_get(
+    async fn gitlab_work_items_get(
         &self,
         Parameters(p): Parameters<work_items::WorkItemGetParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -1117,7 +1121,7 @@ impl GitlabMcpServer {
     #[tool(
         description = "Create a new work item in a GitLab project. Required: project_path (full path e.g. \"mygroup/myproject\"), work_item_type (ISSUE, TASK, EPIC, TICKET, INCIDENT, TEST_CASE, REQUIREMENT, OBJECTIVE, KEY_RESULT, or a \"gid://\" type ID), title. Optional: description (Markdown), assignee_usernames, parent_id (global ID for hierarchy), start_date, due_date (ISO 8601)."
     )]
-    async fn gitlab_work_item_create(
+    async fn gitlab_work_items_create(
         &self,
         Parameters(p): Parameters<work_items::WorkItemCreateParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -1127,7 +1131,7 @@ impl GitlabMcpServer {
     #[tool(
         description = "Update a GitLab work item by global ID. All fields are optional. Use state_event=\"CLOSE\" or \"REOPEN\" to change state. Providing assignee_usernames replaces the full assignee list (pass an empty list to clear all assignees). Providing parent_id sets or changes the hierarchy parent."
     )]
-    async fn gitlab_work_item_update(
+    async fn gitlab_work_items_update(
         &self,
         Parameters(p): Parameters<work_items::WorkItemUpdateParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -1137,7 +1141,7 @@ impl GitlabMcpServer {
     #[tool(
         description = "Delete a GitLab work item by its global ID (e.g. \"gid://gitlab/WorkItem/123\"). This action is permanent and cannot be undone."
     )]
-    async fn gitlab_work_item_delete(
+    async fn gitlab_work_items_delete(
         &self,
         Parameters(p): Parameters<work_items::WorkItemDeleteParams>,
     ) -> Result<CallToolResult, McpError> {

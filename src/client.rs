@@ -611,7 +611,10 @@ mod tests {
             .await;
 
         let result = mock_client(&server)
-            .graphql("{ workItem(id: \"1\") { id title } }", serde_json::json!({}))
+            .graphql(
+                "{ workItem(id: \"1\") { id title } }",
+                serde_json::json!({}),
+            )
             .await
             .unwrap();
         assert_eq!(result["workItem"]["title"], "Test");

@@ -2,6 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, GraphqlListResult, GraphqlPageInfo};
+use crate::tools::BodyBuilder;
 
 // --------------------------------------------------------------------------
 // Helpers
@@ -9,6 +10,10 @@ use crate::client::{GitlabClient, GitlabError, GraphqlListResult, GraphqlPageInf
 
 /// Convert a short work item type name (e.g. "TASK") to its GitLab global type ID.
 /// Pass-through for strings that already start with "gid://".
+//
+// The numeric IDs below are seeded by GitLab migrations and are stable on gitlab.com,
+// but a self-hosted instance with custom types could see different IDs. Callers can
+// always bypass the mapping by passing a full "gid://gitlab/WorkItems::Type/<id>".
 fn type_name_to_gid(s: &str) -> String {
     if s.starts_with("gid://") {
         return s.to_string();
@@ -42,6 +47,34 @@ fn check_mutation_errors(payload: &Value, field: &str) -> Result<(), GitlabError
         return Err(GitlabError::Graphql(msg));
     }
     Ok(())
+}
+
+/// Append the work item widget fields shared by create and update mutations.
+/// Each widget is omitted entirely when its corresponding parameter is `None`.
+fn add_shared_widgets(
+    builder: BodyBuilder,
+    description: Option<String>,
+    assignee_usernames: Option<Vec<String>>,
+    parent_id: Option<String>,
+    start_date: Option<String>,
+    due_date: Option<String>,
+) -> BodyBuilder {
+    let dates_widget = (start_date.is_some() || due_date.is_some())
+        .then(|| json!({ "startDate": start_date, "dueDate": due_date }));
+    builder
+        .opt(
+            "descriptionWidget",
+            description.map(|d| json!({ "description": d })),
+        )
+        .opt(
+            "assigneesWidget",
+            assignee_usernames.map(|u| json!({ "assigneeUsernames": u })),
+        )
+        .opt(
+            "hierarchyWidget",
+            parent_id.map(|id| json!({ "parentId": id })),
+        )
+        .opt("startAndDueDateWidget", dates_widget)
 }
 
 // --------------------------------------------------------------------------
@@ -173,7 +206,13 @@ pub async fn work_items_list(client: &GitlabClient, p: WorkItemsListParams) -> G
     let has_next_page = wi["pageInfo"]["hasNextPage"].as_bool().unwrap_or(false);
     let end_cursor = wi["pageInfo"]["endCursor"].as_str().map(String::from);
     let nodes = wi["nodes"].take();
-    Ok((nodes, GraphqlPageInfo { has_next_page, end_cursor }))
+    Ok((
+        nodes,
+        GraphqlPageInfo {
+            has_next_page,
+            end_cursor,
+        },
+    ))
 }
 
 // --------------------------------------------------------------------------
@@ -235,7 +274,10 @@ query WorkItemGet($id: WorkItemID!) {
 }
 "#;
 
-pub async fn work_item_get(client: &GitlabClient, p: WorkItemGetParams) -> Result<Value, GitlabError> {
+pub async fn work_item_get(
+    client: &GitlabClient,
+    p: WorkItemGetParams,
+) -> Result<Value, GitlabError> {
     let vars = json!({ "id": p.id });
     let mut data = client.graphql(GET_QUERY, vars).await?;
     let item = data["workItem"].take();
@@ -296,33 +338,20 @@ pub async fn work_item_create(
     client: &GitlabClient,
     p: WorkItemCreateParams,
 ) -> Result<Value, GitlabError> {
-    let mut input = serde_json::Map::new();
-    input.insert("projectPath".into(), p.project_path.into());
-    input.insert(
-        "workItemTypeId".into(),
-        type_name_to_gid(&p.work_item_type).into(),
-    );
-    input.insert("title".into(), p.title.into());
-    if let Some(desc) = p.description {
-        input.insert("descriptionWidget".into(), json!({ "description": desc }));
-    }
-    if let Some(usernames) = p.assignee_usernames {
-        input.insert(
-            "assigneesWidget".into(),
-            json!({ "assigneeUsernames": usernames }),
-        );
-    }
-    if let Some(parent_id) = p.parent_id {
-        input.insert("hierarchyWidget".into(), json!({ "parentId": parent_id }));
-    }
-    if p.start_date.is_some() || p.due_date.is_some() {
-        input.insert(
-            "startAndDueDateWidget".into(),
-            json!({ "startDate": p.start_date, "dueDate": p.due_date }),
-        );
-    }
+    let input = add_shared_widgets(
+        BodyBuilder::new()
+            .req("projectPath", p.project_path)
+            .req("workItemTypeId", type_name_to_gid(&p.work_item_type))
+            .req("title", p.title),
+        p.description,
+        p.assignee_usernames,
+        p.parent_id,
+        p.start_date,
+        p.due_date,
+    )
+    .build();
 
-    let vars = json!({ "input": Value::Object(input) });
+    let vars = json!({ "input": input });
     let mut data = client.graphql(CREATE_MUTATION, vars).await?;
     check_mutation_errors(&data, "workItemCreate")?;
     Ok(data["workItemCreate"]["workItem"].take())
@@ -334,9 +363,7 @@ pub async fn work_item_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct WorkItemUpdateParams {
-    #[schemars(
-        description = "Work item global ID (e.g. \"gid://gitlab/WorkItem/123\")"
-    )]
+    #[schemars(description = "Work item global ID (e.g. \"gid://gitlab/WorkItem/123\")")]
     pub id: String,
     #[schemars(description = "New title")]
     pub title: Option<String>,
@@ -379,34 +406,20 @@ pub async fn work_item_update(
     client: &GitlabClient,
     p: WorkItemUpdateParams,
 ) -> Result<Value, GitlabError> {
-    let mut input = serde_json::Map::new();
-    input.insert("id".into(), p.id.into());
-    if let Some(title) = p.title {
-        input.insert("title".into(), title.into());
-    }
-    if let Some(desc) = p.description {
-        input.insert("descriptionWidget".into(), json!({ "description": desc }));
-    }
-    if let Some(state_event) = p.state_event {
-        input.insert("stateEvent".into(), state_event.into());
-    }
-    if let Some(usernames) = p.assignee_usernames {
-        input.insert(
-            "assigneesWidget".into(),
-            json!({ "assigneeUsernames": usernames }),
-        );
-    }
-    if let Some(parent_id) = p.parent_id {
-        input.insert("hierarchyWidget".into(), json!({ "parentId": parent_id }));
-    }
-    if p.start_date.is_some() || p.due_date.is_some() {
-        input.insert(
-            "startAndDueDateWidget".into(),
-            json!({ "startDate": p.start_date, "dueDate": p.due_date }),
-        );
-    }
+    let input = add_shared_widgets(
+        BodyBuilder::new()
+            .req("id", p.id)
+            .opt("title", p.title)
+            .opt("stateEvent", p.state_event),
+        p.description,
+        p.assignee_usernames,
+        p.parent_id,
+        p.start_date,
+        p.due_date,
+    )
+    .build();
 
-    let vars = json!({ "input": Value::Object(input) });
+    let vars = json!({ "input": input });
     let mut data = client.graphql(UPDATE_MUTATION, vars).await?;
     check_mutation_errors(&data, "workItemUpdate")?;
     Ok(data["workItemUpdate"]["workItem"].take())
@@ -418,9 +431,7 @@ pub async fn work_item_update(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct WorkItemDeleteParams {
-    #[schemars(
-        description = "Work item global ID (e.g. \"gid://gitlab/WorkItem/123\")"
-    )]
+    #[schemars(description = "Work item global ID (e.g. \"gid://gitlab/WorkItem/123\")")]
     pub id: String,
 }
 
@@ -566,9 +577,16 @@ mod tests {
 
         let p = WorkItemsListParams {
             project_path: "mygroup/myrepo".into(),
-            types: None, state: None, search: None, assignee_usernames: None,
-            author_username: None, label_name: None, iids: None, sort: None,
-            first: None, after: None,
+            types: None,
+            state: None,
+            search: None,
+            assignee_usernames: None,
+            author_username: None,
+            label_name: None,
+            iids: None,
+            sort: None,
+            first: None,
+            after: None,
         };
         let (nodes, page_info) = work_items_list(&mock_client(&server), p).await.unwrap();
         assert_eq!(nodes[0]["title"], "Fix bug");
@@ -594,9 +612,16 @@ mod tests {
 
         let p = WorkItemsListParams {
             project_path: "mygroup/myrepo".into(),
-            types: None, state: None, search: None, assignee_usernames: None,
-            author_username: None, label_name: None, iids: None, sort: None,
-            first: None, after: None,
+            types: None,
+            state: None,
+            search: None,
+            assignee_usernames: None,
+            author_username: None,
+            label_name: None,
+            iids: None,
+            sort: None,
+            first: None,
+            after: None,
         };
         let (nodes, page_info) = work_items_list(&mock_client(&server), p).await.unwrap();
         assert_eq!(nodes, serde_json::json!([]));
@@ -615,9 +640,16 @@ mod tests {
 
         let p = WorkItemsListParams {
             project_path: "nonexistent/project".into(),
-            types: None, state: None, search: None, assignee_usernames: None,
-            author_username: None, label_name: None, iids: None, sort: None,
-            first: None, after: None,
+            types: None,
+            state: None,
+            search: None,
+            assignee_usernames: None,
+            author_username: None,
+            label_name: None,
+            iids: None,
+            sort: None,
+            first: None,
+            after: None,
         };
         let err = work_items_list(&mock_client(&server), p).await.unwrap_err();
         assert!(matches!(err, GitlabError::Graphql(_)));
@@ -643,7 +675,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let p = WorkItemGetParams { id: "gid://gitlab/WorkItem/42".into() };
+        let p = WorkItemGetParams {
+            id: "gid://gitlab/WorkItem/42".into(),
+        };
         let item = work_item_get(&mock_client(&server), p).await.unwrap();
         assert_eq!(item["id"], "gid://gitlab/WorkItem/42");
         assert_eq!(item["title"], "Fix the bug");
@@ -658,7 +692,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let p = WorkItemGetParams { id: "gid://gitlab/WorkItem/999".into() };
+        let p = WorkItemGetParams {
+            id: "gid://gitlab/WorkItem/999".into(),
+        };
         let err = work_item_get(&mock_client(&server), p).await.unwrap_err();
         assert!(matches!(err, GitlabError::Graphql(_)));
     }
@@ -691,8 +727,10 @@ mod tests {
             work_item_type: "TASK".into(),
             title: "New task".into(),
             description: Some("Do the thing".into()),
-            assignee_usernames: None, parent_id: None,
-            start_date: None, due_date: None,
+            assignee_usernames: None,
+            parent_id: None,
+            start_date: None,
+            due_date: None,
         };
         let item = work_item_create(&mock_client(&server), p).await.unwrap();
         assert_eq!(item["id"], "gid://gitlab/WorkItem/99");
@@ -717,10 +755,15 @@ mod tests {
             project_path: "mygroup/myrepo".into(),
             work_item_type: "TASK".into(),
             title: "".into(),
-            description: None, assignee_usernames: None,
-            parent_id: None, start_date: None, due_date: None,
+            description: None,
+            assignee_usernames: None,
+            parent_id: None,
+            start_date: None,
+            due_date: None,
         };
-        let err = work_item_create(&mock_client(&server), p).await.unwrap_err();
+        let err = work_item_create(&mock_client(&server), p)
+            .await
+            .unwrap_err();
         match err {
             GitlabError::Graphql(msg) => assert!(msg.contains("Title can't be blank")),
             other => panic!("expected Graphql error, got {other}"),
@@ -754,8 +797,11 @@ mod tests {
             id: "gid://gitlab/WorkItem/1".into(),
             title: Some("Updated title".into()),
             state_event: Some("CLOSE".into()),
-            description: None, assignee_usernames: None,
-            parent_id: None, start_date: None, due_date: None,
+            description: None,
+            assignee_usernames: None,
+            parent_id: None,
+            start_date: None,
+            due_date: None,
         };
         let item = work_item_update(&mock_client(&server), p).await.unwrap();
         assert_eq!(item["title"], "Updated title");
@@ -778,11 +824,17 @@ mod tests {
 
         let p = WorkItemUpdateParams {
             id: "gid://gitlab/WorkItem/999".into(),
-            title: None, description: None, state_event: None,
-            assignee_usernames: None, parent_id: None,
-            start_date: None, due_date: None,
+            title: None,
+            description: None,
+            state_event: None,
+            assignee_usernames: None,
+            parent_id: None,
+            start_date: None,
+            due_date: None,
         };
-        let err = work_item_update(&mock_client(&server), p).await.unwrap_err();
+        let err = work_item_update(&mock_client(&server), p)
+            .await
+            .unwrap_err();
         assert!(matches!(err, GitlabError::Graphql(_)));
     }
 
@@ -801,7 +853,9 @@ mod tests {
             .mount(&server)
             .await;
 
-        let p = WorkItemDeleteParams { id: "gid://gitlab/WorkItem/1".into() };
+        let p = WorkItemDeleteParams {
+            id: "gid://gitlab/WorkItem/1".into(),
+        };
         assert!(work_item_delete(&mock_client(&server), p).await.is_ok());
     }
 
@@ -818,8 +872,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        let p = WorkItemDeleteParams { id: "gid://gitlab/WorkItem/1".into() };
-        let err = work_item_delete(&mock_client(&server), p).await.unwrap_err();
+        let p = WorkItemDeleteParams {
+            id: "gid://gitlab/WorkItem/1".into(),
+        };
+        let err = work_item_delete(&mock_client(&server), p)
+            .await
+            .unwrap_err();
         assert!(matches!(err, GitlabError::Graphql(_)));
     }
 }
