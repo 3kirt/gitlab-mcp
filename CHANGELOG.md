@@ -4,6 +4,22 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.7.0] — 2026-05-20
+
+### Changed
+- Issue list responses now strip ten additional low-signal fields: `assignees`,
+  `blocking_issues_count`, `confidential`, `downvotes`, `has_tasks`, `imported`,
+  `imported_from`, `issue_type`, `severity`, `task_status`, `upvotes`. These fields
+  are almost always zero/false/duplicate/unknown and are still available on single-get
+  responses via `gitlab_issues_get`.
+
+### Added
+- `--version` flag prints the current version and exits
+- `--help` output expanded with environment variable documentation and quickstart
+  setup instructions
+
+---
+
 ## [0.6.0] — 2026-05-19
 
 ### Added

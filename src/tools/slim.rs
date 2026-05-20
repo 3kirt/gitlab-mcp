@@ -17,17 +17,17 @@ const STRIP_LIST_ITEM: &[&str] = &[
     "diff_stats",    // addition/deletion counts; use single-get if needed
     "time_stats",    // nearly always zeros; use single-get if needed
     // Issue-specific noise fields — almost always zero/false/duplicate/unknown.
-    "assignees",              // array duplicates the scalar `assignee` field
-    "blocking_issues_count",  // almost always 0
-    "confidential",           // almost always false
-    "downvotes",              // rarely relevant in agentic workflows
-    "has_tasks",              // redundant with `task_completion_status`
-    "imported",               // almost always false
-    "imported_from",          // almost always "none"
-    "issue_type",             // duplicate of `type` (uppercase variant)
-    "severity",               // almost always "UNKNOWN"
-    "task_status",            // human-readable string duplicating `task_completion_status`
-    "upvotes",                // rarely relevant in agentic workflows
+    "assignees",             // array duplicates the scalar `assignee` field
+    "blocking_issues_count", // almost always 0
+    "confidential",          // almost always false
+    "downvotes",             // rarely relevant in agentic workflows
+    "has_tasks",             // redundant with `task_completion_status`
+    "imported",              // almost always false
+    "imported_from",         // almost always "none"
+    "issue_type",            // duplicate of `type` (uppercase variant)
+    "severity",              // almost always "UNKNOWN"
+    "task_status",           // human-readable string duplicating `task_completion_status`
+    "upvotes",               // rarely relevant in agentic workflows
 ];
 
 /// Keys kept when collapsing a GitLab user object.
