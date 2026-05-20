@@ -1,8 +1,8 @@
 # GitLab MCP Testing Protocol
 
-This document describes how to verify all Issues, Issue Notes, Branches, Merge Requests, MR Discussions, and Repository/Files API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`).
+This document describes how to verify all Issues, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, and Work Items API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`).
 
-**Automated coverage (not retested here):** `encode_project_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, and cross-resource consistency.
+**Automated coverage (not retested here):** `encode_project_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`. For work items, `type_name_to_gid` (all 9 type mappings, case-insensitivity, GID pass-through), `check_mutation_errors` (empty/absent/non-empty arrays), and all five domain functions (success paths, null/not-found errors, mutation error propagation) are covered by wiremock tests. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
 
 ---
 
@@ -12,7 +12,9 @@ The following behaviors apply across all sections. They are not re-stated per se
 
 **Numeric project IDs** — `encode_project_id` is unit-tested. Run one live smoke test at the start of any section using `project_id="82279422"` instead of the path form. No need to repeat the numeric-ID variant in every section.
 
-**List response shape** — Every list endpoint returns an envelope object: `{ "items": [...], "page", "per_page", "total", "total_pages", "next_page" }`. The pagination fields are populated from GitLab's `X-*` response headers and any field GitLab omits (e.g. `X-Total` on large endpoints, `X-Next-Page` on the last page) is omitted from the envelope. Item-level invariants in the tables below apply to entries in `items`.
+**List response shape (REST)** — Every REST list endpoint returns an envelope object: `{ "items": [...], "page", "per_page", "total", "total_pages", "next_page" }`. The pagination fields are populated from GitLab's `X-*` response headers and any field GitLab omits (e.g. `X-Total` on large endpoints, `X-Next-Page` on the last page) is omitted from the envelope. Item-level invariants in the tables below apply to entries in `items`.
+
+**List response shape (GraphQL / Work Items)** — Work item list responses use cursor-based pagination: `{ "items": [...], "has_next_page": bool, "end_cursor": string | null }`. There are no `page`, `per_page`, or `total` fields. Pass `end_cursor` as `after` in the next call to advance the cursor; `has_next_page: false` with `end_cursor: null` signals the last page. Use `first` to control page size (default 20, max 100).
 
 **Empty results** — Any search, filter, or regex with no matches returns `{"items": []}` (plus whatever pagination fields GitLab populates); no error. Not retested per section.
 
@@ -115,6 +117,25 @@ Check these on every response.
 | `updated_at` | Non-null ISO 8601 datetime |
 | `noteable_type` | `"Issue"` |
 | List envelope shape | Standard pagination envelope; invariants apply to each entry in `items` |
+
+**Work items (list and get):**
+
+| Property | What to verify |
+|---|---|
+| `id` | Non-empty global ID string (`gid://gitlab/WorkItem/NNN`) |
+| `iid` | Non-empty string representing the project-relative integer |
+| `title` | Non-empty string |
+| `state` | `"OPEN"` or `"CLOSED"` — uppercase, unlike the REST issues `opened`/`closed` |
+| `createdAt` | Non-null ISO 8601 datetime (camelCase, not `created_at`) |
+| `updatedAt` | Non-null ISO 8601 datetime |
+| `webUrl` | Non-empty URL |
+| `workItemType.name` | Non-empty string (e.g. `"Task"`, `"Issue"`, `"Ticket"`) |
+| `widgets` | Array of objects each with a `type` field (e.g. `"DESCRIPTION"`, `"ASSIGNEES"`) |
+| List envelope shape | `{ items: [...], has_next_page: bool, end_cursor: string\|null }` — no page/total fields |
+| Delete confirmation | Success text message, not a JSON object |
+| Get-only fields | `author`, `closedAt`, `namespace.fullPath` only present on single-get responses |
+
+> **Key differences from REST:** work item tools require `project_path` (full path string, e.g. `"3kirt1/gitlab-mcp-testing"`) rather than `project_id`. Numeric project IDs are not accepted by the GraphQL API. Get, update, and delete operations require the global ID (`gid://gitlab/WorkItem/NNN`) returned by list and create; the project-relative `iid` is not sufficient.
 
 ---
 
@@ -226,6 +247,43 @@ gitlab_mrs_discussions_create(
 )
 ```
 Record `id` as `disc-seed-1` and `notes[0].id` as `note-seed-1`.
+
+### Step 8: Create Work Items
+
+**8a.** Create the parent task:
+```
+gitlab_work_item_create(
+  project_path="3kirt1/gitlab-mcp-testing",
+  work_item_type="TASK",
+  title="Implement login feature",
+  description="This is the parent task for hierarchy testing."
+)
+```
+Record `id` (global ID) as `wi-task-1-gid` and `iid` as `wi-task-1-iid`.
+
+**8b.** Create a child task referencing the parent:
+```
+gitlab_work_item_create(
+  project_path="3kirt1/gitlab-mcp-testing",
+  work_item_type="TASK",
+  title="Write unit tests for login",
+  parent_id=<wi-task-1-gid>
+)
+```
+Record `id` as `wi-task-2-gid`.
+
+**8c.** Create a work item of type ISSUE:
+```
+gitlab_work_item_create(
+  project_path="3kirt1/gitlab-mcp-testing",
+  work_item_type="ISSUE",
+  title="Bug: login page crashes on empty password",
+  description="Steps to reproduce: submit login form with empty password field."
+)
+```
+Record `id` as `wi-issue-1-gid`.
+
+After seeding: 3 work items; all `OPEN`; `wi-task-1` has one child (`wi-task-2`).
 
 ---
 
@@ -1313,4 +1371,213 @@ gitlab_issues_notes_delete(
 )
 ```
 Returns a success text message. A subsequent `gitlab_issues_notes_get` with the same `note_id` returns a `404` error.
+
+---
+
+## Section 43: Work Items — List
+
+### 43.1 List all work items (no filter)
+```
+gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing")
+```
+Returns at least 3 items (the 3 seeded in Step 8). Each satisfies work item universal invariants. Envelope has `has_next_page` and `end_cursor` fields.
+
+### 43.2 Filter by single type
+```
+gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing", types=["TASK"])
+```
+Returns `wi-task-1` and `wi-task-2` only. Each item's `workItemType.name == "Task"`.
+
+### 43.3 Filter by multiple types
+```
+gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing", types=["TASK", "ISSUE"])
+```
+Returns all 3 seeded work items.
+
+### 43.4 Filter by type — returns only matching type
+```
+gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing", types=["ISSUE"])
+```
+Returns only `wi-issue-1`. `workItemType.name == "Issue"`.
+
+### 43.5 Filter by state
+```
+gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing", state="opened")
+```
+Returns all 3 seeded work items (all `OPEN`). Then:
+```
+gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing", state="closed")
+```
+Returns `[]` (none closed yet).
+
+### 43.6 Search by keyword
+```
+gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing", search="login")
+```
+Returns `wi-task-1` and `wi-issue-1` (both contain "login" in their titles). Does not return `wi-task-2`.
+
+### 43.7 Filter by IID
+```
+gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing", iids=[<wi-task-1-iid>])
+```
+Returns exactly 1 item matching `wi-task-1`.
+
+### 43.8 Cursor pagination
+```
+gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing", first=1)
+```
+`items` contains exactly 1 work item. `has_next_page == true`, `end_cursor` is a non-null string. Then:
+```
+gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing", first=1, after=<end_cursor>)
+```
+Returns the second work item; no overlap with the first page. On the final page, `has_next_page == false` and `end_cursor == null`.
+
+### 43.9 Hierarchy widget in list response
+```
+gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing", iids=[<wi-task-2-iid>])
+```
+The result for `wi-task-2` has a widget with `type == "HIERARCHY"` where `parent.id == <wi-task-1-gid>` and `parent.title == "Implement login feature"`.
+
+---
+
+## Section 44: Work Item — Get
+
+### 44.1 Get a task by global ID
+```
+gitlab_work_item_get(id=<wi-task-1-gid>)
+```
+`id == <wi-task-1-gid>`, `title == "Implement login feature"`, `state == "OPEN"`, `workItemType.name == "Task"`. The response includes `author`, `namespace.fullPath`, and a `widgets` array. A widget with `type == "HIERARCHY"` is present with `hasChildren == true` and at least one entry in `children.nodes`.
+
+### 44.2 Get an issue-type work item
+```
+gitlab_work_item_get(id=<wi-issue-1-gid>)
+```
+`workItemType.name == "Issue"`. A widget with `type == "DESCRIPTION"` contains `description == "Steps to reproduce: submit login form with empty password field."`.
+
+### 44.3 Get a non-existent work item
+```
+gitlab_work_item_get(id="gid://gitlab/WorkItem/999999999")
+```
+Returns a GraphQL error (not a JSON work item object).
+
+---
+
+## Section 45: Work Item — Create
+
+### 45.1 Create with required fields only
+```
+gitlab_work_item_create(
+  project_path="3kirt1/gitlab-mcp-testing",
+  work_item_type="TASK",
+  title="Minimal task"
+)
+```
+Returned `title == "Minimal task"`, `state == "OPEN"`, `workItemType.name == "Task"`, `id` is a non-empty global ID string. Record `id` as `wi-scratch-gid`.
+
+### 45.2 Create with description and assignee
+```
+gitlab_work_item_create(
+  project_path="3kirt1/gitlab-mcp-testing",
+  work_item_type="TASK",
+  title="Task with description",
+  description="## Details\n\nFull description here.",
+  assignee_usernames=["3kirt1"]
+)
+```
+`title == "Task with description"`. Confirm via `gitlab_work_item_get`: a widget with `type == "DESCRIPTION"` has `description` containing `"## Details"`. A widget with `type == "ASSIGNEES"` has a non-empty `assignees.nodes`. Record `id` as `wi-desc-gid`.
+
+### 45.3 Create with start and due dates
+```
+gitlab_work_item_create(
+  project_path="3kirt1/gitlab-mcp-testing",
+  work_item_type="TASK",
+  title="Task with dates",
+  start_date="2026-06-01",
+  due_date="2026-06-30"
+)
+```
+Confirm via `gitlab_work_item_get`: a widget with `type == "START_AND_DUE_DATE"` has `startDate == "2026-06-01"` and `dueDate == "2026-06-30"`. Record `id` as `wi-dates-gid`.
+
+### 45.4 Create with parent (hierarchy)
+```
+gitlab_work_item_create(
+  project_path="3kirt1/gitlab-mcp-testing",
+  work_item_type="TASK",
+  title="Child of scratch task",
+  parent_id=<wi-scratch-gid>
+)
+```
+Confirm via `gitlab_work_item_get(id=<wi-scratch-gid>)`: the HIERARCHY widget now has `hasChildren == true` and the new task appears in `children.nodes`.
+
+---
+
+## Section 46: Work Item — Update
+
+Operate on `wi-scratch-gid` from Section 45.1 unless otherwise noted.
+
+### 46.1 Update title
+```
+gitlab_work_item_update(id=<wi-scratch-gid>, title="Updated task title")
+```
+Returned `title == "Updated task title"`.
+
+### 46.2 Update description
+```
+gitlab_work_item_update(id=<wi-scratch-gid>, description="Updated description.")
+```
+Confirm via `gitlab_work_item_get`: DESCRIPTION widget has `description == "Updated description."`.
+
+### 46.3 Close via state_event
+```
+gitlab_work_item_update(id=<wi-scratch-gid>, state_event="CLOSE")
+```
+Returned `state == "CLOSED"`.
+
+### 46.4 Reopen via state_event
+```
+gitlab_work_item_update(id=<wi-scratch-gid>, state_event="REOPEN")
+```
+Returned `state == "OPEN"`.
+
+### 46.5 Replace assignees
+```
+gitlab_work_item_update(id=<wi-desc-gid>, assignee_usernames=["3kirt1"])
+```
+Confirm via `gitlab_work_item_get`: ASSIGNEES widget has exactly one entry with `username == "3kirt1"`. Then clear:
+```
+gitlab_work_item_update(id=<wi-desc-gid>, assignee_usernames=[])
+```
+Confirm via `gitlab_work_item_get`: ASSIGNEES widget has `assignees.nodes == []`.
+
+### 46.6 Update dates
+```
+gitlab_work_item_update(id=<wi-dates-gid>, start_date="2026-07-01", due_date="2026-07-31")
+```
+Confirm via `gitlab_work_item_get`: START_AND_DUE_DATE widget has `startDate == "2026-07-01"` and `dueDate == "2026-07-31"`.
+
+---
+
+## Section 47: Work Item — Delete
+
+### 47.1 Delete a work item
+Create a throwaway work item, record its `id`, then:
+```
+gitlab_work_item_delete(id=<throwaway-gid>)
+```
+Returns a success text message. A subsequent `gitlab_work_item_get(id=<throwaway-gid>)` returns a GraphQL error (work item not found).
+
+Delete the scratch items from Section 45 (`wi-scratch-gid`, `wi-desc-gid`, `wi-dates-gid`) once testing is complete.
+
+---
+
+## Workflow H: Work item lifecycle (create → get → update → close → delete)
+
+1. `gitlab_work_item_create(project_path="3kirt1/gitlab-mcp-testing", work_item_type="TASK", title="Workflow H task")` — record `id` as `wi-h-gid`
+2. `gitlab_work_item_get(id=<wi-h-gid>)` — confirm `title == "Workflow H task"`, `state == "OPEN"`
+3. `gitlab_work_item_update(id=<wi-h-gid>, title="Workflow H task — updated", description="Added in step 3.")` — confirm both fields returned
+4. `gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing", types=["TASK"])` — confirm `wi-h-gid` appears in results
+5. `gitlab_work_item_update(id=<wi-h-gid>, state_event="CLOSE")` — confirm `state == "CLOSED"`
+6. `gitlab_work_items_list(project_path="3kirt1/gitlab-mcp-testing", state="closed")` — confirm `wi-h-gid` appears
+7. `gitlab_work_item_delete(id=<wi-h-gid>)` — confirm success message
+8. `gitlab_work_item_get(id=<wi-h-gid>)` — confirm GraphQL error (not found)
 
