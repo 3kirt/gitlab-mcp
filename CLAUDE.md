@@ -31,7 +31,7 @@ MCP client → rmcp transport (stdio)
            → GitlabMcpServer (tool_router macro dispatch)
            → domain function in tools/issues.rs, tools/merge_requests.rs, etc.
            → GitlabClient (reqwest, PRIVATE-TOKEN header)
-           → GitLab REST API (or GraphQL API for work items)
+           → GitLab REST API (or GraphQL API for epics / work items)
 ```
 
 ### Key modules
@@ -55,7 +55,9 @@ MCP client → rmcp transport (stdio)
 
 **`src/tools/issue_notes.rs`** — Issue Notes domain module. Implements list, get, create, update, and delete for notes on issues.
 
-**`src/tools/work_items.rs`** — Work Items domain module. Unlike the other domains, this module uses the GraphQL API (`/api/graphql`) because the REST API has no equivalent for tasks/epics/objectives/etc. Each operation has a `*Params` struct plus a hard-coded GraphQL query/mutation string constant. Implements list (cursor-paginated via `first`/`after`), get, create, update, and delete. Helpers: `type_name_to_gid()` maps short type names (`TASK`, `EPIC`, ...) to `gid://gitlab/WorkItems::Type/<id>`; `usernames_to_ids()` resolves `assignee_usernames` to numeric IDs via a `users(usernames: …)` query and errors if any input doesn't resolve; `check_mutation_errors()` surfaces mutation-level `errors[]` as `GitlabError::Graphql`; `add_shared_widgets()` assembles the widget fields shared by create and update. Tools use `project_path` (full namespace path) rather than `project_id`; numeric IDs are not accepted by GraphQL.
+**`src/tools/epics.rs`** — Epics domain module (user-facing). Uses the GraphQL API for group-level work items but exposes a REST-style surface: `group_id: String` (numeric or path) and `epic_iid: u64`. Each operation has a `*Params` struct plus its own GraphQL query/mutation. List and get queries are group-scoped (`group(fullPath:) { workItems(...) }` with `types: [EPIC]`). Two resolvers bridge to the work-items plumbing: `resolve_group_path()` converts a numeric `group_id` via REST `GET /api/v4/groups/:id`; `resolve_epic_gid()` converts `(group_path, epic_iid)` to the global gid via a one-shot GraphQL lookup. Create/update/delete compose against the internal `work_item_*` functions after resolving. `parent_epic_iid = 0` on update clears the existing hierarchy parent (mirroring REST `milestone_id = 0`).
+
+**`src/tools/work_items.rs`** — Internal GraphQL primitives (no public MCP tools). Holds the `pub(crate)` work-item create/update/delete domain functions, their mutation constants, and shared helpers used by `epics.rs`: `type_name_to_gid()` maps short type names (`TASK`, `EPIC`, ...) to `gid://gitlab/WorkItems::Type/<id>`; `usernames_to_ids()` resolves `assignee_usernames` to numeric IDs via a `users(usernames: …)` query and errors if any input doesn't resolve; `check_mutation_errors()` surfaces mutation-level `errors[]` as `GitlabError::Graphql`; `add_shared_widgets()` assembles the widget fields shared by create and update (its `parent_id: Option<Value>` parameter accepts `Value::Null` to clear).
 
 **`src/config.rs`** — loads `~/.gitlab_mcp.json`; env vars `GITLAB_URL` / `GITLAB_TOKEN` take precedence. Rejects world-readable config files on Unix. Enforces HTTPS (localhost/127.0.0.1 exempted).
 
@@ -71,4 +73,4 @@ All GitLab endpoints are project-scoped. The `project_id` field accepts either a
 
 ## Testing
 
-End-to-end tool verification is documented in [`docs/testing-protocol.md`](docs/testing-protocol.md). It covers seed data setup, per-tool test cases, cross-tool workflows, and error-handling checks for Issues, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, and Work Items endpoints against the test project `3kirt1/gitlab-mcp-testing`.
+End-to-end tool verification is documented in [`docs/testing-protocol.md`](docs/testing-protocol.md). It covers seed data setup, per-tool test cases, cross-tool workflows, and error-handling checks for Issues, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, and Epics endpoints against the test project `3kirt1/gitlab-mcp-testing` (and parent group `3kirt1` for epics).

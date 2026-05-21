@@ -1,7 +1,14 @@
+//! Internal GraphQL primitives for GitLab work items.
+//!
+//! No public MCP tools live here — the user-facing surface for epics is in
+//! [`crate::tools::epics`], which composes the create/update/delete primitives
+//! and shared helpers (`type_name_to_gid`, `usernames_to_ids`,
+//! `check_mutation_errors`, `add_shared_widgets`) defined here.
+
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::client::{GitlabClient, GitlabError, GraphqlListResult, GraphqlPageInfo};
+use crate::client::{GitlabClient, GitlabError};
 use crate::tools::BodyBuilder;
 
 // --------------------------------------------------------------------------
@@ -14,7 +21,7 @@ use crate::tools::BodyBuilder;
 // The numeric IDs below are seeded by GitLab migrations and are stable on gitlab.com,
 // but a self-hosted instance with custom types could see different IDs. Callers can
 // always bypass the mapping by passing a full "gid://gitlab/WorkItems::Type/<id>".
-fn type_name_to_gid(s: &str) -> String {
+pub(crate) fn type_name_to_gid(s: &str) -> String {
     if s.starts_with("gid://") {
         return s.to_string();
     }
@@ -36,7 +43,7 @@ fn type_name_to_gid(s: &str) -> String {
 /// Look up user IDs by username(s) via GraphQL. Returns numeric user IDs (order unspecified).
 /// Returns an error if any input username does not resolve to a GitLab user — this prevents
 /// a typo from silently dropping an assignee.
-async fn usernames_to_ids(
+pub(crate) async fn usernames_to_ids(
     client: &GitlabClient,
     usernames: Vec<String>,
 ) -> Result<Vec<i64>, GitlabError> {
@@ -94,7 +101,7 @@ async fn usernames_to_ids(
 
 /// Extract mutation-level errors from a GraphQL response payload and return
 /// `Err(GitlabError::Graphql)` if any are present.
-fn check_mutation_errors(payload: &Value, field: &str) -> Result<(), GitlabError> {
+pub(crate) fn check_mutation_errors(payload: &Value, field: &str) -> Result<(), GitlabError> {
     if let Some(errors) = payload[field]["errors"].as_array()
         && !errors.is_empty()
     {
@@ -110,11 +117,11 @@ fn check_mutation_errors(payload: &Value, field: &str) -> Result<(), GitlabError
 
 /// Append the work item widget fields shared by create and update mutations.
 /// Each widget is omitted entirely when its corresponding parameter is `None`.
-fn add_shared_widgets(
+pub(crate) fn add_shared_widgets(
     builder: BodyBuilder,
     description: Option<String>,
     assignee_ids: Option<Vec<i64>>,
-    parent_id: Option<String>,
+    parent_id: Option<Value>,
     start_date: Option<String>,
     due_date: Option<String>,
 ) -> BodyBuilder {
@@ -137,225 +144,15 @@ fn add_shared_widgets(
 }
 
 // --------------------------------------------------------------------------
-// List work items
-// --------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct WorkItemsListParams {
-    #[schemars(
-        description = "Full project path (e.g. \"mygroup/myproject\"). Numeric IDs are not supported by the GraphQL API."
-    )]
-    pub project_path: String,
-    #[schemars(
-        description = "Filter by work item type(s): ISSUE, TASK, EPIC, TICKET, INCIDENT, TEST_CASE, REQUIREMENT, OBJECTIVE, KEY_RESULT"
-    )]
-    pub types: Option<Vec<String>>,
-    #[schemars(description = "Filter by state: \"opened\" or \"closed\"")]
-    pub state: Option<String>,
-    #[schemars(description = "Search in title and description")]
-    pub search: Option<String>,
-    #[schemars(description = "Filter by assignee usernames")]
-    pub assignee_usernames: Option<Vec<String>>,
-    #[schemars(description = "Filter by author username")]
-    pub author_username: Option<String>,
-    #[schemars(description = "Filter by label names")]
-    pub label_name: Option<Vec<String>>,
-    #[schemars(description = "Filter by project-relative IIDs")]
-    pub iids: Option<Vec<String>>,
-    #[schemars(
-        description = "Sort order (e.g. CREATED_DESC, CREATED_ASC, UPDATED_DESC, UPDATED_ASC, TITLE_ASC, TITLE_DESC)"
-    )]
-    pub sort: Option<String>,
-    #[schemars(
-        description = "Number of items to return for cursor-based pagination (default 20, max 100)"
-    )]
-    pub first: Option<i64>,
-    #[schemars(
-        description = "Cursor for forward pagination — pass end_cursor from a previous response"
-    )]
-    pub after: Option<String>,
-}
-
-const LIST_QUERY: &str = r#"
-query WorkItemsList(
-  $fullPath: ID!
-  $types: [IssueType!]
-  $state: IssuableState
-  $search: String
-  $assigneeUsernames: [String!]
-  $authorUsername: String
-  $labelName: [String!]
-  $iids: [String!]
-  $sort: WorkItemSort
-  $first: Int
-  $after: String
-) {
-  project(fullPath: $fullPath) {
-    workItems(
-      types: $types
-      state: $state
-      search: $search
-      assigneeUsernames: $assigneeUsernames
-      authorUsername: $authorUsername
-      labelName: $labelName
-      iids: $iids
-      sort: $sort
-      first: $first
-      after: $after
-    ) {
-      nodes {
-        id
-        iid
-        title
-        state
-        createdAt
-        updatedAt
-        webUrl
-        workItemType { name }
-        widgets {
-          type
-          ... on WorkItemWidgetDescription { description }
-          ... on WorkItemWidgetAssignees {
-            assignees { nodes { name username } }
-          }
-          ... on WorkItemWidgetLabels {
-            labels { nodes { title } }
-          }
-          ... on WorkItemWidgetHierarchy {
-            parent { id iid title }
-            hasChildren
-          }
-          ... on WorkItemWidgetStartAndDueDate {
-            startDate
-            dueDate
-          }
-        }
-      }
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
-    }
-  }
-}
-"#;
-
-pub async fn work_items_list(client: &GitlabClient, p: WorkItemsListParams) -> GraphqlListResult {
-    let vars = json!({
-        "fullPath": p.project_path,
-        "types": p.types,
-        "state": p.state,
-        "search": p.search,
-        "assigneeUsernames": p.assignee_usernames,
-        "authorUsername": p.author_username,
-        "labelName": p.label_name,
-        "iids": p.iids,
-        "sort": p.sort,
-        "first": p.first,
-        "after": p.after,
-    });
-
-    let mut data = client.graphql(LIST_QUERY, vars).await?;
-    if data["project"].is_null() {
-        return Err(GitlabError::Graphql(
-            "project not found or not accessible".into(),
-        ));
-    }
-    let wi = &mut data["project"]["workItems"];
-    let has_next_page = wi["pageInfo"]["hasNextPage"].as_bool().unwrap_or(false);
-    let end_cursor = wi["pageInfo"]["endCursor"].as_str().map(String::from);
-    let nodes = wi["nodes"].take();
-    Ok((
-        nodes,
-        GraphqlPageInfo {
-            has_next_page,
-            end_cursor,
-        },
-    ))
-}
-
-// --------------------------------------------------------------------------
-// Get single work item
-// --------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct WorkItemGetParams {
-    #[schemars(
-        description = "Work item global ID (e.g. \"gid://gitlab/WorkItem/123\"). Returned by list and create operations."
-    )]
-    pub id: String,
-}
-
-const GET_QUERY: &str = r#"
-query WorkItemGet($id: WorkItemID!) {
-  workItem(id: $id) {
-    id
-    iid
-    title
-    state
-    createdAt
-    updatedAt
-    closedAt
-    webUrl
-    author { name username }
-    workItemType { name id }
-    namespace { fullPath }
-    widgets {
-      type
-      ... on WorkItemWidgetDescription { description }
-      ... on WorkItemWidgetAssignees {
-        assignees { nodes { name username } }
-      }
-      ... on WorkItemWidgetLabels {
-        labels { nodes { title color } }
-      }
-      ... on WorkItemWidgetMilestone {
-        milestone { title id }
-      }
-      ... on WorkItemWidgetHierarchy {
-        parent { id iid title }
-        children { nodes { id iid title state } }
-        hasChildren
-      }
-      ... on WorkItemWidgetStartAndDueDate {
-        startDate
-        dueDate
-      }
-      ... on WorkItemWidgetTimeTracking {
-        timeEstimate
-        totalTimeSpent
-      }
-      ... on WorkItemWidgetWeight {
-        weight
-      }
-    }
-  }
-}
-"#;
-
-pub async fn work_item_get(
-    client: &GitlabClient,
-    p: WorkItemGetParams,
-) -> Result<Value, GitlabError> {
-    let vars = json!({ "id": p.id });
-    let mut data = client.graphql(GET_QUERY, vars).await?;
-    let item = data["workItem"].take();
-    if item.is_null() {
-        return Err(GitlabError::Graphql("work item not found".into()));
-    }
-    Ok(item)
-}
-
-// --------------------------------------------------------------------------
 // Create work item
 // --------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct WorkItemCreateParams {
+pub(crate) struct WorkItemCreateParams {
     #[schemars(
-        description = "Full project path (e.g. \"mygroup/myproject\"). Numeric IDs are not supported by the GraphQL API."
+        description = "Full namespace path (project like \"mygroup/myproject\" or group like \"mygroup\"). Numeric IDs are not supported by the GraphQL API."
     )]
-    pub project_path: String,
+    pub namespace_path: String,
     #[schemars(
         description = "Work item type: ISSUE, TASK, EPIC, TICKET, INCIDENT, TEST_CASE, REQUIREMENT, OBJECTIVE, KEY_RESULT, or a full \"gid://gitlab/WorkItems::Type/<id>\" string"
     )]
@@ -395,7 +192,7 @@ mutation WorkItemCreate($input: WorkItemCreateInput!) {
 }
 "#;
 
-pub async fn work_item_create(
+pub(crate) async fn work_item_create(
     client: &GitlabClient,
     p: WorkItemCreateParams,
 ) -> Result<Value, GitlabError> {
@@ -407,12 +204,12 @@ pub async fn work_item_create(
 
     let input = add_shared_widgets(
         BodyBuilder::new()
-            .req("projectPath", p.project_path)
+            .req("namespacePath", p.namespace_path)
             .req("workItemTypeId", type_name_to_gid(&p.work_item_type))
             .req("title", p.title),
         p.description,
         assignee_ids,
-        p.parent_id,
+        p.parent_id.map(Value::String),
         p.start_date,
         p.due_date,
     )
@@ -429,7 +226,7 @@ pub async fn work_item_create(
 // --------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct WorkItemUpdateParams {
+pub(crate) struct WorkItemUpdateParams {
     #[schemars(description = "Work item global ID (e.g. \"gid://gitlab/WorkItem/123\")")]
     pub id: String,
     #[schemars(description = "New title")]
@@ -443,9 +240,9 @@ pub struct WorkItemUpdateParams {
     )]
     pub assignee_usernames: Option<Vec<String>>,
     #[schemars(
-        description = "Set or change the hierarchy parent by providing its global ID (e.g. \"gid://gitlab/WorkItem/123\")"
+        description = "Set or change the hierarchy parent. Pass a global ID string (e.g. \"gid://gitlab/WorkItem/123\") to set, or `null` to clear the existing parent."
     )]
-    pub parent_id: Option<String>,
+    pub parent_id: Option<Value>,
     #[schemars(description = "Start date (ISO 8601)")]
     pub start_date: Option<String>,
     #[schemars(description = "Due date (ISO 8601)")]
@@ -469,7 +266,7 @@ mutation WorkItemUpdate($input: WorkItemUpdateInput!) {
 }
 "#;
 
-pub async fn work_item_update(
+pub(crate) async fn work_item_update(
     client: &GitlabClient,
     p: WorkItemUpdateParams,
 ) -> Result<Value, GitlabError> {
@@ -503,7 +300,7 @@ pub async fn work_item_update(
 // --------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct WorkItemDeleteParams {
+pub(crate) struct WorkItemDeleteParams {
     #[schemars(description = "Work item global ID (e.g. \"gid://gitlab/WorkItem/123\")")]
     pub id: String,
 }
@@ -516,7 +313,7 @@ mutation WorkItemDelete($input: WorkItemDeleteInput!) {
 }
 "#;
 
-pub async fn work_item_delete(
+pub(crate) async fn work_item_delete(
     client: &GitlabClient,
     p: WorkItemDeleteParams,
 ) -> Result<(), GitlabError> {
@@ -536,9 +333,8 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{
-        WorkItemCreateParams, WorkItemDeleteParams, WorkItemGetParams, WorkItemUpdateParams,
-        WorkItemsListParams, check_mutation_errors, type_name_to_gid, usernames_to_ids,
-        work_item_create, work_item_delete, work_item_get, work_item_update, work_items_list,
+        WorkItemCreateParams, WorkItemDeleteParams, WorkItemUpdateParams, check_mutation_errors,
+        type_name_to_gid, usernames_to_ids, work_item_create, work_item_delete, work_item_update,
     };
     use crate::client::{GitlabClient, GitlabError};
 
@@ -743,152 +539,6 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // work_items_list
-    // ------------------------------------------------------------------
-
-    #[tokio::test]
-    async fn work_items_list_returns_nodes_and_page_info() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/graphql"))
-            .respond_with(graphql_ok(serde_json::json!({
-                "project": {
-                    "workItems": {
-                        "nodes": [
-                            { "id": "gid://gitlab/WorkItem/1", "iid": "1", "title": "Fix bug", "state": "OPEN" }
-                        ],
-                        "pageInfo": { "hasNextPage": true, "endCursor": "cursor42" }
-                    }
-                }
-            })))
-            .mount(&server)
-            .await;
-
-        let p = WorkItemsListParams {
-            project_path: "mygroup/myrepo".into(),
-            types: None,
-            state: None,
-            search: None,
-            assignee_usernames: None,
-            author_username: None,
-            label_name: None,
-            iids: None,
-            sort: None,
-            first: None,
-            after: None,
-        };
-        let (nodes, page_info) = work_items_list(&mock_client(&server), p).await.unwrap();
-        assert_eq!(nodes[0]["title"], "Fix bug");
-        assert!(page_info.has_next_page);
-        assert_eq!(page_info.end_cursor.as_deref(), Some("cursor42"));
-    }
-
-    #[tokio::test]
-    async fn work_items_list_last_page_has_no_cursor() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/graphql"))
-            .respond_with(graphql_ok(serde_json::json!({
-                "project": {
-                    "workItems": {
-                        "nodes": [],
-                        "pageInfo": { "hasNextPage": false, "endCursor": null }
-                    }
-                }
-            })))
-            .mount(&server)
-            .await;
-
-        let p = WorkItemsListParams {
-            project_path: "mygroup/myrepo".into(),
-            types: None,
-            state: None,
-            search: None,
-            assignee_usernames: None,
-            author_username: None,
-            label_name: None,
-            iids: None,
-            sort: None,
-            first: None,
-            after: None,
-        };
-        let (nodes, page_info) = work_items_list(&mock_client(&server), p).await.unwrap();
-        assert_eq!(nodes, serde_json::json!([]));
-        assert!(!page_info.has_next_page);
-        assert!(page_info.end_cursor.is_none());
-    }
-
-    #[tokio::test]
-    async fn work_items_list_errors_when_project_null() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/graphql"))
-            .respond_with(graphql_ok(serde_json::json!({ "project": null })))
-            .mount(&server)
-            .await;
-
-        let p = WorkItemsListParams {
-            project_path: "nonexistent/project".into(),
-            types: None,
-            state: None,
-            search: None,
-            assignee_usernames: None,
-            author_username: None,
-            label_name: None,
-            iids: None,
-            sort: None,
-            first: None,
-            after: None,
-        };
-        let err = work_items_list(&mock_client(&server), p).await.unwrap_err();
-        assert!(matches!(err, GitlabError::Graphql(_)));
-    }
-
-    // ------------------------------------------------------------------
-    // work_item_get
-    // ------------------------------------------------------------------
-
-    #[tokio::test]
-    async fn work_item_get_returns_item() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/graphql"))
-            .respond_with(graphql_ok(serde_json::json!({
-                "workItem": {
-                    "id": "gid://gitlab/WorkItem/42",
-                    "iid": "5",
-                    "title": "Fix the bug",
-                    "state": "OPEN"
-                }
-            })))
-            .mount(&server)
-            .await;
-
-        let p = WorkItemGetParams {
-            id: "gid://gitlab/WorkItem/42".into(),
-        };
-        let item = work_item_get(&mock_client(&server), p).await.unwrap();
-        assert_eq!(item["id"], "gid://gitlab/WorkItem/42");
-        assert_eq!(item["title"], "Fix the bug");
-    }
-
-    #[tokio::test]
-    async fn work_item_get_errors_when_null() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/graphql"))
-            .respond_with(graphql_ok(serde_json::json!({ "workItem": null })))
-            .mount(&server)
-            .await;
-
-        let p = WorkItemGetParams {
-            id: "gid://gitlab/WorkItem/999".into(),
-        };
-        let err = work_item_get(&mock_client(&server), p).await.unwrap_err();
-        assert!(matches!(err, GitlabError::Graphql(_)));
-    }
-
-    // ------------------------------------------------------------------
     // work_item_create
     // ------------------------------------------------------------------
 
@@ -912,7 +562,7 @@ mod tests {
             .await;
 
         let p = WorkItemCreateParams {
-            project_path: "mygroup/myrepo".into(),
+            namespace_path: "mygroup/myrepo".into(),
             work_item_type: "TASK".into(),
             title: "New task".into(),
             description: Some("Do the thing".into()),
@@ -941,7 +591,7 @@ mod tests {
             .await;
 
         let p = WorkItemCreateParams {
-            project_path: "mygroup/myrepo".into(),
+            namespace_path: "mygroup/myrepo".into(),
             work_item_type: "TASK".into(),
             title: "".into(),
             description: None,

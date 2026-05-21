@@ -4,6 +4,39 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.9.0] — 2026-05-21
+
+### Added
+- **Epics domain** — five REST-style tools for group-level epics, backed by
+  GitLab's GraphQL API: `gitlab_epics_list`, `gitlab_epics_get`,
+  `gitlab_epics_create`, `gitlab_epics_update`, `gitlab_epics_delete`. Inputs
+  mirror the rest of the toolset: `group_id` accepts a numeric ID or a full
+  namespace path, and `epic_iid` is the IID from the URL — global
+  `gid://gitlab/WorkItem/NNN` strings never appear in the tool surface.
+  Numeric `group_id` is resolved internally via a REST lookup.
+- `gitlab_epics_get` widget enrichment: `linkedItems` (issues/work items
+  linked via the GitLab UI; first 20) and `notes` (first 20 discussions with
+  their notes). Closes [#6](https://github.com/3kirt/gitlab-mcp/issues/6).
+- `parent_epic_iid=0` on update clears the existing hierarchy parent
+  (mirroring REST `milestone_id=0`).
+
+### Removed
+- **Breaking:** the five `gitlab_work_items_*` tools introduced in 0.8.0 are
+  removed. The create/update/delete primitives plus the shared helpers
+  (`type_name_to_gid`, `usernames_to_ids`, `check_mutation_errors`,
+  `add_shared_widgets`) are retained in `src/tools/work_items.rs` as
+  `pub(crate)` building blocks used by `epics.rs`; the unused project-scoped
+  list/get code was deleted.
+
+### Documentation
+- README: replaced the Work Items section with an Epics section; updated tool
+  table accordingly.
+- Testing protocol: replaced sections 43–47 (Work Items) with a new Epics
+  section covering list, get, create, update (including parent clearing via
+  iid=0), and delete against the seeded test group.
+
+---
+
 ## [0.8.0] — 2026-05-20
 
 ### Added

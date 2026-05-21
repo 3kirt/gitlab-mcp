@@ -18,6 +18,7 @@ use crate::client::{GitlabClient, GraphqlPageInfo, PaginationMeta};
 pub mod branches;
 pub mod commits;
 pub mod discussions;
+pub mod epics;
 pub mod issue_notes;
 pub mod issues;
 pub mod jobs;
@@ -26,7 +27,7 @@ pub mod pipelines;
 pub mod repositories;
 pub mod repository_files;
 mod slim;
-pub mod work_items;
+mod work_items;
 
 // --------------------------------------------------------------------------
 // Shared helpers
@@ -1099,53 +1100,53 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List work items (issues, tasks, epics, tickets, etc.) in a GitLab project via GraphQL. Required: project_path (full path e.g. \"mygroup/myproject\"). Filter by types (ISSUE, TASK, EPIC, TICKET, INCIDENT, TEST_CASE, REQUIREMENT, OBJECTIVE, KEY_RESULT), state (opened/closed), search, assignee_usernames, author_username, label_name, or iids. Paginate with first (count) and after (end_cursor from a previous response). Returns items with id, iid, title, state, workItemType, and key widget data (description, assignees, labels, hierarchy, dates)."
+        description = "List epics in a GitLab group. Required: group_id (numeric ID or full namespace path like \"mygroup\"). Optional filters: state (opened/closed), search, author_username, assignee_usernames, label_name, iids (epic IIDs from the URL), sort (CREATED_DESC, UPDATED_DESC, TITLE_ASC, etc.). Cursor pagination: first (page size, default 20, max 100) and after (end_cursor from a previous response). Returns each epic with id, iid, title, state, and widget data (description, assignees, labels, hierarchy, dates)."
     )]
-    async fn gitlab_work_items_list(
+    async fn gitlab_epics_list(
         &self,
-        Parameters(p): Parameters<work_items::WorkItemsListParams>,
+        Parameters(p): Parameters<epics::EpicsListParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_graphql_list!(self, work_items::work_items_list, p, "work items")
+        delegate_graphql_list!(self, epics::epics_list, p, "epics")
     }
 
     #[tool(
-        description = "Get a single GitLab work item by its global ID (e.g. \"gid://gitlab/WorkItem/123\"). Returns full details including description, assignees, labels, milestone, hierarchy (parent and children), start/due dates, time tracking, and weight."
+        description = "Get a single GitLab epic by group and epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`). group_id accepts a numeric ID or full namespace path. Returns full epic details including widgets: description, assignees, labels, milestone, start/due dates, time tracking, weight, hierarchy (parent + child work items), linkedItems (issues/work items linked via the GitLab UI; the first 20 are returned), and notes (first 20 discussions). hierarchy.children covers true parent/child work items only — issues linked to the epic appear under linkedItems."
     )]
-    async fn gitlab_work_items_get(
+    async fn gitlab_epics_get(
         &self,
-        Parameters(p): Parameters<work_items::WorkItemGetParams>,
+        Parameters(p): Parameters<epics::EpicGetParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_get!(self, work_items::work_item_get, p, "work item")
+        delegate_get!(self, epics::epic_get, p, "epic")
     }
 
     #[tool(
-        description = "Create a new work item in a GitLab project. Required: project_path (full path e.g. \"mygroup/myproject\"), work_item_type (ISSUE, TASK, EPIC, TICKET, INCIDENT, TEST_CASE, REQUIREMENT, OBJECTIVE, KEY_RESULT, or a \"gid://\" type ID), title. Optional: description (Markdown), assignee_usernames (every username must resolve to a real user or the call fails), parent_id (global ID for hierarchy), start_date, due_date (ISO 8601)."
+        description = "Create a new epic in a GitLab group. Required: group_id (numeric ID or full namespace path), title. Optional: description (Markdown), assignee_usernames (every username must resolve to a real user or the call fails), parent_epic_iid (an existing epic IID in the same group to set as the hierarchy parent), start_date and due_date (ISO 8601)."
     )]
-    async fn gitlab_work_items_create(
+    async fn gitlab_epics_create(
         &self,
-        Parameters(p): Parameters<work_items::WorkItemCreateParams>,
+        Parameters(p): Parameters<epics::EpicCreateParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_create!(self, work_items::work_item_create, p, "work item")
+        delegate_create!(self, epics::epic_create, p, "epic")
     }
 
     #[tool(
-        description = "Update a GitLab work item by global ID. All fields are optional. Use state_event=\"CLOSE\" or \"REOPEN\" to change state. Providing assignee_usernames replaces the full assignee list (pass an empty list to clear all assignees); every supplied username must resolve to a real user or the call fails. Providing parent_id sets or changes the hierarchy parent."
+        description = "Update an existing GitLab epic by group and epic IID. All fields are optional. Use state_event=\"CLOSE\" or \"REOPEN\" to change state. Providing assignee_usernames replaces the full assignee list (pass an empty list to clear all assignees). For parent_epic_iid: pass an existing epic IID to set a new parent, or 0 to remove the existing parent."
     )]
-    async fn gitlab_work_items_update(
+    async fn gitlab_epics_update(
         &self,
-        Parameters(p): Parameters<work_items::WorkItemUpdateParams>,
+        Parameters(p): Parameters<epics::EpicUpdateParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_update!(self, work_items::work_item_update, p, "work item")
+        delegate_update!(self, epics::epic_update, p, "epic")
     }
 
     #[tool(
-        description = "Delete a GitLab work item by its global ID (e.g. \"gid://gitlab/WorkItem/123\"). This action is permanent and cannot be undone."
+        description = "Delete a GitLab epic by group and epic IID. Requires sufficient group permissions. This action is permanent and cannot be undone."
     )]
-    async fn gitlab_work_items_delete(
+    async fn gitlab_epics_delete(
         &self,
-        Parameters(p): Parameters<work_items::WorkItemDeleteParams>,
+        Parameters(p): Parameters<epics::EpicDeleteParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_delete!(self, work_items::work_item_delete, p, "work item")
+        delegate_delete!(self, epics::epic_delete, p, "epic")
     }
 }
 

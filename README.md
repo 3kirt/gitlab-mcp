@@ -5,7 +5,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that co
 Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Create a merge request from feature-branch to main"*, or *"Close MR #42"* — the server translates them into real GitLab API calls and returns structured results.
 
 - **Full CRUD** — create, read, update, and delete GitLab resources
-- **Nine domains** — Issues, Merge Requests, Branches, Pipelines, Jobs, Commits, Repository Files, Repositories, and Work Items (tasks, epics, objectives, and more via GraphQL)
+- **Nine domains** — Issues, Merge Requests, Branches, Pipelines, Jobs, Commits, Repository Files, Repositories, and Epics (group-level, GraphQL-backed)
 - **Token-efficient responses** — list results are automatically slimmed (descriptions, pipelines, and other bulk fields stripped); use single-get tools when full detail is needed
 
 ---
@@ -284,17 +284,17 @@ Pagination fields are populated from GitLab's `X-*` response headers. `total` an
 | `gitlab_repo_changelog_add` | Generate and commit a changelog entry. |
 | `gitlab_repo_health` | Check repository health status. |
 
-### Work Items
+### Epics
 
-Work items are the GraphQL-backed unification of issues, tasks, epics, tickets, incidents, test cases, requirements, objectives, and key results. Unlike the REST tools, these accept `project_path` (full namespace path like `"mygroup/myproject"`) — numeric IDs are not supported by GitLab's GraphQL API. List pagination is cursor-based: pass `first` (default 20, max 100) and `after` (the `end_cursor` from the previous response) instead of `page` / `per_page`. Get/update/delete operations require the global ID (`gid://gitlab/WorkItem/NNN`) returned by list and create.
+Group-level epics are exposed via a REST-style surface backed by GitLab's GraphQL API. `group_id` accepts either a numeric ID or a full namespace path (`"mygroup"` or `"mygroup/subgroup"`). `epic_iid` is the IID shown in the URL `/groups/<g>/-/epics/<iid>` — global `gid://gitlab/WorkItem/NNN` strings never appear in the tool surface. List pagination is cursor-based: pass `first` (default 20, max 100) and `after` (the `end_cursor` from the previous response) instead of `page` / `per_page`.
 
 | Tool | Description |
 |---|---|
-| `gitlab_work_items_list` | List work items. Filter by `types` (`ISSUE`, `TASK`, `EPIC`, `TICKET`, `INCIDENT`, `TEST_CASE`, `REQUIREMENT`, `OBJECTIVE`, `KEY_RESULT`), `state`, `search`, `assignee_usernames`, `author_username`, `label_name`, or `iids`. |
-| `gitlab_work_items_get` | Get a single work item by global ID. Returns description, assignees, labels, milestone, hierarchy, dates, time tracking, and weight. |
-| `gitlab_work_items_create` | Create a work item. Required: `project_path`, `work_item_type`, `title`. Unknown `assignee_usernames` cause an error rather than being silently dropped. |
-| `gitlab_work_items_update` | Update a work item by global ID. Use `state_event="CLOSE"`/`"REOPEN"` to change state; `assignee_usernames=[]` to clear all assignees. |
-| `gitlab_work_items_delete` | Delete a work item (permanent). |
+| `gitlab_epics_list` | List epics in a group. Filter by `state`, `search`, `author_username`, `assignee_usernames`, `label_name`, `iids`, or `sort` (`CREATED_DESC`, `UPDATED_DESC`, `TITLE_ASC`, etc.). |
+| `gitlab_epics_get` | Get a single epic by group and IID. Returns description, assignees, labels, milestone, start/due dates, time tracking, weight, hierarchy (parent + child work items), `linkedItems` (issues/work items linked via the GitLab UI; first 20), and notes (first 20 discussions). |
+| `gitlab_epics_create` | Create an epic. Required: `group_id`, `title`. Optional: `description`, `assignee_usernames`, `parent_epic_iid`, `start_date`, `due_date`. Unknown `assignee_usernames` cause an error rather than being silently dropped. |
+| `gitlab_epics_update` | Update an epic by group and IID. Use `state_event="CLOSE"`/`"REOPEN"` to change state; `assignee_usernames=[]` to clear all assignees; `parent_epic_iid=0` to remove the existing parent. |
+| `gitlab_epics_delete` | Delete an epic (permanent). |
 
 ---
 
