@@ -265,29 +265,6 @@ query EpicGet($fullPath: ID!, $iid: String!) {
           ... on WorkItemWidgetWeight {
             weight
           }
-          ... on WorkItemWidgetLinkedItems {
-            linkedItems {
-              nodes {
-                linkType
-                workItem { id iid title state webUrl }
-              }
-            }
-          }
-          ... on WorkItemWidgetNotes {
-            discussions(first: 20) {
-              nodes {
-                id
-                notes {
-                  nodes {
-                    id
-                    body
-                    createdAt
-                    author { username name }
-                  }
-                }
-              }
-            }
-          }
         }
       }
     }

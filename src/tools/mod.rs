@@ -1110,7 +1110,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single GitLab epic by group and epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`). group_id accepts a numeric ID or full namespace path. Returns full epic details including widgets: description, assignees, labels, milestone, start/due dates, time tracking, weight, hierarchy (parent + child work items), linkedItems (issues/work items linked via the GitLab UI; the first 20 are returned), and notes (first 20 discussions). hierarchy.children covers true parent/child work items only — issues linked to the epic appear under linkedItems."
+        description = "Get a single GitLab epic by group and epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`). group_id accepts a numeric ID or full namespace path. Returns full epic details including widgets: description, assignees, labels, milestone, start/due dates, time tracking, weight, and hierarchy (parent + child work items)."
     )]
     async fn gitlab_epics_get(
         &self,
