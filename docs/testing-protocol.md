@@ -130,10 +130,9 @@ Check these on every response.
 | `updatedAt` | Non-null ISO 8601 datetime |
 | `webUrl` | Non-empty URL |
 | `workItemType.name` | `"Epic"` |
-| `widgets` | Array of objects each with a `type` field (e.g. `"DESCRIPTION"`, `"ASSIGNEES"`, `"HIERARCHY"`, `"LINKED_ITEMS"`, `"NOTES"`) |
+| `widgets` | Array of objects each with a `type` field (e.g. `"DESCRIPTION"`, `"ASSIGNEES"`, `"HIERARCHY"`, `"START_AND_DUE_DATE"`) |
 | List envelope shape | `{ items: [...], has_next_page: bool, end_cursor: string\|null }` — no page/total fields |
 | Delete confirmation | Success text message, not a JSON object |
-| Get-only widgets | `LINKED_ITEMS` and `NOTES` widgets are populated on get only (not list) |
 
 > **Key differences from REST:** epic tools take `group_id` (numeric ID or full namespace path) instead of `project_id`, and `epic_iid` (the IID from the URL) on get/update/delete. The global `gid://gitlab/WorkItem/NNN` ID is never exposed in tool inputs. Group-level epics require GitLab Premium/Ultimate; on Free tier the call returns a "group not found or not accessible" error.
 
@@ -1373,6 +1372,12 @@ Returns a success text message. A subsequent `gitlab_issues_notes_get` with the 
 
 ---
 
+## Epics (Sections 43–47 + Workflow H)
+
+> **GitLab EE regression target (issue #7):** Sections 43–47 must be run against a GitLab EE instance with at least one group that has the Epics feature enabled (Premium/Ultimate). The specific regression to confirm: `gitlab_epics_get` previously returned a `500 Internal Server Error` on GitLab 18.x-ee due to unsupported widget types in the GraphQL query. All calls in Sections 43–47 and Workflow H should succeed without any 500 error. The test instance and group path should be substituted for `3kirt1` throughout.
+
+---
+
 ## Section 43: Epics — List
 
 ### 43.1 List all epics (no filter)
@@ -1448,15 +1453,7 @@ gitlab_epics_get(group_id="<numeric-id>", epic_iid=<epic-1-iid>)
 ```
 Same response as 44.1. Confirms numeric resolution.
 
-### 44.3 Linked items and notes widgets are populated
-Create one issue in the test project, then link it to `epic-1` via the GitLab UI (Epic → Linked Items → Add). Add a comment to `epic-1` via the UI. Then:
-```
-gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-1-iid>)
-```
-- A widget with `type == "LINKED_ITEMS"` has `linkedItems.nodes` containing at least one entry with `workItem.title` matching the linked issue.
-- A widget with `type == "NOTES"` has `discussions.nodes[].notes.nodes[].body` containing the comment text.
-
-### 44.4 Get a non-existent epic IID
+### 44.3 Get a non-existent epic IID
 ```
 gitlab_epics_get(group_id="3kirt1", epic_iid=999999)
 ```
