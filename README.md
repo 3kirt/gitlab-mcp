@@ -5,7 +5,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that co
 Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Create a merge request from feature-branch to main"*, or *"Close MR #42"* — the server translates them into real GitLab API calls and returns structured results.
 
 - **Full CRUD** — create, read, update, and delete GitLab resources
-- **Broad coverage of common GitLab workflows** — issues, merge requests, branches, commits, repository files, pipelines, jobs, epics, search, and more
+- **Broad coverage of common GitLab workflows** — issues, merge requests, branches, commits, repository files, pipelines, jobs, epics, snippets, search, and more
 - **Token-efficient responses** — list results are automatically slimmed (descriptions, pipelines, and other bulk fields stripped); use single-get tools when full detail is needed
 
 ---
@@ -117,8 +117,8 @@ claude mcp list
 
 The server covers the GitLab API surface most teams reach for day-to-day:
 issues, merge requests, branches, commits, repository files, pipelines, jobs,
-epics, search, and more. All tools accept `project_id` (or `group_id` for
-group-scoped endpoints) as either a numeric ID (`42`) or a namespace path
+epics, snippets, search, and more. All tools accept `project_id` (or `group_id`
+for group-scoped endpoints) as either a numeric ID (`42`) or a namespace path
 (`mygroup/myrepo`).
 
 List operations support `page`/`per_page` pagination and return an envelope:
@@ -204,6 +204,22 @@ linking (`parent_epic_iid=0` clears the parent), and date widget management.
 epic's `/issues` endpoint. Pagination is standard `page`/`per_page`. The REST endpoint is
 deprecated since GitLab 17.0 but remains functional on EE 18.x, where it is
 the only working surface for epics.
+
+### Snippets
+
+Full CRUD on personal snippets, plus raw content retrieval and admin helpers.
+`gitlab_snippets_list` returns the current user's snippets;
+`gitlab_snippets_public_list` lists all public snippets; `gitlab_snippets_all_list`
+lists all snippets accessible to the authenticated user (administrators and
+auditors see every snippet on the instance). `gitlab_snippets_raw` fetches the
+raw text content of a snippet as `{"content": "..."}`;
+`gitlab_snippets_file_raw` does the same for a specific file within a
+multi-file snippet repository (slashes in `file_path` are percent-encoded
+automatically). Create and update accept a `files` array — each entry specifies
+`content` and `file_path` on create, and `action` (`create`, `update`,
+`delete`, or `move`), optional `file_path`, `previous_path`, and `content` on
+update. `gitlab_snippets_user_agent_detail` is an admin-only endpoint that
+returns the IP address and user-agent string used to create the snippet.
 
 ### Search
 

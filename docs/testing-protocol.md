@@ -1,8 +1,8 @@
 # GitLab MCP Testing Protocol
 
-This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, Epics, Pipeline Schedules, Search, and Metadata API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics and group search).
+This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, Epics, Pipeline Schedules, Snippets, Search, and Metadata API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics and group search).
 
-**Automated coverage (not retested here):** `encode_namespace_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with child-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) are covered by wiremock tests. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
+**Automated coverage (not retested here):** `encode_namespace_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with child-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) are covered by wiremock tests. For snippets, `snippet_file_raw` path encoding (slash → `%2F` in `file_path`) is covered by two wiremock tests — one with a plain path and one with a sub-directory path. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
 
 ---
 
@@ -201,6 +201,38 @@ Check these on every response.
 | `key` | Non-empty string |
 | `value` | String (may be empty) |
 | `variable_type` | `"env_var"` or `"file"` |
+
+**Snippets (list and get):**
+
+| Property | What to verify |
+|---|---|
+| `id` | Positive integer (snippet ID — no project-scoped `iid`) |
+| `title` | Non-empty string |
+| `visibility` | One of `"public"`, `"internal"`, `"private"` |
+| `author` | Object with at least `id`, `username`, `name` (collapsed in list responses) |
+| `created_at` | Non-null ISO 8601 datetime |
+| `updated_at` | Non-null ISO 8601 datetime |
+| `web_url` | Non-empty URL |
+| `project_id` | `null` for personal snippets |
+| List envelope shape | Standard pagination envelope: `{items: [...], page, per_page, total?, total_pages?, next_page?}` |
+| Delete confirmation | Success text message, not a JSON object |
+
+**Snippets (get only — additional fields):**
+
+| Property | What to verify |
+|---|---|
+| `description` | String or null (present on get; stripped from list responses) |
+| `files` | Array of file objects; each has `path` and `raw_url` |
+| `raw_url` | Non-empty URL to raw content |
+| `http_url_to_repo` | Non-empty URL (git clone URL for the snippet's repo) |
+
+**Snippet raw content:**
+
+| Property | What to verify |
+|---|---|
+| `content` | Non-empty string; plain text (not Base64) |
+
+---
 
 **Search results:**
 
@@ -415,6 +447,33 @@ gitlab_pipeline_schedules_create(
 Record `id` as `schedule-seed-2`. Verify `active == false`.
 
 After seeding: 2 schedules total; 1 active, 1 inactive.
+
+### Step 12: Create Seed Snippets
+
+**12a.** Create a public single-file snippet for list, get, and raw testing:
+```
+gitlab_snippets_create(
+  title="Hello World snippet",
+  files=[{content: "hello world\n", file_path: "hello.txt"}],
+  visibility="public"
+)
+```
+Record `id` as `snippet-seed-1`. Verify `visibility == "public"`.
+
+**12b.** Create a private multi-file snippet for file_raw and update testing:
+```
+gitlab_snippets_create(
+  title="Multi-file snippet",
+  files=[
+    {content: "fn main() {}", file_path: "src/main.rs"},
+    {content: "# Docs", file_path: "README.md"}
+  ],
+  visibility="private"
+)
+```
+Record `id` as `snippet-seed-2`. The snippet repository's default branch is `main`; use `ref_name="main"` in file_raw calls.
+
+After seeding: 2 personal snippets; 1 public, 1 private.
 
 ### Step 11: Wire an MR-to-Issue Closing Relationship
 
@@ -2331,3 +2390,216 @@ Returns the same results as 62.1. Confirms numeric project ID is accepted.
 5. `gitlab_search_group(group_id="3kirt1", scope="issues", search="dark mode")` — verify seed-2 (`"Feature: add dark mode support"`) in `items`
 6. `gitlab_search_global(scope="projects", search="gitlab-mcp-testing")` — verify the test project appears in `items`
 
+---
+
+## Section 63: Snippets — List
+
+### 63.1 List current user's snippets
+```
+gitlab_snippets_list()
+```
+Returns an envelope with at least 2 items (the 2 seeded in Step 12). Each satisfies snippet universal invariants. Confirm `snippet-seed-1` (`title == "Hello World snippet"`) is present.
+
+### 63.2 Filter by created_after
+```
+gitlab_snippets_list(created_after="2026-01-01T00:00:00Z")
+```
+Returns the seeded snippets (all created after Jan 1 2026). Count ≥ 2.
+
+```
+gitlab_snippets_list(created_after="2030-01-01T00:00:00Z")
+```
+Returns `{"items": []}` — no error.
+
+### 63.3 Paginate
+```
+gitlab_snippets_list(per_page=1, page=1)
+```
+`items` contains exactly 1 snippet. Envelope reports `page == 1`, `per_page == 1`, `next_page == 2` (assuming ≥ 2 snippets exist).
+
+### 63.4 List all public snippets
+```
+gitlab_snippets_public_list()
+```
+Returns an envelope. `snippet-seed-1` (public) appears in results. All items have `visibility == "public"`. `snippet-seed-2` (private) does not appear.
+
+### 63.5 List all accessible snippets
+```
+gitlab_snippets_all_list()
+```
+Returns an envelope. Both `snippet-seed-1` and `snippet-seed-2` appear (the authenticated user sees their own snippets regardless of visibility). Administrators and Auditors additionally see snippets from other users.
+
+---
+
+## Section 64: Snippets — Get
+
+### 64.1 Get the public single-file snippet
+```
+gitlab_snippets_get(id=<snippet-seed-1>)
+```
+`id == snippet-seed-1`, `title == "Hello World snippet"`, `visibility == "public"`, `project_id == null`. All snippet get invariants satisfied: `files` is non-empty, `raw_url` and `http_url_to_repo` are present.
+
+### 64.2 Get the multi-file snippet
+```
+gitlab_snippets_get(id=<snippet-seed-2>)
+```
+`title == "Multi-file snippet"`, `visibility == "private"`. `files` contains 2 entries — one with `path == "src/main.rs"` and one with `path == "README.md"`.
+
+### 64.3 Get a non-existent snippet
+```
+gitlab_snippets_get(id=99999)
+```
+Returns a `404` error.
+
+---
+
+## Section 65: Snippets — Raw
+
+### 65.1 Get raw content of a single-file snippet
+```
+gitlab_snippets_raw(id=<snippet-seed-1>)
+```
+Returns `{"content": "hello world\n"}`. Content is plain text, not Base64.
+
+### 65.2 Get raw on non-existent snippet
+```
+gitlab_snippets_raw(id=99999)
+```
+Returns a `404` error.
+
+---
+
+## Section 66: Snippets — File Raw
+
+Uses `snippet-seed-2` (multi-file snippet from Seed Step 12b). The snippet repository's default branch is `main`.
+
+### 66.1 Get file raw — plain path (no slashes)
+```
+gitlab_snippets_file_raw(id=<snippet-seed-2>, ref_name="main", file_path="README.md")
+```
+Returns `{"content": "# Docs"}`. Confirms that plain file paths are passed through correctly.
+
+### 66.2 Get file raw — path with slash (encoding verification)
+```
+gitlab_snippets_file_raw(id=<snippet-seed-2>, ref_name="main", file_path="src/main.rs")
+```
+Returns `{"content": "fn main() {}"}`. The slash in `file_path` is percent-encoded to `%2F` before being inserted into the URL (`/api/v4/snippets/:id/files/main/src%2Fmain.rs/raw`). This is the live confirmation of the encoding behavior covered by the unit tests.
+
+### 66.3 Get file raw — non-existent file
+```
+gitlab_snippets_file_raw(id=<snippet-seed-2>, ref_name="main", file_path="nonexistent.txt")
+```
+Returns a `404` error.
+
+---
+
+## Section 67: Snippets — Create
+
+### 67.1 Create a single-file snippet (required fields only)
+```
+gitlab_snippets_create(
+  title="Scratch snippet",
+  files=[{content: "scratch content", file_path: "scratch.txt"}]
+)
+```
+`title == "Scratch snippet"`, `visibility == "private"` (default), `files` has 1 entry with `path == "scratch.txt"`. Record `id` as `snippet-scratch-1`.
+
+### 67.2 Create a public snippet with description
+```
+gitlab_snippets_create(
+  title="Public scratch snippet",
+  files=[{content: "public content", file_path: "public.txt"}],
+  description="Created during testing.",
+  visibility="public"
+)
+```
+`visibility == "public"`, `description == "Created during testing."`. Confirm the snippet appears in `gitlab_snippets_public_list()`. Record `id` as `snippet-scratch-2`.
+
+### 67.3 Create a multi-file snippet
+```
+gitlab_snippets_create(
+  title="Multi-file scratch snippet",
+  files=[
+    {content: "first file", file_path: "a.txt"},
+    {content: "second file", file_path: "b.txt"}
+  ]
+)
+```
+`files` has 2 entries. `gitlab_snippets_file_raw(..., file_path="a.txt")` returns `{"content": "first file"}`. Record `id` as `snippet-scratch-3`.
+
+---
+
+## Section 68: Snippets — Update
+
+### 68.1 Update title
+```
+gitlab_snippets_update(id=<snippet-scratch-1>, title="Updated scratch snippet")
+```
+Returned `title == "Updated scratch snippet"`.
+
+### 68.2 Update description
+```
+gitlab_snippets_update(id=<snippet-scratch-1>, description="Updated description.")
+```
+Verify via `gitlab_snippets_get` that `description == "Updated description."`.
+
+### 68.3 Change visibility
+```
+gitlab_snippets_update(id=<snippet-scratch-1>, visibility="public")
+```
+Returned `visibility == "public"`. Snippet now appears in `gitlab_snippets_public_list()`.
+
+### 68.4 Update file content (update action)
+```
+gitlab_snippets_update(
+  id=<snippet-scratch-1>,
+  files=[{action: "update", file_path: "scratch.txt", content: "updated content"}]
+)
+```
+`gitlab_snippets_raw(id=<snippet-scratch-1>)` returns `{"content": "updated content"}`.
+
+### 68.5 Move (rename) a file
+```
+gitlab_snippets_update(
+  id=<snippet-scratch-3>,
+  files=[{action: "move", previous_path: "a.txt", file_path: "renamed.txt"}]
+)
+```
+`gitlab_snippets_file_raw(..., file_path="renamed.txt")` returns `{"content": "first file"}`. A call with `file_path="a.txt"` returns a `404` error.
+
+---
+
+## Section 69: Snippets — Delete
+
+Create a throwaway snippet, record its `id`, then:
+```
+gitlab_snippets_delete(id=<throwaway id>)
+```
+Returns a success text message. A subsequent `gitlab_snippets_get` with the same `id` returns a `404` error.
+
+Clean up scratch snippets from Section 67 (`snippet-scratch-1`, `snippet-scratch-2`, `snippet-scratch-3`) once testing is complete.
+
+---
+
+## Section 70: Snippets — User Agent Detail
+
+> This endpoint is administrator-only. A `403 Forbidden` response is acceptable if the token does not have admin privileges.
+
+```
+gitlab_snippets_user_agent_detail(id=<snippet-seed-1>)
+```
+If the token has admin privileges: returns an object with `user_agent` (non-empty string), `ip_address` (non-empty string), and `akismet_submitted` (boolean). If not: returns a `403` error — no crash.
+
+---
+
+## Workflow L: Snippet lifecycle (create → get → update → file_raw → delete)
+
+1. `gitlab_snippets_create(title="Workflow L snippet", files=[{content: "initial content", file_path: "main.txt"}], visibility="private")` — record `id` as `snippet-wl`
+2. `gitlab_snippets_get(id=<snippet-wl>)` — confirm `title == "Workflow L snippet"`, `visibility == "private"`, `files` has 1 entry, `raw_url` non-empty
+3. `gitlab_snippets_raw(id=<snippet-wl>)` — confirm `content == "initial content"`
+4. `gitlab_snippets_file_raw(id=<snippet-wl>, ref_name="main", file_path="main.txt")` — confirm `content == "initial content"`
+5. `gitlab_snippets_update(id=<snippet-wl>, title="Workflow L snippet — updated", files=[{action: "update", file_path: "main.txt", content: "updated content"}])` — confirm returned `title == "Workflow L snippet — updated"`
+6. `gitlab_snippets_raw(id=<snippet-wl>)` — confirm `content == "updated content"`
+7. `gitlab_snippets_list()` — confirm `snippet-wl` appears in `items` with the updated title
+8. `gitlab_snippets_delete(id=<snippet-wl>)` — confirm success message
+9. `gitlab_snippets_get(id=<snippet-wl>)` — confirm `404` error

@@ -31,6 +31,7 @@ pub mod repositories;
 pub mod repository_files;
 pub mod search;
 mod slim;
+pub mod snippets;
 
 // --------------------------------------------------------------------------
 // Shared helpers
@@ -1395,6 +1396,107 @@ impl GitlabMcpServer {
         Parameters(p): Parameters<epics::EpicDeleteParams>,
     ) -> Result<CallToolResult, McpError> {
         delegate_delete!(self, epics::epic_delete, p, "epic")
+    }
+
+    #[tool(
+        description = "List snippets for the current authenticated user. Optional: created_after, created_before (ISO 8601). Paginate with page and per_page."
+    )]
+    async fn gitlab_snippets_list(
+        &self,
+        Parameters(p): Parameters<snippets::SnippetsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, snippets::snippets_list, p, "snippets")
+    }
+
+    #[tool(
+        description = "List all public snippets. Optional: created_after, created_before (ISO 8601). Paginate with page and per_page."
+    )]
+    async fn gitlab_snippets_public_list(
+        &self,
+        Parameters(p): Parameters<snippets::SnippetsPublicListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, snippets::snippets_public_list, p, "public snippets")
+    }
+
+    #[tool(
+        description = "List all snippets the current user has access to (administrators and auditors see all snippets). Optional: created_after, created_before, repository_storage (admin only). Paginate with page and per_page."
+    )]
+    async fn gitlab_snippets_all_list(
+        &self,
+        Parameters(p): Parameters<snippets::SnippetsAllListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, snippets::snippets_all_list, p, "all snippets")
+    }
+
+    #[tool(description = "Get a single GitLab snippet by ID.")]
+    async fn gitlab_snippets_get(
+        &self,
+        Parameters(p): Parameters<snippets::SnippetGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, snippets::snippet_get, p, "snippet")
+    }
+
+    #[tool(description = "Get the raw content of a GitLab snippet. Returns {\"content\": \"...\"}")]
+    async fn gitlab_snippets_raw(
+        &self,
+        Parameters(p): Parameters<snippets::SnippetRawParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, snippets::snippet_raw, p, "snippet raw content")
+    }
+
+    #[tool(
+        description = "Get the raw content of a specific file in a GitLab snippet repository. Required: id, ref_name (branch/tag/commit), file_path (URL-encoded). Returns {\"content\": \"...\"}."
+    )]
+    async fn gitlab_snippets_file_raw(
+        &self,
+        Parameters(p): Parameters<snippets::SnippetFileRawParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, snippets::snippet_file_raw, p, "snippet file content")
+    }
+
+    #[tool(
+        description = "Create a new GitLab snippet. Required: title, files (array of {content, file_path}). Optional: description, visibility (\"public\", \"internal\", or \"private\")."
+    )]
+    async fn gitlab_snippets_create(
+        &self,
+        Parameters(p): Parameters<snippets::SnippetCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, snippets::snippet_create, p, "snippet")
+    }
+
+    #[tool(
+        description = "Update an existing GitLab snippet. Required: id. Optional: title, description, visibility, files (array of {action, file_path, previous_path, content}; action must be \"create\", \"update\", \"delete\", or \"move\")."
+    )]
+    async fn gitlab_snippets_update(
+        &self,
+        Parameters(p): Parameters<snippets::SnippetUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, snippets::snippet_update, p, "snippet")
+    }
+
+    #[tool(
+        description = "Delete a GitLab snippet by ID. This action is permanent and cannot be undone."
+    )]
+    async fn gitlab_snippets_delete(
+        &self,
+        Parameters(p): Parameters<snippets::SnippetDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, snippets::snippet_delete, p, "snippet")
+    }
+
+    #[tool(
+        description = "Get user agent details for a GitLab snippet (administrators only). Returns ip_address, user_agent, and akismet_submitted."
+    )]
+    async fn gitlab_snippets_user_agent_detail(
+        &self,
+        Parameters(p): Parameters<snippets::SnippetUserAgentDetailParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(
+            self,
+            snippets::snippet_user_agent_detail,
+            p,
+            "snippet user agent detail"
+        )
     }
 }
 
