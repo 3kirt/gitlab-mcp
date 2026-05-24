@@ -4,6 +4,20 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.12.0] — 2026-05-24
+
+### Added
+- `gitlab_mrs_get` now embeds `closes_issues` (issues that will be closed when the MR
+  merges) and `related_issues` (issues linked to the MR), mirroring the enrichment
+  already present in `gitlab_issues_get`.
+- Embedded sub-resource fetches in `issue_get` and `mr_get` are now performed in
+  parallel, reducing latency when multiple supplemental endpoints are queried.
+
+### Documentation
+- Testing protocol extended with coverage for `mr_get` and `issue_get` embedded arrays.
+
+---
+
 ## [0.11.0] — 2026-05-24
 
 ### Added
