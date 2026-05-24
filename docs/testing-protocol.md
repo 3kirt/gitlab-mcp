@@ -60,6 +60,13 @@ Check these on every response.
 | `closes_issues` | Array of issue objects (may be empty; populated from `/merge_requests/:iid/closes_issues`). Each entry has at least `iid`, `title`, `state`, `project_id`. |
 | `related_issues` | Array of issue objects (may be empty; populated from `/merge_requests/:iid/related_issues`). Premium/Ultimate — embed is `[]` on lower tiers, not an error. |
 
+**Issues (get only — additional fields):**
+
+| Property | What to verify |
+|---|---|
+| `linked_issues` | Array of linked issue objects (may be empty; populated from `/issues/:iid/links`). Each entry carries the linked issue's identifying fields plus `link_type` (`"relates_to"`, `"blocks"`, or `"is_blocked_by"`) and `issue_link_id` (relationship ID). |
+| `closed_by` | Array of merge request objects (may be empty; populated from `/issues/:iid/closed_by`). Each entry represents an MR whose description includes a closing keyword pointing at this issue. |
+
 **Branches:**
 
 | Property | What to verify |
@@ -507,6 +514,30 @@ gitlab_issues_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed
 gitlab_issues_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-2>)
 ```
 `due_date == "2026-12-31"`.
+
+### 2.4 Embedded `linked_issues` — positive case
+```
+gitlab_issues_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>)
+```
+`linked_issues` is an array with at least one entry whose `iid` equals seed-3's IID and whose `link_type == "blocks"` (wired in Seed Step 9a). Each entry has `iid`, `link_type`, and `issue_link_id`.
+
+### 2.5 Embedded `linked_issues` — negative case
+```
+gitlab_issues_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-5>)
+```
+`linked_issues == []` (seed-5 has no links). No error.
+
+### 2.6 Embedded `closed_by` — positive case
+```
+gitlab_issues_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>)
+```
+`closed_by` is an array with at least one entry whose `iid` equals mr-seed-1's IID (wired in Seed Step 11). Each entry has `iid`, `title`, `state`, and `project_id`.
+
+### 2.7 Embedded `closed_by` — negative case
+```
+gitlab_issues_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-3>)
+```
+`closed_by == []` (no MR description references seed-3 with a closing keyword). No error.
 
 ---
 
