@@ -1,8 +1,8 @@
 # GitLab MCP Testing Protocol
 
-This document describes how to verify all Issues, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, and Epics API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics).
+This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, and Epics API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics).
 
-**Automated coverage (not retested here):** `encode_project_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`. For epics, all five REST-based domain functions (list with pagination, get with linked-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) are covered by wiremock tests. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
+**Automated coverage (not retested here):** `encode_project_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with linked-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) are covered by wiremock tests. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
 
 ---
 
@@ -20,7 +20,7 @@ The following behaviors apply across all sections. They are not re-stated per se
 
 **Response slimming** — List endpoints apply heavy slimming to every item: `description`, `pipeline`, `head_pipeline`, `diff_stats`, `time_stats`, `_links`, and `references` are stripped, null fields are removed, and user objects (`author`, `assignee`, `reviewers`, etc.) are collapsed to `{id, username, name}`. Single-get, create, and update responses apply a lighter pass: only nulls, `_links`, and `references` are removed, and user objects are still collapsed, but `description` and `pipeline` are preserved. Do not expect stripped fields to be present in list responses; use the corresponding single-get endpoint when full detail is needed.
 
-**Verify-after-delete** — Each delete test ends with a get against the deleted resource and expects a `404` error. This is noted inline, not as a separate numbered step.
+**Verify-after-delete** — Each delete test ends with a get against the deleted resource and expects a `404` error. This is noted inline, not as a separate numbered step. **Exception:** `gitlab_issues_links_delete` returns the deleted link object (JSON), not a success text message. Confirm the returned object has the expected `link_type`; then verify the link is gone by checking it no longer appears in `gitlab_issues_links_list`.
 
 ---
 
@@ -115,6 +115,26 @@ Check these on every response.
 | `updated_at` | Non-null ISO 8601 datetime |
 | `noteable_type` | `"Issue"` |
 | List envelope shape | Standard pagination envelope; invariants apply to each entry in `items` |
+
+**Issue links (list):**
+
+| Property | What to verify |
+|---|---|
+| `id` | Positive integer (linked issue's global id) |
+| `iid` | Positive integer (linked issue's project-scoped iid) |
+| `issue_link_id` | Positive integer — the relationship ID; required for get and delete |
+| `link_type` | One of `"relates_to"`, `"blocks"`, `"is_blocked_by"` |
+| `project_id` | Matches the target issue's project |
+| List envelope shape | Standard pagination envelope; invariants apply to each entry in `items` |
+
+**Issue links (get — single link):**
+
+| Property | What to verify |
+|---|---|
+| `source_issue` | Object containing at least `id`, `iid`, `project_id` |
+| `target_issue` | Object containing at least `id`, `iid`, `project_id` |
+| `link_type` | One of `"relates_to"`, `"blocks"`, `"is_blocked_by"` |
+| Delete response | JSON object (not a text message) with `source_issue`, `target_issue`, `link_type` |
 
 **Epics (list and get):**
 
@@ -291,6 +311,34 @@ gitlab_epics_create(
 Record `iid` as `epic-3-iid`.
 
 After seeding: 3 epics; all `state == "opened"`; `epic-1` has one child (`epic-2`).
+
+### Step 9: Create Issue Links
+
+Create two links between seed issues to serve as stable seeds for Sections 48–51:
+
+**9a.** Seed-1 blocks seed-3:
+```
+gitlab_issues_links_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  target_project_id="3kirt1/gitlab-mcp-testing",
+  target_issue_iid=<iid of seed-3>,
+  link_type="blocks"
+)
+```
+Record the returned `issue_link_id` as `link-seed-1`.
+
+**9b.** Seed-2 relates to seed-4:
+```
+gitlab_issues_links_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-2>,
+  target_project_id="3kirt1/gitlab-mcp-testing",
+  target_issue_iid=<iid of seed-4>,
+  link_type="relates_to"
+)
+```
+Record the returned `issue_link_id` as `link-seed-2`.
 
 ---
 
@@ -1602,4 +1650,136 @@ Delete the scratch epics from Section 45 (`epic-scratch-iid`, `epic-desc-iid`, `
 6. `gitlab_epics_list(group_id="3kirt1", state="closed")` — confirm `epic-h-iid` appears
 7. `gitlab_epics_delete(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm success message
 8. `gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm `404` API error
+
+---
+
+## Section 48: Issue Links — List
+
+### 48.1 List links on an issue with seeded links
+```
+gitlab_issues_links_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>)
+```
+Returns an envelope with at least 1 item (link-seed-1). Each item satisfies issue links list universal invariants. The item for link-seed-1 has `link_type == "blocks"` and `iid == <iid of seed-3>`.
+
+### 48.2 List links on an issue with no links
+```
+gitlab_issues_links_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-5>)
+```
+Returns `{"items": []}` (seed-5 has no links); no error.
+
+### 48.3 List on a non-existent issue
+```
+gitlab_issues_links_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=99999)
+```
+Returns a `404` error.
+
+---
+
+## Section 49: Issue Links — Get
+
+### 49.1 Get a seeded link
+```
+gitlab_issues_links_get(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  issue_link_id=<link-seed-1>
+)
+```
+`link_type == "blocks"`. `source_issue.iid == <iid of seed-1>`. `target_issue.iid == <iid of seed-3>`. All issue links get universal invariants satisfied.
+
+### 49.2 Get a non-existent link
+```
+gitlab_issues_links_get(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  issue_link_id=99999
+)
+```
+Returns a `404` error.
+
+---
+
+## Section 50: Issue Links — Create
+
+### 50.1 Create a relates_to link (default type)
+```
+gitlab_issues_links_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  target_project_id="3kirt1/gitlab-mcp-testing",
+  target_issue_iid=<iid of seed-4>
+)
+```
+The response contains a `source_issue` and `target_issue`. Confirm `link_type == "relates_to"` (the API default). Record `issue_link_id` as `link-create-1`.
+
+### 50.2 Create a blocks link (explicit type)
+```
+gitlab_issues_links_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-2>,
+  target_project_id="3kirt1/gitlab-mcp-testing",
+  target_issue_iid=<iid of seed-5>,
+  link_type="blocks"
+)
+```
+`link_type == "blocks"`. A subsequent `gitlab_issues_links_list` on seed-2 includes this link. Record `issue_link_id` as `link-create-2`.
+
+### 50.3 Create an is_blocked_by link
+```
+gitlab_issues_links_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-3>,
+  target_project_id="3kirt1/gitlab-mcp-testing",
+  target_issue_iid=<iid of seed-4>,
+  link_type="is_blocked_by"
+)
+```
+`link_type == "is_blocked_by"`. Record `issue_link_id` as `link-create-3`.
+
+### 50.4 Create using numeric project ID as target
+```
+gitlab_issues_links_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  target_project_id="82279422",
+  target_issue_iid=<iid of seed-5>
+)
+```
+Succeeds; `target_issue.project_id == 82279422`. Confirms numeric `target_project_id` is accepted.
+
+---
+
+## Section 51: Issue Links — Delete
+
+### 51.1 Delete a link
+```
+gitlab_issues_links_delete(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  issue_link_id=<link-create-1>
+)
+```
+Returns a JSON object (not a text message) with `source_issue`, `target_issue`, and `link_type == "relates_to"`. A subsequent `gitlab_issues_links_list` on seed-1 no longer includes `link-create-1`.
+
+### 51.2 Delete a non-existent link
+```
+gitlab_issues_links_delete(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  issue_link_id=99999
+)
+```
+Returns a `404` error.
+
+Clean up links created in Section 50 (`link-create-2`, `link-create-3`, and the numeric-ID link from 50.4) once testing is complete.
+
+---
+
+## Workflow I: Issue links lifecycle (create → list → get → delete)
+
+1. `gitlab_issues_links_create(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-4>, target_project_id="3kirt1/gitlab-mcp-testing", target_issue_iid=<iid of seed-5>, link_type="blocks")` — record `issue_link_id` as `link-wi`
+2. `gitlab_issues_links_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-4>)` — confirm `link-wi` appears in `items` with `link_type == "blocks"`
+3. `gitlab_issues_links_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-4>, issue_link_id=<link-wi>)` — confirm `source_issue.iid == <iid of seed-4>`, `target_issue.iid == <iid of seed-5>`, `link_type == "blocks"`
+4. `gitlab_issues_links_delete(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-4>, issue_link_id=<link-wi>)` — confirm response is a JSON object with `link_type == "blocks"`
+5. `gitlab_issues_links_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-4>)` — confirm `link-wi` no longer appears
 
