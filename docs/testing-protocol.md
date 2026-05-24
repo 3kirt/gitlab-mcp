@@ -1,6 +1,6 @@
 # GitLab MCP Testing Protocol
 
-This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, and Epics API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics).
+This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, Epics, Pipeline Schedules, Search, and Metadata API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics and group search).
 
 **Automated coverage (not retested here):** `encode_namespace_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with child-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) are covered by wiremock tests. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
 
@@ -164,6 +164,39 @@ Check these on every response.
 | `issues` | Array of issue objects (may be empty; populated from `/groups/:id/epics/:iid/issues`) |
 
 > **Key differences from other tools:** epic tools take `group_id` (numeric ID or full namespace path) instead of `project_id`, and `epic_iid` (the IID from the URL) on get/update/delete. Group-level epics require GitLab Premium/Ultimate. The REST Epics API is deprecated since GitLab 17.0 but remains functional on all EE 18.x versions; it is preferred over the work-items GraphQL API for EE compatibility.
+
+**Pipeline schedules (list and get):**
+
+| Property | What to verify |
+|---|---|
+| `id` | Positive integer (schedule ID) |
+| `description` | Non-empty string |
+| `ref` | Non-empty branch or tag name |
+| `cron` | Non-empty cron expression string |
+| `cron_timezone` | Non-empty timezone string (e.g. `"UTC"`) |
+| `next_run_at` | ISO 8601 datetime or null |
+| `active` | `true` or `false`, never absent |
+| `owner` | Object with at least `id`, `username`, `name` (collapsed in list responses) |
+| List envelope shape | Standard pagination envelope; invariants apply to each entry in `items` |
+| Delete confirmation | Success text message, not a JSON object |
+
+**Pipeline schedule variables:**
+
+| Property | What to verify |
+|---|---|
+| `key` | Non-empty string |
+| `value` | String (may be empty) |
+| `variable_type` | `"env_var"` or `"file"` |
+
+**Search results:**
+
+> Result shape varies by scope. The invariants below apply to all scopes.
+
+| Property | What to verify |
+|---|---|
+| `id` | Positive integer |
+| List envelope shape | Standard pagination envelope; invariants apply to each entry in `items` |
+| Scope-specific fields | issues/MRs include `iid`, `title`, `state`, `project_id`; projects include `name`, `path_with_namespace`; commits include `short_id`, `title`, `author_name`; blobs include `filename`, `ref`, `data` |
 
 ---
 
@@ -339,6 +372,35 @@ gitlab_issues_links_create(
 )
 ```
 Record the returned `issue_link_id` as `link-seed-2`.
+
+### Step 10: Create Pipeline Schedules
+
+**10a.** Create an active daily schedule:
+```
+gitlab_pipeline_schedules_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  cron="0 6 * * *",
+  description="Daily build — 6 AM UTC",
+  ref="main",
+  active=true,
+  cron_timezone="UTC"
+)
+```
+Record `id` as `schedule-seed-1`. Verify `active == true`.
+
+**10b.** Create an inactive weekly schedule for scope-filter testing:
+```
+gitlab_pipeline_schedules_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  cron="0 0 * * 0",
+  description="Weekly build — inactive",
+  ref="main",
+  active=false
+)
+```
+Record `id` as `schedule-seed-2`. Verify `active == false`.
+
+After seeding: 2 schedules total; 1 active, 1 inactive.
 
 ---
 
@@ -1782,4 +1844,419 @@ Clean up links created in Section 50 (`link-create-2`, `link-create-3`, and the 
 3. `gitlab_issues_links_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-4>, issue_link_id=<link-wi>)` — confirm `source_issue.iid == <iid of seed-4>`, `target_issue.iid == <iid of seed-5>`, `link_type == "blocks"`
 4. `gitlab_issues_links_delete(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-4>, issue_link_id=<link-wi>)` — confirm response is a JSON object with `link_type == "blocks"`
 5. `gitlab_issues_links_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-4>)` — confirm `link-wi` no longer appears
+
+---
+
+## Section 52: Metadata
+
+### 52.1 Get instance metadata
+```
+gitlab_metadata_get()
+```
+Returns an object with `version` (non-empty string, e.g. `"18.0.0-ee"`), `revision` (non-empty string), and `enterprise` (boolean). `kas` is an object with at least `enabled` (boolean). When `kas.enabled == true`, `kas.externalUrl` and `kas.version` are non-null strings.
+
+---
+
+## Section 53: Pipeline Schedules — List
+
+### 53.1 List all schedules
+```
+gitlab_pipeline_schedules_list(project_id="3kirt1/gitlab-mcp-testing")
+```
+Returns an envelope with at least 2 items (the 2 seeded in Step 10). Each satisfies pipeline schedule universal invariants.
+
+### 53.2 Filter by active scope
+```
+gitlab_pipeline_schedules_list(project_id="3kirt1/gitlab-mcp-testing", scope="active")
+```
+All returned items have `active == true`. Includes `schedule-seed-1`; excludes `schedule-seed-2`.
+
+### 53.3 Filter by inactive scope
+```
+gitlab_pipeline_schedules_list(project_id="3kirt1/gitlab-mcp-testing", scope="inactive")
+```
+All returned items have `active == false`. Includes `schedule-seed-2`; excludes `schedule-seed-1`.
+
+### 53.4 Paginate
+```
+gitlab_pipeline_schedules_list(project_id="3kirt1/gitlab-mcp-testing", per_page=1, page=1)
+```
+`items` contains exactly 1 schedule. Envelope reports `page == 1`, `per_page == 1`.
+
+---
+
+## Section 54: Pipeline Schedules — Get
+
+### 54.1 Get an active schedule
+```
+gitlab_pipeline_schedules_get(project_id="3kirt1/gitlab-mcp-testing", pipeline_schedule_id=<schedule-seed-1>)
+```
+`id == schedule-seed-1`, `description == "Daily build — 6 AM UTC"`, `cron == "0 6 * * *"`, `cron_timezone == "UTC"`, `active == true`, `ref == "main"`. All universal invariants satisfied.
+
+### 54.2 Get an inactive schedule
+```
+gitlab_pipeline_schedules_get(project_id="3kirt1/gitlab-mcp-testing", pipeline_schedule_id=<schedule-seed-2>)
+```
+`active == false`, `cron == "0 0 * * 0"`.
+
+### 54.3 Get a non-existent schedule
+```
+gitlab_pipeline_schedules_get(project_id="3kirt1/gitlab-mcp-testing", pipeline_schedule_id=99999)
+```
+Returns a `404` error.
+
+---
+
+## Section 55: Pipeline Schedules — Pipelines List
+
+> Pipelines appear in this list only after the schedule has been triggered (via `play` or a cron run). Run Section 59.2 first to trigger one; then return here to verify the result.
+
+### 55.1 List pipelines for a schedule (before any run)
+```
+gitlab_pipeline_schedules_pipelines_list(project_id="3kirt1/gitlab-mcp-testing", pipeline_schedule_id=<schedule-seed-1>)
+```
+If no pipelines have been triggered yet, returns `{"items": []}` — no error. If pipelines exist, each item has at least `id`, `status`, `ref`, `sha`, `created_at`.
+
+### 55.2 List pipelines after play (post-Section 59.2)
+Re-run 55.1 after running `gitlab_pipeline_schedules_play` in Section 59.2. `items` contains at least 1 entry; `status` is one of `created`, `pending`, `running`, `failed`, `success`, `canceled`.
+
+### 55.3 Filter by status
+```
+gitlab_pipeline_schedules_pipelines_list(project_id="3kirt1/gitlab-mcp-testing", pipeline_schedule_id=<schedule-seed-1>, status="success")
+```
+All returned items have `status == "success"` (may be empty if no runs have succeeded yet).
+
+---
+
+## Section 56: Pipeline Schedules — Create
+
+### 56.1 Create with required fields only
+```
+gitlab_pipeline_schedules_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  cron="0 12 * * 1",
+  description="Scratch: Monday noon build",
+  ref="main"
+)
+```
+Returned `cron == "0 12 * * 1"`, `description == "Scratch: Monday noon build"`, `active == true` (default), `ref == "main"`. Record `id` as `schedule-scratch-1`.
+
+### 56.2 Create with all optional fields
+```
+gitlab_pipeline_schedules_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  cron="30 8 * * 5",
+  description="Scratch: Friday morning — inactive",
+  ref="main",
+  active=false,
+  cron_timezone="America/New_York"
+)
+```
+`active == false`, `cron_timezone == "America/New_York"`. Record `id` as `schedule-scratch-2`.
+
+---
+
+## Section 57: Pipeline Schedules — Update
+
+Operate on `schedule-scratch-1` from Section 56.
+
+### 57.1 Update description
+```
+gitlab_pipeline_schedules_update(
+  project_id="3kirt1/gitlab-mcp-testing",
+  pipeline_schedule_id=<schedule-scratch-1>,
+  description="Updated description"
+)
+```
+Returned `description == "Updated description"`.
+
+### 57.2 Update cron expression
+```
+gitlab_pipeline_schedules_update(
+  project_id="3kirt1/gitlab-mcp-testing",
+  pipeline_schedule_id=<schedule-scratch-1>,
+  cron="0 9 * * 2"
+)
+```
+Returned `cron == "0 9 * * 2"`.
+
+### 57.3 Update ref
+```
+gitlab_pipeline_schedules_update(
+  project_id="3kirt1/gitlab-mcp-testing",
+  pipeline_schedule_id=<schedule-scratch-1>,
+  ref="main"
+)
+```
+Returned `ref == "main"` (no change, but confirms field is writeable).
+
+### 57.4 Deactivate via active=false
+```
+gitlab_pipeline_schedules_update(
+  project_id="3kirt1/gitlab-mcp-testing",
+  pipeline_schedule_id=<schedule-scratch-1>,
+  active=false
+)
+```
+Returned `active == false`. Confirm with `gitlab_pipeline_schedules_list(..., scope="inactive")` — `schedule-scratch-1` appears.
+
+### 57.5 Reactivate via active=true
+```
+gitlab_pipeline_schedules_update(
+  project_id="3kirt1/gitlab-mcp-testing",
+  pipeline_schedule_id=<schedule-scratch-1>,
+  active=true
+)
+```
+Returned `active == true`.
+
+---
+
+## Section 58: Pipeline Schedule Variables
+
+Operate on `schedule-scratch-1` from Section 56.
+
+### 58.1 Create an env_var variable
+```
+gitlab_pipeline_schedules_variables_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  pipeline_schedule_id=<schedule-scratch-1>,
+  key="MY_VAR",
+  value="hello"
+)
+```
+Returned `key == "MY_VAR"`, `value == "hello"`, `variable_type == "env_var"`.
+
+### 58.2 Create a file-type variable
+```
+gitlab_pipeline_schedules_variables_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  pipeline_schedule_id=<schedule-scratch-1>,
+  key="MY_FILE_VAR",
+  value="file contents here",
+  variable_type="file"
+)
+```
+Returned `variable_type == "file"`.
+
+### 58.3 Get a variable
+```
+gitlab_pipeline_schedules_variables_get(
+  project_id="3kirt1/gitlab-mcp-testing",
+  pipeline_schedule_id=<schedule-scratch-1>,
+  key="MY_VAR"
+)
+```
+`key == "MY_VAR"`, `value == "hello"`, `variable_type == "env_var"`.
+
+### 58.4 Update a variable
+```
+gitlab_pipeline_schedules_variables_update(
+  project_id="3kirt1/gitlab-mcp-testing",
+  pipeline_schedule_id=<schedule-scratch-1>,
+  key="MY_VAR",
+  value="updated-value"
+)
+```
+Returned `value == "updated-value"`.
+
+### 58.5 Delete a variable
+```
+gitlab_pipeline_schedules_variables_delete(
+  project_id="3kirt1/gitlab-mcp-testing",
+  pipeline_schedule_id=<schedule-scratch-1>,
+  key="MY_FILE_VAR"
+)
+```
+Returns a success text message. A subsequent `gitlab_pipeline_schedules_variables_get` for `MY_FILE_VAR` returns a `404` error.
+
+### 58.6 Get a non-existent variable
+```
+gitlab_pipeline_schedules_variables_get(
+  project_id="3kirt1/gitlab-mcp-testing",
+  pipeline_schedule_id=<schedule-scratch-1>,
+  key="NONEXISTENT_VAR"
+)
+```
+Returns a `404` error.
+
+---
+
+## Section 59: Pipeline Schedules — Take Ownership, Play, and Delete
+
+### 59.1 Take ownership
+```
+gitlab_pipeline_schedules_take_ownership(
+  project_id="3kirt1/gitlab-mcp-testing",
+  pipeline_schedule_id=<schedule-scratch-1>
+)
+```
+Returns a pipeline schedule object. `owner.username` matches the token owner's username.
+
+### 59.2 Play (trigger immediately)
+
+> This creates a real pipeline run on the `main` branch of the test project. Re-run Section 55.2 afterwards to verify the pipeline appears.
+
+```
+gitlab_pipeline_schedules_play(
+  project_id="3kirt1/gitlab-mcp-testing",
+  pipeline_schedule_id=<schedule-seed-1>
+)
+```
+Returns `{"message": "201 Created"}`. No error.
+
+### 59.3 Delete a schedule
+```
+gitlab_pipeline_schedules_delete(
+  project_id="3kirt1/gitlab-mcp-testing",
+  pipeline_schedule_id=<schedule-scratch-1>
+)
+```
+Returns a success text message. A subsequent `gitlab_pipeline_schedules_get` for `schedule-scratch-1` returns a `404` error. Also delete `schedule-scratch-2`.
+
+---
+
+## Workflow J: Pipeline schedule lifecycle (create → update → variables → play → delete)
+
+1. `gitlab_pipeline_schedules_create(project_id="3kirt1/gitlab-mcp-testing", cron="0 3 * * *", description="Workflow J schedule", ref="main", active=false)` — record `id` as `schedule-wj`
+2. `gitlab_pipeline_schedules_get(..., pipeline_schedule_id=<schedule-wj>)` — confirm `description == "Workflow J schedule"`, `active == false`
+3. `gitlab_pipeline_schedules_update(..., pipeline_schedule_id=<schedule-wj>, description="Workflow J — updated", active=true)` — confirm both fields returned
+4. `gitlab_pipeline_schedules_list(project_id="3kirt1/gitlab-mcp-testing", scope="active")` — confirm `schedule-wj` appears
+5. `gitlab_pipeline_schedules_variables_create(..., pipeline_schedule_id=<schedule-wj>, key="WJ_VAR", value="test")` — confirm `key == "WJ_VAR"`, `value == "test"`
+6. `gitlab_pipeline_schedules_variables_get(..., pipeline_schedule_id=<schedule-wj>, key="WJ_VAR")` — confirm `value == "test"`
+7. `gitlab_pipeline_schedules_variables_update(..., pipeline_schedule_id=<schedule-wj>, key="WJ_VAR", value="updated")` — confirm `value == "updated"`
+8. `gitlab_pipeline_schedules_variables_delete(..., pipeline_schedule_id=<schedule-wj>, key="WJ_VAR")` — confirm success message; verify `404` on get
+9. `gitlab_pipeline_schedules_delete(..., pipeline_schedule_id=<schedule-wj>)` — confirm success message
+10. `gitlab_pipeline_schedules_get(..., pipeline_schedule_id=<schedule-wj>)` — confirm `404` error
+
+---
+
+## Section 60: Search — Global
+
+### 60.1 Search issues instance-wide
+```
+gitlab_search_global(scope="issues", search="login page crashes")
+```
+Returns an envelope. Results include at least seed-1 (`"Bug: login page crashes on submit"`). Each result has `id`, `iid`, `title`, `state`, `project_id`.
+
+### 60.2 Search projects
+```
+gitlab_search_global(scope="projects", search="gitlab-mcp-testing")
+```
+Returns the `3kirt1/gitlab-mcp-testing` project in results. Each entry has `id`, `name`, `path_with_namespace`.
+
+### 60.3 Search merge requests
+```
+gitlab_search_global(scope="merge_requests", search="off-by-one")
+```
+Returns at least mr-seed-1. Each result has `iid`, `title`, `state`, `project_id`.
+
+### 60.4 Search users
+```
+gitlab_search_global(scope="users", search="3kirt1")
+```
+Returns at least 1 user result. Each entry has `id`, `username`, `name`.
+
+### 60.5 No-match returns empty
+```
+gitlab_search_global(scope="issues", search="zzznomatchzzz999abc")
+```
+Returns `{"items": []}` — no error.
+
+### 60.6 Sort by created_at
+```
+gitlab_search_global(scope="issues", search="Bug", order_by="created_at", sort="asc")
+```
+First result has the earliest `created_at`. No error.
+
+### 60.7 Paginate results
+```
+gitlab_search_global(scope="issues", search="Bug", per_page=2, page=1)
+```
+`items` contains at most 2 results. Envelope reports `page == 1`, `per_page == 2`.
+
+---
+
+## Section 61: Search — Group
+
+### 61.1 Search issues within group
+```
+gitlab_search_group(group_id="3kirt1", scope="issues", search="bug")
+```
+Returns an envelope. Results include issues with "bug" in their title from projects in the `3kirt1` group (includes seed-1 and seed-3).
+
+### 61.2 Search with numeric group_id
+```
+gitlab_search_group(group_id="<numeric-group-id>", scope="issues", search="bug")
+```
+Returns the same results as 61.1. Confirms numeric group ID is accepted.
+
+### 61.3 Search merge requests within group
+```
+gitlab_search_group(group_id="3kirt1", scope="merge_requests", search="fix")
+```
+Returns at least mr-seed-1 (`"Fix: correct off-by-one error"`). Each result has `iid`, `title`, `project_id`.
+
+### 61.4 No-match returns empty
+```
+gitlab_search_group(group_id="3kirt1", scope="issues", search="zzznomatchzzz999abc")
+```
+Returns `{"items": []}` — no error.
+
+---
+
+## Section 62: Search — Project
+
+### 62.1 Search issues within project
+```
+gitlab_search_project(project_id="3kirt1/gitlab-mcp-testing", scope="issues", search="memory")
+```
+Returns an envelope with at least seed-3 (`"Fix: memory leak in issues API"`). Each result has `iid`, `title`, `state`, `project_id`.
+
+### 62.2 Search merge requests within project
+```
+gitlab_search_project(project_id="3kirt1/gitlab-mcp-testing", scope="merge_requests", search="off-by-one")
+```
+Returns at least mr-seed-1.
+
+### 62.3 Search commits within project
+```
+gitlab_search_project(project_id="3kirt1/gitlab-mcp-testing", scope="commits", search="sample.txt")
+```
+Returns commits whose message or diff mentions `sample.txt`. Each result has at least `id`, `short_id`, `title`, `author_name`.
+
+### 62.4 Search blobs (file contents) within project
+```
+gitlab_search_project(project_id="3kirt1/gitlab-mcp-testing", scope="blobs", search="line one")
+```
+Returns blobs containing `"line one"`. Each result has `filename`, `ref`, `data` (content snippet), `startline`.
+
+### 62.5 Filter by state
+```
+gitlab_search_project(project_id="3kirt1/gitlab-mcp-testing", scope="issues", search="Bug", state="closed")
+```
+All returned items have `state == "closed"` (seed-3).
+
+### 62.6 No-match returns empty
+```
+gitlab_search_project(project_id="3kirt1/gitlab-mcp-testing", scope="issues", search="zzznomatchzzz999abc")
+```
+Returns `{"items": []}` — no error.
+
+### 62.7 Using numeric project_id
+```
+gitlab_search_project(project_id="82279422", scope="issues", search="memory")
+```
+Returns the same results as 62.1. Confirms numeric project ID is accepted.
+
+---
+
+## Workflow K: Search across scopes
+
+1. `gitlab_search_project(project_id="3kirt1/gitlab-mcp-testing", scope="issues", search="login page")` — verify seed-1 in `items`
+2. `gitlab_search_project(project_id="3kirt1/gitlab-mcp-testing", scope="merge_requests", search="off-by-one")` — verify mr-seed-1 in `items`
+3. `gitlab_search_project(project_id="3kirt1/gitlab-mcp-testing", scope="commits", search="sample.txt")` — verify at least 1 commit in `items`
+4. `gitlab_search_project(project_id="3kirt1/gitlab-mcp-testing", scope="blobs", search="line one")` — verify `testing/sample.txt` appears in results
+5. `gitlab_search_group(group_id="3kirt1", scope="issues", search="dark mode")` — verify seed-2 (`"Feature: add dark mode support"`) in `items`
+6. `gitlab_search_global(scope="projects", search="gitlab-mcp-testing")` — verify the test project appears in `items`
 

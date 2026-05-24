@@ -24,9 +24,12 @@ pub mod issue_notes;
 pub mod issues;
 pub mod jobs;
 pub mod merge_requests;
+pub mod metadata;
+pub mod pipeline_schedules;
 pub mod pipelines;
 pub mod repositories;
 pub mod repository_files;
+pub mod search;
 mod slim;
 
 // --------------------------------------------------------------------------
@@ -256,6 +259,46 @@ impl GitlabMcpServer {
 
 #[tool_router]
 impl GitlabMcpServer {
+    #[tool(
+        description = "Get metadata about the GitLab instance, including version, revision, enterprise status, and Kubernetes agent server (KAS) information."
+    )]
+    async fn gitlab_metadata_get(
+        &self,
+        Parameters(p): Parameters<metadata::MetadataParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, metadata::metadata_get, p, "metadata")
+    }
+
+    #[tool(
+        description = "Search across the entire GitLab instance. Required: scope (projects, issues, merge_requests, milestones, snippet_titles, users, wiki_blobs, commits, blobs, notes), search. Optional: search_type, order_by, sort, confidential, state, fields, page, per_page."
+    )]
+    async fn gitlab_search_global(
+        &self,
+        Parameters(p): Parameters<search::GlobalSearchParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, search::global_search, p, "search results")
+    }
+
+    #[tool(
+        description = "Search within a group. Required: group_id, scope, search. Optional: search_type, order_by, sort, confidential, state, fields, page, per_page."
+    )]
+    async fn gitlab_search_group(
+        &self,
+        Parameters(p): Parameters<search::GroupSearchParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, search::group_search, p, "search results")
+    }
+
+    #[tool(
+        description = "Search within a project. Required: project_id, scope, search. Optional: search_type, order_by, sort, confidential, state, fields, page, per_page."
+    )]
+    async fn gitlab_search_project(
+        &self,
+        Parameters(p): Parameters<search::ProjectSearchParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, search::project_search, p, "search results")
+    }
+
     #[tool(
         description = "List issues for a GitLab project. Filters: state (opened/closed/all), labels, search, scope, assignee_id, author_id, created_after/created_before, updated_after/updated_before (ISO 8601), order_by, sort. Paginate with page and per_page."
     )]
@@ -785,6 +828,174 @@ impl GitlabMcpServer {
             pipelines::pipeline_update_metadata,
             p,
             "pipeline metadata"
+        )
+    }
+
+    #[tool(
+        description = "List pipeline schedules for a GitLab project. Optional: scope (\"active\" or \"inactive\"), page, per_page."
+    )]
+    async fn gitlab_pipeline_schedules_list(
+        &self,
+        Parameters(p): Parameters<pipeline_schedules::PipelineSchedulesListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(
+            self,
+            pipeline_schedules::pipeline_schedules_list,
+            p,
+            "pipeline schedules"
+        )
+    }
+
+    #[tool(description = "Get a single GitLab pipeline schedule by project ID and schedule ID.")]
+    async fn gitlab_pipeline_schedules_get(
+        &self,
+        Parameters(p): Parameters<pipeline_schedules::PipelineScheduleGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(
+            self,
+            pipeline_schedules::pipeline_schedule_get,
+            p,
+            "pipeline schedule"
+        )
+    }
+
+    #[tool(
+        description = "List pipelines triggered by a pipeline schedule. Optional filters: status, scope, sort, created_after, created_before, updated_after, updated_before, page, per_page."
+    )]
+    async fn gitlab_pipeline_schedules_pipelines_list(
+        &self,
+        Parameters(p): Parameters<pipeline_schedules::PipelineSchedulePipelinesListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(
+            self,
+            pipeline_schedules::pipeline_schedule_pipelines_list,
+            p,
+            "schedule pipelines"
+        )
+    }
+
+    #[tool(
+        description = "Create a new pipeline schedule. Required: project_id, cron, description, ref. Optional: active, cron_timezone."
+    )]
+    async fn gitlab_pipeline_schedules_create(
+        &self,
+        Parameters(p): Parameters<pipeline_schedules::PipelineScheduleCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(
+            self,
+            pipeline_schedules::pipeline_schedule_create,
+            p,
+            "pipeline schedule"
+        )
+    }
+
+    #[tool(
+        description = "Update an existing GitLab pipeline schedule. All fields optional: cron, description, ref, active, cron_timezone."
+    )]
+    async fn gitlab_pipeline_schedules_update(
+        &self,
+        Parameters(p): Parameters<pipeline_schedules::PipelineScheduleUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(
+            self,
+            pipeline_schedules::pipeline_schedule_update,
+            p,
+            "pipeline schedule"
+        )
+    }
+
+    #[tool(description = "Delete a GitLab pipeline schedule.")]
+    async fn gitlab_pipeline_schedules_delete(
+        &self,
+        Parameters(p): Parameters<pipeline_schedules::PipelineScheduleDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(
+            self,
+            pipeline_schedules::pipeline_schedule_delete,
+            p,
+            "pipeline schedule"
+        )
+    }
+
+    #[tool(description = "Take ownership of a GitLab pipeline schedule.")]
+    async fn gitlab_pipeline_schedules_take_ownership(
+        &self,
+        Parameters(p): Parameters<pipeline_schedules::PipelineScheduleTakeOwnershipParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(
+            self,
+            pipeline_schedules::pipeline_schedule_take_ownership,
+            p,
+            "taking ownership of",
+            "pipeline schedule"
+        )
+    }
+
+    #[tool(description = "Run a GitLab pipeline schedule immediately (trigger now).")]
+    async fn gitlab_pipeline_schedules_play(
+        &self,
+        Parameters(p): Parameters<pipeline_schedules::PipelineSchedulePlayParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(
+            self,
+            pipeline_schedules::pipeline_schedule_play,
+            p,
+            "playing",
+            "pipeline schedule"
+        )
+    }
+
+    #[tool(
+        description = "Create a variable for a GitLab pipeline schedule. Required: project_id, pipeline_schedule_id, key, value. Optional: variable_type (\"env_var\" or \"file\")."
+    )]
+    async fn gitlab_pipeline_schedules_variables_create(
+        &self,
+        Parameters(p): Parameters<pipeline_schedules::PipelineScheduleVariableCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(
+            self,
+            pipeline_schedules::pipeline_schedule_variable_create,
+            p,
+            "pipeline schedule variable"
+        )
+    }
+
+    #[tool(description = "Get a variable from a GitLab pipeline schedule.")]
+    async fn gitlab_pipeline_schedules_variables_get(
+        &self,
+        Parameters(p): Parameters<pipeline_schedules::PipelineScheduleVariableGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(
+            self,
+            pipeline_schedules::pipeline_schedule_variable_get,
+            p,
+            "pipeline schedule variable"
+        )
+    }
+
+    #[tool(description = "Update a variable in a GitLab pipeline schedule.")]
+    async fn gitlab_pipeline_schedules_variables_update(
+        &self,
+        Parameters(p): Parameters<pipeline_schedules::PipelineScheduleVariableUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(
+            self,
+            pipeline_schedules::pipeline_schedule_variable_update,
+            p,
+            "pipeline schedule variable"
+        )
+    }
+
+    #[tool(description = "Delete a variable from a GitLab pipeline schedule.")]
+    async fn gitlab_pipeline_schedules_variables_delete(
+        &self,
+        Parameters(p): Parameters<pipeline_schedules::PipelineScheduleVariableDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(
+            self,
+            pipeline_schedules::pipeline_schedule_variable_delete,
+            p,
+            "pipeline schedule variable"
         )
     }
 
