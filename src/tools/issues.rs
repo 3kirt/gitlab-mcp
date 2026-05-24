@@ -91,13 +91,18 @@ pub async fn issue_get(client: &GitlabClient, p: IssueGetParams) -> Result<Value
     let iid = p.issue_iid;
     let mut issue = client.get(&format!("/api/v4/projects/{pid}/issues/{iid}")).await?;
     let links = issue_links_list(client, IssueLinksListParams {
-        project_id: p.project_id,
+        project_id: p.project_id.clone(),
         issue_iid: iid,
     })
     .await
     .map(|(v, _)| v)
     .unwrap_or(Value::Array(vec![]));
     issue["linked_issues"] = links;
+    let closed_by = client
+        .get(&format!("/api/v4/projects/{pid}/issues/{iid}/closed_by"))
+        .await
+        .unwrap_or(Value::Array(vec![]));
+    issue["closed_by"] = closed_by;
     Ok(issue)
 }
 
