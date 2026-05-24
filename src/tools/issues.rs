@@ -209,3 +209,115 @@ pub async fn issue_delete(client: &GitlabClient, p: IssueDeleteParams) -> Result
     );
     client.delete(&path).await
 }
+
+// --------------------------------------------------------------------------
+// List issue links
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct IssueLinksListParams {
+    #[schemars(description = "Project ID or URL-encoded path")]
+    pub project_id: String,
+    #[schemars(description = "Issue internal ID (IID) within the project")]
+    pub issue_iid: u64,
+}
+
+pub async fn issue_links_list(client: &GitlabClient, p: IssueLinksListParams) -> ListResult {
+    let path = format!(
+        "/api/v4/projects/{}/issues/{}/links",
+        encode_project_id(&p.project_id),
+        p.issue_iid
+    );
+    client.list(&path, &[]).await
+}
+
+// --------------------------------------------------------------------------
+// Get single issue link
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct IssueLinkGetParams {
+    #[schemars(description = "Project ID or URL-encoded path")]
+    pub project_id: String,
+    #[schemars(description = "Issue internal ID (IID) within the project")]
+    pub issue_iid: u64,
+    #[schemars(description = "Issue link relationship ID (issue_link_id from the list response)")]
+    pub issue_link_id: u64,
+}
+
+pub async fn issue_link_get(
+    client: &GitlabClient,
+    p: IssueLinkGetParams,
+) -> Result<Value, GitlabError> {
+    let path = format!(
+        "/api/v4/projects/{}/issues/{}/links/{}",
+        encode_project_id(&p.project_id),
+        p.issue_iid,
+        p.issue_link_id
+    );
+    client.get(&path).await
+}
+
+// --------------------------------------------------------------------------
+// Create issue link
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct IssueLinkCreateParams {
+    #[schemars(description = "Project ID or URL-encoded path of the source issue")]
+    pub project_id: String,
+    #[schemars(description = "Source issue internal ID (IID) within the project")]
+    pub issue_iid: u64,
+    #[schemars(description = "Target project ID or URL-encoded path")]
+    pub target_project_id: String,
+    #[schemars(description = "Target issue internal ID (IID)")]
+    pub target_issue_iid: u64,
+    #[schemars(
+        description = "Relationship type: \"relates_to\" (default), \"blocks\", or \"is_blocked_by\""
+    )]
+    pub link_type: Option<String>,
+}
+
+pub async fn issue_link_create(
+    client: &GitlabClient,
+    p: IssueLinkCreateParams,
+) -> Result<Value, GitlabError> {
+    let path = format!(
+        "/api/v4/projects/{}/issues/{}/links",
+        encode_project_id(&p.project_id),
+        p.issue_iid
+    );
+    let body = BodyBuilder::new()
+        .req("target_project_id", &p.target_project_id)
+        .req("target_issue_iid", p.target_issue_iid)
+        .opt("link_type", p.link_type)
+        .build();
+    client.post(&path, &body).await
+}
+
+// --------------------------------------------------------------------------
+// Delete issue link
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct IssueLinkDeleteParams {
+    #[schemars(description = "Project ID or URL-encoded path")]
+    pub project_id: String,
+    #[schemars(description = "Issue internal ID (IID) within the project")]
+    pub issue_iid: u64,
+    #[schemars(description = "Issue link relationship ID (issue_link_id from the list response)")]
+    pub issue_link_id: u64,
+}
+
+pub async fn issue_link_delete(
+    client: &GitlabClient,
+    p: IssueLinkDeleteParams,
+) -> Result<Value, GitlabError> {
+    let path = format!(
+        "/api/v4/projects/{}/issues/{}/links/{}",
+        encode_project_id(&p.project_id),
+        p.issue_iid,
+        p.issue_link_id
+    );
+    client.delete_json(&path).await
+}
