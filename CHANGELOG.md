@@ -4,6 +4,29 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.13.0] — 2026-05-24
+
+### Added
+- **Snippets domain** — ten new tools: `gitlab_snippets_list`,
+  `gitlab_snippets_public_list`, `gitlab_snippets_all_list`,
+  `gitlab_snippets_get`, `gitlab_snippets_raw`, `gitlab_snippets_file_raw`,
+  `gitlab_snippets_create`, `gitlab_snippets_update`, `gitlab_snippets_delete`,
+  `gitlab_snippets_user_agent_detail`. Covers personal snippet CRUD, raw and
+  per-file content retrieval, and multi-file snippet management (create, update,
+  move, delete actions on individual files).
+
+### Fixed
+- `gitlab_snippets_create` now always sends `visibility` in the request body,
+  defaulting to `"private"` when not specified. Previously the field was omitted,
+  causing GitLab.com to select `internal` visibility — which is restricted —
+  resulting in a 403 error.
+
+### Documentation
+- Testing protocol extended with seed step 12, Sections 63–70 (Snippets list,
+  get, raw, file raw, create, update, delete, user agent detail), and Workflow L.
+
+---
+
 ## [0.12.0] — 2026-05-24
 
 ### Added
