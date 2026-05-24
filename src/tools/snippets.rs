@@ -92,10 +92,7 @@ pub struct SnippetGetParams {
     pub id: u64,
 }
 
-pub async fn snippet_get(
-    client: &GitlabClient,
-    p: SnippetGetParams,
-) -> Result<Value, GitlabError> {
+pub async fn snippet_get(client: &GitlabClient, p: SnippetGetParams) -> Result<Value, GitlabError> {
     client.get(&format!("/api/v4/snippets/{}", p.id)).await
 }
 
@@ -109,10 +106,7 @@ pub struct SnippetRawParams {
     pub id: u64,
 }
 
-pub async fn snippet_raw(
-    client: &GitlabClient,
-    p: SnippetRawParams,
-) -> Result<Value, GitlabError> {
+pub async fn snippet_raw(client: &GitlabClient, p: SnippetRawParams) -> Result<Value, GitlabError> {
     let content = client
         .get_text(&format!("/api/v4/snippets/{}/raw", p.id), &[])
         .await?;
@@ -163,9 +157,7 @@ pub struct SnippetFileInput {
 pub struct SnippetCreateParams {
     #[schemars(description = "Title of the snippet")]
     pub title: String,
-    #[schemars(
-        description = "Array of snippet files, each with content and file_path (required)"
-    )]
+    #[schemars(description = "Array of snippet files, each with content and file_path (required)")]
     pub files: Vec<SnippetFileInput>,
     #[schemars(description = "Description of the snippet")]
     pub description: Option<String>,
@@ -199,9 +191,7 @@ pub async fn snippet_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetFileUpdateInput {
-    #[schemars(
-        description = "Action to perform: \"create\", \"update\", \"delete\", or \"move\""
-    )]
+    #[schemars(description = "Action to perform: \"create\", \"update\", \"delete\", or \"move\"")]
     pub action: String,
     #[schemars(description = "File path of the snippet file")]
     pub file_path: Option<String>,
@@ -219,9 +209,7 @@ pub struct SnippetUpdateParams {
     pub title: Option<String>,
     #[schemars(description = "New description for the snippet")]
     pub description: Option<String>,
-    #[schemars(
-        description = "New visibility level: \"public\", \"internal\", or \"private\""
-    )]
+    #[schemars(description = "New visibility level: \"public\", \"internal\", or \"private\"")]
     pub visibility: Option<String>,
     #[schemars(
         description = "Array of file changes; each entry requires action (\"create\", \"update\", \"delete\", \"move\") and optional file_path, previous_path, content"
@@ -257,7 +245,9 @@ pub async fn snippet_update(
         .opt("visibility", p.visibility)
         .opt("files", files)
         .build();
-    client.put(&format!("/api/v4/snippets/{}", p.id), &body).await
+    client
+        .put(&format!("/api/v4/snippets/{}", p.id), &body)
+        .await
 }
 
 // --------------------------------------------------------------------------
@@ -270,7 +260,10 @@ pub struct SnippetDeleteParams {
     pub id: u64,
 }
 
-pub async fn snippet_delete(client: &GitlabClient, p: SnippetDeleteParams) -> Result<(), GitlabError> {
+pub async fn snippet_delete(
+    client: &GitlabClient,
+    p: SnippetDeleteParams,
+) -> Result<(), GitlabError> {
     client.delete(&format!("/api/v4/snippets/{}", p.id)).await
 }
 
