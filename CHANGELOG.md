@@ -4,6 +4,42 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.10.0] — 2026-05-24
+
+### Added
+- **Issue links domain** — four new tools: `gitlab_issues_links_list`,
+  `gitlab_issues_links_get`, `gitlab_issues_links_create`,
+  `gitlab_issues_links_delete`. Supports all three GitLab link types:
+  `relates_to`, `blocks`, and `is_blocked_by`.
+- `gitlab_issues_get` now embeds a `linked_issues` array (all issue links
+  with their `link_type` and `issue_link_id`) and a `closed_by` array
+  (merge requests that will close the issue when merged).
+- `GitlabClient::delete_json` — new client method for DELETE endpoints that
+  return a response body rather than 204 No Content.
+- `unwrap_404_as_empty_array` helper in `tools/mod.rs` for graceful
+  degradation of supplemental fetches embedded in a primary response.
+
+### Changed
+- **Epics migrated from GraphQL to REST API** (`/api/v4/groups/:id/epics`).
+  Fixes `gitlab_epics_get` returning 500 on GitLab EE 18.x where the
+  work-items GraphQL API rejects Epic GIDs. All five epic tools are
+  unaffected at the call surface; the GraphQL plumbing is fully replaced.
+- `encode_project_id` renamed to `encode_namespace_id` to reflect its use
+  for both project and group IDs.
+
+### Fixed
+- Removed unsupported GraphQL widgets (`linkedItems`, `notes`) from the
+  `epic_get` query that caused failures on GitLab EE 18.x.
+
+### Documentation
+- Testing protocol updated with seed step 9 (issue link seeding), universal
+  invariant tables for issue links, Sections 48–51 (list, get, create,
+  delete), and Workflow I.
+- Testing protocol updated with EE 18.x regression notes for epics and
+  removed widget references.
+
+---
+
 ## [0.9.0] — 2026-05-21
 
 ### Added
