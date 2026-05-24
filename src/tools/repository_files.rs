@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{BodyBuilder, QueryBuilder, encode_path_segment, encode_project_id};
+use crate::tools::{BodyBuilder, QueryBuilder, encode_namespace_id, encode_path_segment};
 
 // --------------------------------------------------------------------------
 // Get file (metadata + Base64 content)
@@ -27,7 +27,7 @@ pub struct FileGetParams {
 pub async fn file_get(client: &GitlabClient, p: FileGetParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/files/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.file_path)
     );
     let params = QueryBuilder::new()
@@ -59,7 +59,7 @@ pub struct FileRawParams {
 pub async fn file_raw(client: &GitlabClient, p: FileRawParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/files/{}/raw",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.file_path)
     );
     let params = QueryBuilder::new()
@@ -95,7 +95,7 @@ pub struct FileBlameParams {
 pub async fn file_blame(client: &GitlabClient, p: FileBlameParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/files/{}/blame",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.file_path)
     );
     let params = QueryBuilder::new()
@@ -141,7 +141,7 @@ pub struct FileCreateParams {
 pub async fn file_create(client: &GitlabClient, p: FileCreateParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/files/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.file_path)
     );
     let body = BodyBuilder::new()
@@ -196,7 +196,7 @@ pub struct FileUpdateParams {
 pub async fn file_update(client: &GitlabClient, p: FileUpdateParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/files/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.file_path)
     );
     let body = BodyBuilder::new()
@@ -246,7 +246,7 @@ pub struct FileDeleteParams {
 pub async fn file_delete(client: &GitlabClient, p: FileDeleteParams) -> Result<(), GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/files/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.file_path)
     );
     let body = BodyBuilder::new()

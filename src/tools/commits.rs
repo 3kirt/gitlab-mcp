@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_path_segment, encode_project_id,
+    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, encode_path_segment,
 };
 
 // --------------------------------------------------------------------------
@@ -49,7 +49,7 @@ pub struct CommitsListParams {
 pub async fn commits_list(client: &GitlabClient, p: CommitsListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/commits",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let params = QueryBuilder::new()
         .opt("ref_name", p.ref_name)
@@ -133,7 +133,7 @@ pub async fn commit_create(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/commits",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let actions_arr: Vec<Value> = p
         .actions
@@ -183,7 +183,7 @@ pub struct CommitGetParams {
 pub async fn commit_get(client: &GitlabClient, p: CommitGetParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new().opt("stats", p.stats).into_params();
@@ -209,7 +209,7 @@ pub struct CommitRefsParams {
 pub async fn commit_refs(client: &GitlabClient, p: CommitRefsParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/refs",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
@@ -240,7 +240,7 @@ pub async fn commit_sequence(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/sequence",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
@@ -273,7 +273,7 @@ pub async fn commit_cherry_pick(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/cherry_pick",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let body = BodyBuilder::new()
@@ -306,7 +306,7 @@ pub async fn commit_revert(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/revert",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let body = BodyBuilder::new()
@@ -335,7 +335,7 @@ pub struct CommitDiffParams {
 pub async fn commit_diff(client: &GitlabClient, p: CommitDiffParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/diff",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
@@ -366,7 +366,7 @@ pub async fn commit_comments_list(
 ) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/comments",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
@@ -402,7 +402,7 @@ pub async fn commit_comment_create(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/comments",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let body = BodyBuilder::new()
@@ -434,7 +434,7 @@ pub async fn commit_discussions_list(
 ) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/discussions",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
@@ -482,7 +482,7 @@ pub async fn commit_statuses_list(
 ) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/statuses",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
@@ -533,7 +533,7 @@ pub async fn commit_status_set(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/statuses/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let body = BodyBuilder::new()
@@ -570,7 +570,7 @@ pub async fn commit_merge_requests(
 ) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/merge_requests",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
@@ -599,7 +599,7 @@ pub async fn commit_signature(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/commits/{}/signature",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
     client.get(&path).await

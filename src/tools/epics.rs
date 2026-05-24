@@ -10,7 +10,48 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, PaginationMeta};
-use crate::tools::{BodyBuilder, QueryBuilder, encode_project_id};
+use crate::tools::{BodyBuilder, QueryBuilder, encode_namespace_id, unwrap_404_as_empty_array};
+
+// --------------------------------------------------------------------------
+// Module helpers
+// --------------------------------------------------------------------------
+
+/// Resolve an epic IID (relative to the group) to the numeric global epic ID
+/// that the REST `parent_id` field expects.
+async fn resolve_epic_id(
+    client: &GitlabClient,
+    gid: &str,
+    epic_iid: u64,
+) -> Result<u64, GitlabError> {
+    let parent = client
+        .get(&format!("/api/v4/groups/{gid}/epics/{epic_iid}"))
+        .await?;
+    parent["id"]
+        .as_u64()
+        .ok_or_else(|| GitlabError::Other("parent epic response missing id field".into()))
+}
+
+/// Append the start/due-date widget fields shared by create and update.
+/// GitLab's REST API stores fixed vs inherited dates separately, so we always
+/// flip the `*_is_fixed` flag when the corresponding date is set.
+fn apply_epic_dates(
+    builder: BodyBuilder,
+    start_date: Option<String>,
+    due_date: Option<String>,
+) -> BodyBuilder {
+    let mut builder = builder;
+    if let Some(date) = start_date {
+        builder = builder
+            .req("start_date_is_fixed", true)
+            .req("start_date_fixed", date);
+    }
+    if let Some(date) = due_date {
+        builder = builder
+            .req("due_date_is_fixed", true)
+            .req("due_date_fixed", date);
+    }
+    builder
+}
 
 // --------------------------------------------------------------------------
 // List epics
@@ -46,7 +87,7 @@ pub async fn epics_list(
     client: &GitlabClient,
     p: EpicsListParams,
 ) -> Result<(Value, PaginationMeta), GitlabError> {
-    let gid = encode_project_id(&p.group_id);
+    let gid = encode_namespace_id(&p.group_id);
     let labels = p.label_name.map(|v| v.join(","));
     let params = QueryBuilder::new()
         .opt("state", p.state)
@@ -77,18 +118,19 @@ pub struct EpicGetParams {
 }
 
 pub async fn epic_get(client: &GitlabClient, p: EpicGetParams) -> Result<Value, GitlabError> {
-    let gid = encode_project_id(&p.group_id);
+    let gid = encode_namespace_id(&p.group_id);
     let iid = p.epic_iid;
     let mut epic = client
         .get(&format!("/api/v4/groups/{gid}/epics/{iid}"))
         .await?;
-    // Supplement with linked issues — the REST hierarchy only surfaces child
-    // epics, not classic epic→issue associations.
-    let issues = client
-        .get(&format!("/api/v4/groups/{gid}/epics/{iid}/issues"))
-        .await
-        .unwrap_or(Value::Array(vec![]));
-    epic["linked_issues"] = issues;
+    // Supplement with the epic's child issues — the REST epic body only carries
+    // child epics under hierarchy, not the classic epic→issue associations.
+    let issues = unwrap_404_as_empty_array(
+        client
+            .get(&format!("/api/v4/groups/{gid}/epics/{iid}/issues"))
+            .await,
+    )?;
+    epic["issues"] = issues;
     Ok(epic)
 }
 
@@ -114,46 +156,32 @@ pub struct EpicCreateParams {
     pub due_date: Option<String>,
 }
 
-pub async fn epic_create(
-    client: &GitlabClient,
-    p: EpicCreateParams,
-) -> Result<Value, GitlabError> {
-    let gid = encode_project_id(&p.group_id);
+pub async fn epic_create(client: &GitlabClient, p: EpicCreateParams) -> Result<Value, GitlabError> {
+    let gid = encode_namespace_id(&p.group_id);
 
-    let parent_id: Option<u64> = if let Some(parent_iid) = p.parent_epic_iid {
-        if parent_iid == 0 {
-            return Err(GitlabError::Graphql(
+    let parent_id: Option<u64> = match p.parent_epic_iid {
+        None => None,
+        Some(0) => {
+            return Err(GitlabError::Other(
                 "parent_epic_iid=0 is only valid on update (to clear an existing parent)".into(),
             ));
         }
-        let parent = client
-            .get(&format!("/api/v4/groups/{gid}/epics/{parent_iid}"))
-            .await?;
-        let id = parent["id"]
-            .as_u64()
-            .ok_or_else(|| GitlabError::Graphql("parent epic response missing id field".into()))?;
-        Some(id)
-    } else {
-        None
+        Some(parent_iid) => Some(resolve_epic_id(client, &gid, parent_iid).await?),
     };
 
-    let mut body = BodyBuilder::new().req("title", &p.title);
-    body = body.opt("description", p.description);
-    body = body.opt("labels", p.labels);
-    body = body.opt("parent_id", parent_id);
-    if let Some(date) = p.start_date {
-        body = body
-            .req("start_date_is_fixed", true)
-            .req("start_date_fixed", date);
-    }
-    if let Some(date) = p.due_date {
-        body = body
-            .req("due_date_is_fixed", true)
-            .req("due_date_fixed", date);
-    }
+    let body = apply_epic_dates(
+        BodyBuilder::new()
+            .req("title", &p.title)
+            .opt("description", p.description)
+            .opt("labels", p.labels)
+            .opt("parent_id", parent_id),
+        p.start_date,
+        p.due_date,
+    )
+    .build();
 
     client
-        .post(&format!("/api/v4/groups/{gid}/epics"), &body.build())
+        .post(&format!("/api/v4/groups/{gid}/epics"), &body)
         .await
 }
 
@@ -189,48 +217,32 @@ pub struct EpicUpdateParams {
     pub due_date: Option<String>,
 }
 
-pub async fn epic_update(
-    client: &GitlabClient,
-    p: EpicUpdateParams,
-) -> Result<Value, GitlabError> {
-    let gid = encode_project_id(&p.group_id);
+pub async fn epic_update(client: &GitlabClient, p: EpicUpdateParams) -> Result<Value, GitlabError> {
+    let gid = encode_namespace_id(&p.group_id);
     let iid = p.epic_iid;
 
     let parent_id: Option<u64> = match p.parent_epic_iid {
         None => None,
         Some(0) => Some(0),
-        Some(parent_iid) => {
-            let parent = client
-                .get(&format!("/api/v4/groups/{gid}/epics/{parent_iid}"))
-                .await?;
-            let id = parent["id"].as_u64().ok_or_else(|| {
-                GitlabError::Graphql("parent epic response missing id field".into())
-            })?;
-            Some(id)
-        }
+        Some(parent_iid) => Some(resolve_epic_id(client, &gid, parent_iid).await?),
     };
 
-    let mut body = BodyBuilder::new();
-    body = body.opt("title", p.title);
-    body = body.opt("description", p.description);
-    body = body.opt("state_event", p.state_event);
-    body = body.opt("labels", p.labels);
-    body = body.opt("add_labels", p.add_labels);
-    body = body.opt("remove_labels", p.remove_labels);
-    body = body.opt("parent_id", parent_id);
-    if let Some(date) = p.start_date {
-        body = body
-            .req("start_date_is_fixed", true)
-            .req("start_date_fixed", date);
-    }
-    if let Some(date) = p.due_date {
-        body = body
-            .req("due_date_is_fixed", true)
-            .req("due_date_fixed", date);
-    }
+    let body = apply_epic_dates(
+        BodyBuilder::new()
+            .opt("title", p.title)
+            .opt("description", p.description)
+            .opt("state_event", p.state_event)
+            .opt("labels", p.labels)
+            .opt("add_labels", p.add_labels)
+            .opt("remove_labels", p.remove_labels)
+            .opt("parent_id", parent_id),
+        p.start_date,
+        p.due_date,
+    )
+    .build();
 
     client
-        .put(&format!("/api/v4/groups/{gid}/epics/{iid}"), &body.build())
+        .put(&format!("/api/v4/groups/{gid}/epics/{iid}"), &body)
         .await
 }
 
@@ -247,7 +259,7 @@ pub struct EpicDeleteParams {
 }
 
 pub async fn epic_delete(client: &GitlabClient, p: EpicDeleteParams) -> Result<(), GitlabError> {
-    let gid = encode_project_id(&p.group_id);
+    let gid = encode_namespace_id(&p.group_id);
     let iid = p.epic_iid;
     client
         .delete(&format!("/api/v4/groups/{gid}/epics/{iid}"))
@@ -404,7 +416,7 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[tokio::test]
-    async fn epic_get_returns_epic_with_linked_issues() {
+    async fn epic_get_returns_epic_with_issues() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/api/v4/groups/mygroup/epics/5"))
@@ -430,7 +442,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(item["title"], "Big Feature");
-        assert_eq!(item["linked_issues"][0]["title"], "Sub-issue");
+        assert_eq!(item["issues"][0]["title"], "Sub-issue");
     }
 
     #[tokio::test]
@@ -459,7 +471,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(item["title"], "Solo Epic");
-        assert_eq!(item["linked_issues"], serde_json::json!([]));
+        assert_eq!(item["issues"], serde_json::json!([]));
     }
 
     #[tokio::test]
@@ -564,10 +576,10 @@ mod tests {
         .await
         .unwrap_err();
         match err {
-            crate::client::GitlabError::Graphql(msg) => {
+            crate::client::GitlabError::Other(msg) => {
                 assert!(msg.contains("parent_epic_iid=0"))
             }
-            other => panic!("expected Graphql error, got {other}"),
+            other => panic!("expected Other error, got {other}"),
         }
     }
 

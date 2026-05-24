@@ -2,7 +2,7 @@
 
 This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, and Epics API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics).
 
-**Automated coverage (not retested here):** `encode_project_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with linked-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) are covered by wiremock tests. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
+**Automated coverage (not retested here):** `encode_namespace_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with child-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) are covered by wiremock tests. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
 
 ---
 
@@ -10,7 +10,7 @@ This document describes how to verify all Issues, Issue Links, Issue Notes, Bran
 
 The following behaviors apply across all sections. They are not re-stated per section.
 
-**Numeric project IDs** — `encode_project_id` is unit-tested. Run one live smoke test at the start of any section using `project_id="82279422"` instead of the path form. No need to repeat the numeric-ID variant in every section.
+**Numeric project IDs** — `encode_namespace_id` is unit-tested. Run one live smoke test at the start of any section using `project_id="82279422"` instead of the path form. No need to repeat the numeric-ID variant in every section.
 
 **List response shape (REST)** — Every REST list endpoint returns an envelope object: `{ "items": [...], "page", "per_page", "total", "total_pages", "next_page" }`. The pagination fields are populated from GitLab's `X-*` response headers and any field GitLab omits (e.g. `X-Total` on large endpoints, `X-Next-Page` on the last page) is omitted from the envelope. Item-level invariants in the tables below apply to entries in `items`.
 
@@ -161,7 +161,7 @@ Check these on every response.
 | `due_date` | ISO 8601 date string or null |
 | `parent_id` | Integer (parent epic's REST id) or null if top-level |
 | `parent_iid` | Integer (parent epic's IID) or null if top-level |
-| `linked_issues` | Array of issue objects (may be empty; populated from `/groups/:id/epics/:iid/issues`) |
+| `issues` | Array of issue objects (may be empty; populated from `/groups/:id/epics/:iid/issues`) |
 
 > **Key differences from other tools:** epic tools take `group_id` (numeric ID or full namespace path) instead of `project_id`, and `epic_iid` (the IID from the URL) on get/update/delete. Group-level epics require GitLab Premium/Ultimate. The REST Epics API is deprecated since GitLab 17.0 but remains functional on all EE 18.x versions; it is preferred over the work-items GraphQL API for EE compatibility.
 
@@ -1502,7 +1502,7 @@ The result for `epic-2` has `parent_iid == <epic-1-iid>` and `parent_id` is a po
 ```
 gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-1-iid>)
 ```
-`iid == <epic-1-iid>`, `title == "Q3 Initiative"`, `state == "opened"`. The response includes `author`, `group_id`, `web_url`, `created_at`, `updated_at`, and a `linked_issues` array (may be empty). Since `epic-1` has `epic-2` as a child, `epic-2`'s `parent_iid` should equal `epic-1-iid` (verify via 43.8 or a separate get on epic-2).
+`iid == <epic-1-iid>`, `title == "Q3 Initiative"`, `state == "opened"`. The response includes `author`, `group_id`, `web_url`, `created_at`, `updated_at`, and an `issues` array (may be empty). Since `epic-1` has `epic-2` as a child, `epic-2`'s `parent_iid` should equal `epic-1-iid` (verify via 43.8 or a separate get on epic-2).
 
 ### 44.2 Get with numeric group_id
 ```
@@ -1522,8 +1522,8 @@ gitlab_epics_get(group_id="nonexistent-group-xyz", epic_iid=1)
 ```
 Returns a `404` API error.
 
-### 44.5 Verify linked_issues field
-If any issues have been linked to `epic-3` via the GitLab UI, verify `linked_issues` contains them. If no issues are linked, `linked_issues == []` with no error.
+### 44.5 Verify issues field
+If any issues have been linked to `epic-3` via the GitLab UI, verify `issues` contains them. If no issues are linked, `issues == []` with no error.
 
 ---
 
@@ -1643,7 +1643,7 @@ Delete the scratch epics from Section 45 (`epic-scratch-iid`, `epic-desc-iid`, `
 ## Workflow H: Epic lifecycle (create → get → update → close → delete)
 
 1. `gitlab_epics_create(group_id="3kirt1", title="Workflow H epic")` — record `iid` as `epic-h-iid`
-2. `gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm `title == "Workflow H epic"`, `state == "opened"`, `linked_issues` is present (may be empty array)
+2. `gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm `title == "Workflow H epic"`, `state == "opened"`, `issues` is present (may be empty array)
 3. `gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-h-iid>, title="Workflow H epic — updated", description="Added in step 3.")` — confirm both fields returned
 4. `gitlab_epics_list(group_id="3kirt1", search="Workflow H")` — confirm `epic-h-iid` appears in results
 5. `gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-h-iid>, state_event="close")` — confirm `state == "closed"`

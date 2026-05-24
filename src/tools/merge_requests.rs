@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id};
 
 fn default_true() -> bool {
     true
@@ -65,7 +65,7 @@ pub struct MrsListParams {
 pub async fn mrs_list(client: &GitlabClient, p: MrsListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/merge_requests",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let params = QueryBuilder::new()
         .opt("state", p.state)
@@ -107,7 +107,7 @@ pub struct MrGetParams {
 pub async fn mr_get(client: &GitlabClient, p: MrGetParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/merge_requests/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.merge_request_iid
     );
     client.get(&path).await
@@ -152,7 +152,7 @@ pub struct MrCreateParams {
 pub async fn mr_create(client: &GitlabClient, p: MrCreateParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/merge_requests",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     // GitLab ignores the `draft` body field; the title prefix is the reliable mechanism.
     let title = match p.draft {
@@ -211,7 +211,7 @@ pub struct MrUpdateParams {
 pub async fn mr_update(client: &GitlabClient, p: MrUpdateParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/merge_requests/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.merge_request_iid
     );
     // GitLab's update endpoint doesn't accept `draft` as a body field; draft status is
@@ -269,7 +269,7 @@ pub struct MrDeleteParams {
 pub async fn mr_delete(client: &GitlabClient, p: MrDeleteParams) -> Result<(), GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/merge_requests/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.merge_request_iid
     );
     client.delete(&path).await
@@ -298,7 +298,7 @@ pub struct MrMergeParams {
 pub async fn mr_merge(client: &GitlabClient, p: MrMergeParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/merge_requests/{}/merge",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.merge_request_iid
     );
     let body = BodyBuilder::new()

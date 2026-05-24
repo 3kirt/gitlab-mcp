@@ -26,7 +26,6 @@ pub struct PaginationMeta {
 /// Result type for list endpoints — JSON body plus pagination metadata.
 pub type ListResult = Result<(Value, PaginationMeta), GitlabError>;
 
-
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -36,8 +35,10 @@ pub enum GitlabError {
     Api { status: StatusCode, body: String },
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
-    #[error("GraphQL error: {0}")]
-    Graphql(String),
+    /// Validation failure or malformed API response — anything that's not an HTTP
+    /// error from GitLab but still prevents the operation from succeeding.
+    #[error("{0}")]
+    Other(String),
 }
 
 impl GitlabError {
@@ -600,5 +601,4 @@ mod tests {
             other => panic!("expected GitlabError::Api, got {other}"),
         }
     }
-
 }

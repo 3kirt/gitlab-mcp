@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id};
 
 // --------------------------------------------------------------------------
 // List pipelines
@@ -62,7 +62,7 @@ pub struct PipelineListParams {
 pub async fn pipeline_list(client: &GitlabClient, p: PipelineListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/pipelines",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let params = QueryBuilder::new()
         .opt("scope", p.scope)
@@ -103,7 +103,7 @@ pub async fn pipeline_get(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/pipelines/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.pipeline_id
     );
     client.get(&path).await
@@ -128,7 +128,7 @@ pub async fn pipeline_get_latest(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/pipelines/latest",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let params = QueryBuilder::new().opt("ref", p.ref_).into_params();
     client.get_with_params(&path, &params).await
@@ -154,7 +154,7 @@ pub async fn pipeline_get_variables(
 ) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/pipelines/{}/variables",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.pipeline_id
     );
     let params = QueryBuilder::new()
@@ -182,7 +182,7 @@ pub async fn pipeline_get_test_report(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/pipelines/{}/test_report",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.pipeline_id
     );
     client.get(&path).await
@@ -206,7 +206,7 @@ pub async fn pipeline_get_test_report_summary(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/pipelines/{}/test_report_summary",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.pipeline_id
     );
     client.get(&path).await
@@ -237,7 +237,7 @@ pub async fn pipeline_create(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/pipeline",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let body = BodyBuilder::new()
         .req("ref", &p.ref_)
@@ -265,7 +265,7 @@ pub async fn pipeline_retry(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/pipelines/{}/retry",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.pipeline_id
     );
     client.post(&path, &json!({})).await
@@ -289,7 +289,7 @@ pub async fn pipeline_cancel(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/pipelines/{}/cancel",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.pipeline_id
     );
     client.post(&path, &json!({})).await
@@ -313,7 +313,7 @@ pub async fn pipeline_delete(
 ) -> Result<(), GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/pipelines/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.pipeline_id
     );
     client.delete(&path).await
@@ -339,7 +339,7 @@ pub async fn pipeline_update_metadata(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/pipelines/{}/metadata",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.pipeline_id
     );
     client.put(&path, &json!({ "name": p.name })).await

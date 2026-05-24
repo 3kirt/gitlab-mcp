@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id};
 
 // --------------------------------------------------------------------------
 // List repository tree
@@ -41,7 +41,7 @@ pub struct RepoTreeListParams {
 pub async fn repo_tree_list(client: &GitlabClient, p: RepoTreeListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/tree",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let params = QueryBuilder::new()
         .opt("path", p.path)
@@ -75,7 +75,7 @@ pub async fn repo_blob_get(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/blobs/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.sha
     );
     client.get(&path).await
@@ -99,7 +99,7 @@ pub async fn repo_blob_raw(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/blobs/{}/raw",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.sha
     );
     let content = client.get_text(&path, &[]).await?;
@@ -132,7 +132,7 @@ pub async fn repo_compare(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/compare",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let params = QueryBuilder::new()
         .opt("from", Some(p.from))
@@ -172,7 +172,7 @@ pub async fn repo_contributors_list(
 ) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/contributors",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let params = QueryBuilder::new()
         .opt("order_by", p.order_by)
@@ -204,7 +204,7 @@ pub async fn repo_merge_base(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/merge_base",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let params: Vec<(&str, String)> = p.refs.into_iter().map(|r| ("refs[]", r)).collect();
     client.get_with_params(&path, &params).await
@@ -244,7 +244,7 @@ pub async fn repo_changelog_get(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/changelog",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let params = QueryBuilder::new()
         .opt("version", Some(p.version))
@@ -298,7 +298,7 @@ pub async fn repo_changelog_add(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/changelog",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let body = BodyBuilder::new()
         .req("version", &p.version)
@@ -332,7 +332,7 @@ pub struct RepoHealthParams {
 pub async fn repo_health(client: &GitlabClient, p: RepoHealthParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/health",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let params = QueryBuilder::new()
         .opt("generate", p.generate)

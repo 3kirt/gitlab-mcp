@@ -1,3 +1,4 @@
+use reqwest::StatusCode;
 use rmcp::{
     ErrorData as McpError, RoleServer, ServerHandler,
     handler::server::{
@@ -13,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
-use crate::client::{GitlabClient, PaginationMeta};
+use crate::client::{GitlabClient, GitlabError, PaginationMeta};
 
 pub mod branches;
 pub mod commits;
@@ -73,10 +74,10 @@ pub fn tool_error(msg: &str) -> Result<CallToolResult, McpError> {
 // Query construction
 // --------------------------------------------------------------------------
 
-/// URL-encode a project ID for use in REST API paths.
+/// URL-encode a namespace ID (project or group) for use in REST API paths.
 /// Numeric IDs pass through unchanged; path-style IDs like
 /// "mygroup/myrepo" have slashes replaced with %2F.
-pub(crate) fn encode_project_id(id: &str) -> String {
+pub(crate) fn encode_namespace_id(id: &str) -> String {
     if id.chars().all(|c| c.is_ascii_digit()) {
         id.to_string()
     } else {
@@ -86,6 +87,21 @@ pub(crate) fn encode_project_id(id: &str) -> String {
 
 pub(crate) fn encode_path_segment(s: &str) -> String {
     s.replace('/', "%2F")
+}
+
+/// For supplemental fetches embedded inside a primary response: pass through
+/// success and 404 (as an empty array) but propagate every other error.
+/// A 404 here means the sub-resource genuinely doesn't exist; 4xx/5xx
+/// otherwise would silently mask real failures, so we surface them.
+pub(crate) fn unwrap_404_as_empty_array(
+    result: Result<Value, GitlabError>,
+) -> Result<Value, GitlabError> {
+    match result {
+        Err(GitlabError::Api { status, .. }) if status == StatusCode::NOT_FOUND => {
+            Ok(Value::Array(vec![]))
+        }
+        other => other,
+    }
 }
 
 pub struct QueryBuilder {
@@ -1113,7 +1129,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single GitLab epic by group and epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`). group_id accepts a numeric ID or full namespace path. Returns full epic details: id, iid, title, description, state, author, labels, start_date, due_date, parent_id, parent_iid, web_url, and linked_issues (issues associated with the epic)."
+        description = "Get a single GitLab epic by group and epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`). group_id accepts a numeric ID or full namespace path. Returns full epic details: id, iid, title, description, state, author, labels, start_date, due_date, parent_id, parent_iid, web_url, and issues (child issues associated with the epic)."
     )]
     async fn gitlab_epics_get(
         &self,
@@ -1260,16 +1276,16 @@ mod tests {
         assert_eq!(encode_path_segment("a/b/c"), "a%2Fb%2Fc");
     }
 
-    // encode_project_id
+    // encode_namespace_id
 
     #[test]
-    fn encode_project_id_numeric_passthrough() {
-        assert_eq!(encode_project_id("12345"), "12345");
+    fn encode_namespace_id_numeric_passthrough() {
+        assert_eq!(encode_namespace_id("12345"), "12345");
     }
 
     #[test]
-    fn encode_project_id_path_encodes_slash() {
-        assert_eq!(encode_project_id("mygroup/myrepo"), "mygroup%2Fmyrepo");
+    fn encode_namespace_id_path_encodes_slash() {
+        assert_eq!(encode_namespace_id("mygroup/myrepo"), "mygroup%2Fmyrepo");
     }
 
     // QueryBuilder

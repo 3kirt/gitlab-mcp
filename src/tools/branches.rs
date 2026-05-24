@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{PaginationParams, QueryBuilder, encode_path_segment, encode_project_id};
+use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id, encode_path_segment};
 
 // --------------------------------------------------------------------------
 // List branches
@@ -25,7 +25,7 @@ pub struct BranchesListParams {
 pub async fn branches_list(client: &GitlabClient, p: BranchesListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/repository/branches",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let params = QueryBuilder::new()
         .opt("regex", p.regex)
@@ -51,7 +51,7 @@ pub struct BranchGetParams {
 pub async fn branch_get(client: &GitlabClient, p: BranchGetParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/branches/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.branch)
     );
     client.get(&path).await
@@ -81,7 +81,7 @@ pub async fn branch_create(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/branches",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let body = json!({
         "branch": p.branch,
@@ -110,7 +110,7 @@ pub async fn branch_delete(
 ) -> Result<(), GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/branches/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         encode_path_segment(&p.branch)
     );
     client.delete(&path).await
@@ -132,7 +132,7 @@ pub async fn branches_delete_merged(
 ) -> Result<(), GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/repository/merged_branches",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     client.delete(&path).await
 }

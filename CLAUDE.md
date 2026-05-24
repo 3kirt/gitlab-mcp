@@ -31,21 +31,22 @@ MCP client → rmcp transport (stdio)
            → GitlabMcpServer (tool_router macro dispatch)
            → domain function in tools/issues.rs, tools/merge_requests.rs, etc.
            → GitlabClient (reqwest, PRIVATE-TOKEN header)
-           → GitLab REST API (or GraphQL API for epics / work items)
+           → GitLab REST API
 ```
 
 ### Key modules
 
-**`src/client.rs`** — thin `reqwest` wrapper. Sends `PRIVATE-TOKEN: <token>` on every request. REST methods: `get`, `list` (with query params), `post`, `put`, `delete`. GraphQL: `graphql(query, variables)` posts to `/api/graphql` and returns the `data` field; top-level GraphQL `errors` are mapped to `GitlabError::Graphql`, mutation-level errors must be checked by the caller. All methods return `serde_json::Value` so tools pass JSON straight through to the MCP client without intermediate typed structs. `GitlabError::to_tool_message()` truncates API error bodies to 300 chars.
+**`src/client.rs`** — thin `reqwest` wrapper. Sends `PRIVATE-TOKEN: <token>` on every request. REST methods: `get`, `list` (with query params and pagination metadata), `post`, `put`, `delete` (expects 204), `delete_json` (DELETE endpoints that return a response body), `delete_with_body`, `get_text`. All JSON methods return `serde_json::Value` so tools pass payloads straight through to the MCP client without intermediate typed structs. `GitlabError` variants: `Api { status, body }` (HTTP error from GitLab), `Http` (reqwest transport error), `Other(String)` (validation failure or malformed response). `GitlabError::to_tool_message()` truncates API error bodies to 300 chars.
 
 **`src/tools/mod.rs`** — MCP server struct and all glue. Contains:
 - `GitlabMcpServer` struct with `new_stdio` constructor
 - `#[tool_router]` impl block — one `async fn` per tool, each calling a delegation macro
-- Five delegation macros (`delegate_list!`, `delegate_get!`, `delegate_create!`, `delegate_update!`, `delegate_delete!`) that fetch the client, call the domain function, and map the result to `CallToolResult`
-- `QueryBuilder` — fluent helper for building `&[(&str, String)]` query param slices
+- Delegation macros (`delegate_list!`, `delegate_get!`, `delegate_create!`, `delegate_update!`, `delegate_delete!`, plus the lower-level `delegate_json!`) that fetch the client, call the domain function, and map the result to `CallToolResult`
+- `QueryBuilder` / `BodyBuilder` — fluent helpers for building query param slices and JSON request bodies
 - `PaginationParams` — shared `page`/`per_page` struct flattened into list param structs
+- `unwrap_404_as_empty_array()` — turns a 404 from a supplemental embedded fetch into `[]` while propagating every other error (used when a `get` embeds related sub-resources)
 
-**`src/tools/issues.rs`** — Issues domain module. Each operation has a `*Params` struct (derives `Deserialize` + `JsonSchema`) and an `async fn` that builds the URL path, assembles query params or a JSON body, and calls the appropriate `GitlabClient` method.
+**`src/tools/issues.rs`** — Issues domain module. Each operation has a `*Params` struct (derives `Deserialize` + `JsonSchema`) and an `async fn` that builds the URL path, assembles query params or a JSON body, and calls the appropriate `GitlabClient` method. Also covers issue links (`issue_links_list`, `issue_link_get`, `issue_link_create`, `issue_link_delete` against `/issues/:iid/links`). `issue_get` enriches the GitLab payload with `linked_issues` (from the links endpoint) and `closed_by` (MRs that close the issue when merged), via `unwrap_404_as_empty_array`.
 
 **`src/tools/merge_requests.rs`** — Merge Requests domain module. Follows the same pattern as `issues.rs`. Implements list, get, create, update, delete, and merge (accept) operations.
 
@@ -55,9 +56,7 @@ MCP client → rmcp transport (stdio)
 
 **`src/tools/issue_notes.rs`** — Issue Notes domain module. Implements list, get, create, update, and delete for notes on issues.
 
-**`src/tools/epics.rs`** — Epics domain module (user-facing). Uses the GraphQL API for group-level work items but exposes a REST-style surface: `group_id: String` (numeric or path) and `epic_iid: u64`. Each operation has a `*Params` struct plus its own GraphQL query/mutation. List and get queries are group-scoped (`group(fullPath:) { workItems(...) }` with `types: [EPIC]`). Two resolvers bridge to the work-items plumbing: `resolve_group_path()` converts a numeric `group_id` via REST `GET /api/v4/groups/:id`; `resolve_epic_gid()` converts `(group_path, epic_iid)` to the global gid via a one-shot GraphQL lookup. Create/update/delete compose against the internal `work_item_*` functions after resolving. `parent_epic_iid = 0` on update clears the existing hierarchy parent (mirroring REST `milestone_id = 0`).
-
-**`src/tools/work_items.rs`** — Internal GraphQL primitives (no public MCP tools). Holds the `pub(crate)` work-item create/update/delete domain functions, their mutation constants, and shared helpers used by `epics.rs`: `type_name_to_gid()` maps short type names (`TASK`, `EPIC`, ...) to `gid://gitlab/WorkItems::Type/<id>`; `usernames_to_ids()` resolves `assignee_usernames` to numeric IDs via a `users(usernames: …)` query and errors if any input doesn't resolve; `check_mutation_errors()` surfaces mutation-level `errors[]` as `GitlabError::Graphql`; `add_shared_widgets()` assembles the widget fields shared by create and update (its `parent_id: Option<Value>` parameter accepts `Value::Null` to clear).
+**`src/tools/epics.rs`** — Epics domain module. Hits the REST Epics API (`/api/v4/groups/:id/epics[/:iid]`) — deprecated since GitLab 17.0 but still fully functional on EE 18.x, where epics haven't been migrated to work items and the work-items GraphQL API rejects epic GIDs. Each operation has a `*Params` struct and an `async fn` mirroring the issues pattern; `group_id: String` accepts a numeric ID or full namespace path, `epic_iid: u64` is the per-group IID from the URL. Two module-local helpers reduce duplication between create and update: `resolve_epic_id()` converts a `parent_epic_iid` to the numeric global ID the REST `parent_id` field expects (an extra GET); `apply_epic_dates()` appends the `*_is_fixed` + `*_fixed` widget pair when a start/due date is set. `parent_epic_iid = 0` on update clears the existing parent. `epic_get` enriches the response with `issues` (child issues of the epic from `/epics/:iid/issues`) via `unwrap_404_as_empty_array`.
 
 **`src/config.rs`** — loads `~/.gitlab_mcp.json`; env vars `GITLAB_URL` / `GITLAB_TOKEN` take precedence. Rejects world-readable config files on Unix. Enforces HTTPS (localhost/127.0.0.1 exempted).
 
@@ -67,10 +66,10 @@ MCP client → rmcp transport (stdio)
 2. Add `pub mod <domain>;` to `src/tools/mod.rs`.
 3. Add `#[tool(...)]` shim methods to the `#[tool_router]` impl block, each calling the appropriate delegation macro.
 
-### project_id encoding
+### Namespace ID encoding
 
-All GitLab endpoints are project-scoped. The `project_id` field accepts either a numeric ID (`"42"`) or a namespace path (`"mygroup/myrepo"`). `encode_project_id()` in `src/tools/mod.rs` (pub crate) URL-encodes the slash when a path is provided and is shared by all domain modules.
+Project- and group-scoped endpoints both accept either a numeric ID (`"42"`) or a namespace path (`"mygroup/myrepo"`). `encode_namespace_id()` in `src/tools/mod.rs` (pub crate) URL-encodes the slash when a path is provided and is shared by all domain modules (projects in `issues.rs`/`merge_requests.rs`/etc., groups in `epics.rs`).
 
 ## Testing
 
-End-to-end tool verification is documented in [`docs/testing-protocol.md`](docs/testing-protocol.md). It covers seed data setup, per-tool test cases, cross-tool workflows, and error-handling checks for Issues, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, and Epics endpoints against the test project `3kirt1/gitlab-mcp-testing` (and parent group `3kirt1` for epics).
+End-to-end tool verification is documented in [`docs/testing-protocol.md`](docs/testing-protocol.md). It covers seed data setup, per-tool test cases, cross-tool workflows, and error-handling checks for Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, and Epics endpoints against the test project `3kirt1/gitlab-mcp-testing` (and parent group `3kirt1` for epics).

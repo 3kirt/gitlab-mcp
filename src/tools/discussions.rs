@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id};
 
 // --------------------------------------------------------------------------
 // List MR discussions
@@ -21,7 +21,7 @@ pub struct MrDiscussionsListParams {
 pub async fn mr_discussions_list(client: &GitlabClient, p: MrDiscussionsListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/merge_requests/{}/discussions",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.merge_request_iid
     );
     let params = QueryBuilder::new()
@@ -51,7 +51,7 @@ pub async fn mr_discussion_get(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/merge_requests/{}/discussions/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.merge_request_iid,
         p.discussion_id
     );
@@ -145,7 +145,7 @@ pub async fn mr_discussion_create(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/merge_requests/{}/discussions",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.merge_request_iid
     );
     let position = build_position(&p);
@@ -180,7 +180,7 @@ pub async fn mr_discussion_resolve(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/merge_requests/{}/discussions/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.merge_request_iid,
         p.discussion_id
     );
@@ -214,7 +214,7 @@ pub async fn mr_discussion_note_create(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/merge_requests/{}/discussions/{}/notes",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.merge_request_iid,
         p.discussion_id
     );
@@ -253,7 +253,7 @@ pub async fn mr_discussion_note_update(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/merge_requests/{}/discussions/{}/notes/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.merge_request_iid,
         p.discussion_id,
         p.note_id
@@ -287,7 +287,7 @@ pub async fn mr_discussion_note_delete(
 ) -> Result<(), GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/merge_requests/{}/discussions/{}/notes/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.merge_request_iid,
         p.discussion_id,
         p.note_id

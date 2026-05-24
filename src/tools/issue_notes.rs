@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id};
 
 // --------------------------------------------------------------------------
 // List issue notes
@@ -27,7 +27,7 @@ pub struct IssueNotesListParams {
 pub async fn issue_notes_list(client: &GitlabClient, p: IssueNotesListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/issues/{}/notes",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.issue_iid
     );
     let params = QueryBuilder::new()
@@ -59,7 +59,7 @@ pub async fn issue_note_get(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/issues/{}/notes/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.issue_iid,
         p.note_id
     );
@@ -90,7 +90,7 @@ pub async fn issue_note_create(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/issues/{}/notes",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.issue_iid
     );
     let body = BodyBuilder::new()
@@ -122,7 +122,7 @@ pub async fn issue_note_update(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/issues/{}/notes/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.issue_iid,
         p.note_id
     );
@@ -150,7 +150,7 @@ pub async fn issue_note_delete(
 ) -> Result<(), GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/issues/{}/notes/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.issue_iid,
         p.note_id
     );

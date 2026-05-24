@@ -2,7 +2,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
+use crate::tools::{
+    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, unwrap_404_as_empty_array,
+};
 
 // --------------------------------------------------------------------------
 // List issues
@@ -53,7 +55,7 @@ pub struct IssuesListParams {
 pub async fn issues_list(client: &GitlabClient, p: IssuesListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/issues",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let params = QueryBuilder::new()
         .opt("state", p.state)
@@ -87,21 +89,22 @@ pub struct IssueGetParams {
 }
 
 pub async fn issue_get(client: &GitlabClient, p: IssueGetParams) -> Result<Value, GitlabError> {
-    let pid = encode_project_id(&p.project_id);
+    let pid = encode_namespace_id(&p.project_id);
     let iid = p.issue_iid;
-    let mut issue = client.get(&format!("/api/v4/projects/{pid}/issues/{iid}")).await?;
-    let links = issue_links_list(client, IssueLinksListParams {
-        project_id: p.project_id.clone(),
-        issue_iid: iid,
-    })
-    .await
-    .map(|(v, _)| v)
-    .unwrap_or(Value::Array(vec![]));
+    let mut issue = client
+        .get(&format!("/api/v4/projects/{pid}/issues/{iid}"))
+        .await?;
+    let links = unwrap_404_as_empty_array(
+        client
+            .get(&format!("/api/v4/projects/{pid}/issues/{iid}/links"))
+            .await,
+    )?;
     issue["linked_issues"] = links;
-    let closed_by = client
-        .get(&format!("/api/v4/projects/{pid}/issues/{iid}/closed_by"))
-        .await
-        .unwrap_or(Value::Array(vec![]));
+    let closed_by = unwrap_404_as_empty_array(
+        client
+            .get(&format!("/api/v4/projects/{pid}/issues/{iid}/closed_by"))
+            .await,
+    )?;
     issue["closed_by"] = closed_by;
     Ok(issue)
 }
@@ -136,7 +139,7 @@ pub async fn issue_create(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/issues",
-        encode_project_id(&p.project_id)
+        encode_namespace_id(&p.project_id)
     );
     let body = BodyBuilder::new()
         .req("title", &p.title)
@@ -184,7 +187,7 @@ pub async fn issue_update(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/issues/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.issue_iid
     );
     let body = BodyBuilder::new()
@@ -215,7 +218,7 @@ pub struct IssueDeleteParams {
 pub async fn issue_delete(client: &GitlabClient, p: IssueDeleteParams) -> Result<(), GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/issues/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.issue_iid
     );
     client.delete(&path).await
@@ -236,7 +239,7 @@ pub struct IssueLinksListParams {
 pub async fn issue_links_list(client: &GitlabClient, p: IssueLinksListParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/issues/{}/links",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.issue_iid
     );
     client.list(&path, &[]).await
@@ -262,7 +265,7 @@ pub async fn issue_link_get(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/issues/{}/links/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.issue_iid,
         p.issue_link_id
     );
@@ -295,7 +298,7 @@ pub async fn issue_link_create(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/issues/{}/links",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.issue_iid
     );
     let body = BodyBuilder::new()
@@ -326,7 +329,7 @@ pub async fn issue_link_delete(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/issues/{}/links/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.issue_iid,
         p.issue_link_id
     );

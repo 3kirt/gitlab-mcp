@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_project_id};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id};
 
 // --------------------------------------------------------------------------
 // List project jobs
@@ -27,7 +27,10 @@ pub struct JobListParams {
 }
 
 pub async fn job_list(client: &GitlabClient, p: JobListParams) -> ListResult {
-    let path = format!("/api/v4/projects/{}/jobs", encode_project_id(&p.project_id));
+    let path = format!(
+        "/api/v4/projects/{}/jobs",
+        encode_namespace_id(&p.project_id)
+    );
     let params = QueryBuilder::new()
         .multi("scope[]", p.scope)
         .opt("order_by", p.order_by)
@@ -64,7 +67,7 @@ pub async fn job_list_for_pipeline(
 ) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/pipelines/{}/jobs",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.pipeline_id
     );
     let params = QueryBuilder::new()
@@ -97,7 +100,7 @@ pub struct JobListBridgesParams {
 pub async fn job_list_bridges(client: &GitlabClient, p: JobListBridgesParams) -> ListResult {
     let path = format!(
         "/api/v4/projects/{}/pipelines/{}/bridges",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.pipeline_id
     );
     let params = QueryBuilder::new()
@@ -123,7 +126,7 @@ pub struct JobGetParams {
 pub async fn job_get(client: &GitlabClient, p: JobGetParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/jobs/{}",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.job_id
     );
     client.get(&path).await
@@ -147,7 +150,7 @@ pub async fn job_get_trace(
 ) -> Result<String, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/jobs/{}/trace",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.job_id
     );
     client.get_text(&path, &[]).await
@@ -172,7 +175,7 @@ pub struct JobCancelParams {
 pub async fn job_cancel(client: &GitlabClient, p: JobCancelParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/jobs/{}/cancel",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.job_id
     );
     let body = BodyBuilder::new().opt("force", p.force).build();
@@ -194,7 +197,7 @@ pub struct JobRetryParams {
 pub async fn job_retry(client: &GitlabClient, p: JobRetryParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/jobs/{}/retry",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.job_id
     );
     client.post(&path, &json!({})).await
@@ -215,7 +218,7 @@ pub struct JobEraseParams {
 pub async fn job_erase(client: &GitlabClient, p: JobEraseParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/jobs/{}/erase",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.job_id
     );
     client.post(&path, &json!({})).await
@@ -240,7 +243,7 @@ pub struct JobPlayParams {
 pub async fn job_play(client: &GitlabClient, p: JobPlayParams) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/projects/{}/jobs/{}/play",
-        encode_project_id(&p.project_id),
+        encode_namespace_id(&p.project_id),
         p.job_id
     );
     let body = BodyBuilder::new()
