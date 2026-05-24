@@ -4,6 +4,31 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.11.0] — 2026-05-24
+
+### Added
+- **Search domain** — three new tools: `gitlab_search_global`, `gitlab_search_group`,
+  `gitlab_search_project`. Supports searching across projects, issues,
+  merge requests, milestones, snippets, users, wiki blobs, commits, and blobs.
+  Includes filtering by scope, search type (basic/advanced/zoekt), state, and
+  confidentiality.
+- **Pipeline Schedules domain** — twelve new tools: `gitlab_pipeline_schedules_list`,
+  `gitlab_pipeline_schedules_get`, `gitlab_pipeline_schedules_pipelines_list`,
+  `gitlab_pipeline_schedules_create`, `gitlab_pipeline_schedules_update`,
+  `gitlab_pipeline_schedules_delete`, `gitlab_pipeline_schedules_take_ownership`,
+  `gitlab_pipeline_schedules_play`, and variable management tools
+  (`gitlab_pipeline_schedules_variables_create`, `_get`, `_update`, `_delete`).
+- **Metadata API** — new `gitlab_metadata_get` tool returns GitLab instance
+  metadata: version, revision, enterprise status, and Kubernetes agent
+  server (KAS) information.
+
+### Documentation
+- Testing protocol extended with Section 52 (Metadata), Sections 53–59
+  (Pipeline Schedules + variables, plus Workflow J), and Sections 60–62
+  (Search global/group/project, plus Workflow K).
+
+---
+
 ## [0.10.0] — 2026-05-24
 
 ### Added
