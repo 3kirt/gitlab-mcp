@@ -107,6 +107,24 @@ pub(crate) fn unwrap_404_as_empty_array(
     }
 }
 
+/// Like `unwrap_404_as_empty_array`, but also swallows 403 — for embedding
+/// tier-gated endpoints (e.g. Premium/Ultimate-only sub-resources) where a
+/// 403 means "your tier doesn't expose this" rather than a real failure.
+/// The caller has already authenticated to the parent resource, so a 403 on
+/// the supplemental fetch is licensing, not permission.
+pub(crate) fn unwrap_404_or_403_as_empty_array(
+    result: Result<Value, GitlabError>,
+) -> Result<Value, GitlabError> {
+    match result {
+        Err(GitlabError::Api { status, .. })
+            if status == StatusCode::NOT_FOUND || status == StatusCode::FORBIDDEN =>
+        {
+            Ok(Value::Array(vec![]))
+        }
+        other => other,
+    }
+}
+
 pub struct QueryBuilder {
     params: Vec<(&'static str, String)>,
 }
@@ -448,7 +466,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single GitLab merge request by project ID and merge request IID (the number shown in the GitLab UI)."
+        description = "Get a single GitLab merge request by project ID and merge request IID (the number shown in the GitLab UI). The response includes a closes_issues array (issues that will close when this MR is merged) and a related_issues array (all issues mentioned in or related to the MR; Premium/Ultimate — empty on lower tiers)."
     )]
     async fn gitlab_mrs_get(
         &self,

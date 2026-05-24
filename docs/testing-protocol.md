@@ -53,6 +53,13 @@ Check these on every response.
 | `author` in single-get | Same collapsed form |
 | `pipeline` / `head_pipeline` absent from lists | Stripped by list slimming; present on single-get responses |
 
+**Merge requests (get only — additional fields):**
+
+| Property | What to verify |
+|---|---|
+| `closes_issues` | Array of issue objects (may be empty; populated from `/merge_requests/:iid/closes_issues`). Each entry has at least `iid`, `title`, `state`, `project_id`. |
+| `related_issues` | Array of issue objects (may be empty; populated from `/merge_requests/:iid/related_issues`). Premium/Ultimate — embed is `[]` on lower tiers, not an error. |
+
 **Branches:**
 
 | Property | What to verify |
@@ -401,6 +408,21 @@ gitlab_pipeline_schedules_create(
 Record `id` as `schedule-seed-2`. Verify `active == false`.
 
 After seeding: 2 schedules total; 1 active, 1 inactive.
+
+### Step 11: Wire an MR-to-Issue Closing Relationship
+
+Update mr-seed-1's description to reference seed-1 with a closing keyword. This
+seeds a stable positive case for the `closes_issues` embed exposed by
+`gitlab_mrs_get` (Section 13):
+```
+gitlab_mrs_update(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  description="Closes #<iid of seed-1>"
+)
+```
+Substitute the literal IID of seed-1 into the description string before
+sending. Returned `description` contains `"Closes #<iid>"`.
 
 ---
 
@@ -756,6 +778,24 @@ gitlab_mrs_get(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid of
 gitlab_mrs_get(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid of mr-seed-3>)
 ```
 `state == "closed"`.
+
+### 13.4 Embedded `closes_issues` — positive case
+```
+gitlab_mrs_get(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid of mr-seed-1>)
+```
+`closes_issues` is an array with at least one entry whose `iid` equals seed-1's IID (wired in Seed Step 11). Each entry has `iid`, `title`, `state`, and `project_id`.
+
+### 13.5 Embedded `closes_issues` — negative case
+```
+gitlab_mrs_get(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid of mr-seed-2>)
+```
+`closes_issues == []` (mr-seed-2 has no closing keyword in its description). No error.
+
+### 13.6 Embedded `related_issues` — invariant
+```
+gitlab_mrs_get(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid of mr-seed-1>)
+```
+`related_issues` is an array (never absent or `null`). On Premium/Ultimate instances the array reflects all issues mentioned in or related to the MR; on lower tiers the embed silently degrades to `[]`. A 403 from the supplemental fetch must not surface as an error from `gitlab_mrs_get`.
 
 ---
 

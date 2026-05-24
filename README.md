@@ -148,7 +148,10 @@ assignee/author IDs, and ISO 8601 created/updated date ranges.
 
 Full CRUD plus accept/merge, and a discussions subsystem covering threaded
 comments, inline diff notes with `position` (file, line, base/head/start SHA),
-note add/edit/delete, and resolve/unresolve.
+note add/edit/delete, and resolve/unresolve. `gitlab_mrs_get` enriches the
+GitLab payload with a `closes_issues` array (issues this MR will close on
+merge) and a `related_issues` array (all linked + closing issues;
+Premium/Ultimate — empty on lower tiers).
 
 ### Branches
 

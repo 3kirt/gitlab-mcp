@@ -2,7 +2,10 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id};
+use crate::tools::{
+    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, unwrap_404_as_empty_array,
+    unwrap_404_or_403_as_empty_array,
+};
 
 fn default_true() -> bool {
     true
@@ -105,12 +108,28 @@ pub struct MrGetParams {
 }
 
 pub async fn mr_get(client: &GitlabClient, p: MrGetParams) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}",
-        encode_namespace_id(&p.project_id),
-        p.merge_request_iid
-    );
-    client.get(&path).await
+    let pid = encode_namespace_id(&p.project_id);
+    let iid = p.merge_request_iid;
+    let mut mr = client
+        .get(&format!("/api/v4/projects/{pid}/merge_requests/{iid}"))
+        .await?;
+    let closes_issues = unwrap_404_as_empty_array(
+        client
+            .get(&format!(
+                "/api/v4/projects/{pid}/merge_requests/{iid}/closes_issues"
+            ))
+            .await,
+    )?;
+    mr["closes_issues"] = closes_issues;
+    let related_issues = unwrap_404_or_403_as_empty_array(
+        client
+            .get(&format!(
+                "/api/v4/projects/{pid}/merge_requests/{iid}/related_issues"
+            ))
+            .await,
+    )?;
+    mr["related_issues"] = related_issues;
+    Ok(mr)
 }
 
 // --------------------------------------------------------------------------
