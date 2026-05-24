@@ -5,7 +5,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that co
 Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Create a merge request from feature-branch to main"*, or *"Close MR #42"* — the server translates them into real GitLab API calls and returns structured results.
 
 - **Full CRUD** — create, read, update, and delete GitLab resources
-- **Nine domains** — Issues, Merge Requests, Branches, Pipelines, Jobs, Commits, Repository Files, Repositories, and Epics (group-level, GraphQL-backed)
+- **Broad coverage of common GitLab workflows** — issues, merge requests, branches, commits, repository files, pipelines, jobs, epics, search, and more
 - **Token-efficient responses** — list results are automatically slimmed (descriptions, pipelines, and other bulk fields stripped); use single-get tools when full detail is needed
 
 ---
@@ -15,9 +15,7 @@ Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Crea
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Configuration](#configuration)
-- [Client setup](#client-setup)
-  - [Claude Desktop](#claude-desktop)
-  - [Claude Code](#claude-code)
+- [Claude Code setup](#claude-code-setup)
 - [Available tools](#available-tools)
 - [Development](#development)
 
@@ -46,13 +44,6 @@ cargo install --path .
 ```
 
 Installs the `gitlab-mcp` binary to `$CARGO_HOME/bin` (typically `~/.cargo/bin`).
-
-### Docker
-
-```sh
-docker build -t gitlab-mcp .
-docker run -e GITLAB_URL=https://gitlab.com -e GITLAB_TOKEN=your-personal-access-token gitlab-mcp
-```
 
 ---
 
@@ -90,37 +81,9 @@ For self-hosted GitLab instances, replace `https://gitlab.com` with your instanc
 
 ---
 
-## Client setup
+## Claude Code setup
 
-### Claude Desktop
-
-Add the following to your `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "gitlab": {
-      "command": "gitlab-mcp",
-      "env": {
-        "GITLAB_URL": "https://gitlab.com",
-        "GITLAB_TOKEN": "your-personal-access-token"
-      }
-    }
-  }
-}
-```
-
-Config file location:
-
-| OS | Path |
-|---|---|
-| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Linux | `~/.config/Claude/claude_desktop_config.json` |
-| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
-
-### Claude Code
-
-Register via the CLI:
+Register the server with the `claude` CLI:
 
 ```sh
 claude mcp add --transport stdio \
@@ -129,7 +92,8 @@ claude mcp add --transport stdio \
   gitlab -- gitlab-mcp
 ```
 
-To share the configuration with your team (writes to `.mcp.json`):
+To share the configuration with your team (writes to `.mcp.json` in the repo
+root, omit the token so each user supplies their own):
 
 ```sh
 claude mcp add --transport stdio --scope project \
@@ -137,11 +101,25 @@ claude mcp add --transport stdio --scope project \
   gitlab -- gitlab-mcp
 ```
 
+Verify the server is connected:
+
+```sh
+claude mcp list
+```
+
+> Other MCP clients (Claude Desktop, IDE plugins, etc.) work too — point them at
+> the `gitlab-mcp` binary with the same `GITLAB_URL` and `GITLAB_TOKEN` env
+> vars.
+
 ---
 
 ## Available tools
 
-All tools accept `project_id` as either a numeric ID (`42`) or a namespace path (`mygroup/myrepo`).
+The server covers the GitLab API surface most teams reach for day-to-day:
+issues, merge requests, branches, commits, repository files, pipelines, jobs,
+epics, search, and more. All tools accept `project_id` (or `group_id` for
+group-scoped endpoints) as either a numeric ID (`42`) or a namespace path
+(`mygroup/myrepo`).
 
 List operations support `page`/`per_page` pagination and return an envelope:
 ```json
@@ -154,147 +132,88 @@ List operations support `page`/`per_page` pagination and return an envelope:
   "next_page": 3
 }
 ```
-Pagination fields are populated from GitLab's `X-*` response headers. `total` and `total_pages` are omitted by GitLab on large endpoints; `next_page` is omitted on the last page. Use the presence of `next_page` to detect "more results exist."
+Pagination fields are populated from GitLab's `X-*` response headers. `total`
+and `total_pages` are omitted by GitLab on large endpoints; `next_page` is
+omitted on the last page — use its presence to detect "more results exist."
 
 ### Issues
 
-| Tool | Description |
-|---|---|
-| `gitlab_issues_list` | List issues. Filters: `state`, `labels`, `search`, `scope`, `assignee_id`, `author_id`, `created_after`/`created_before`, `updated_after`/`updated_before` (ISO 8601). |
-| `gitlab_issues_get` | Get a single issue by IID. |
-| `gitlab_issues_create` | Create an issue (`title` required). |
-| `gitlab_issues_update` | Update an issue. Use `state_event: "close"` or `"reopen"` to change state. |
-| `gitlab_issues_delete` | Delete an issue (Maintainer role required). |
-
-#### Issue Notes
-
-| Tool | Description |
-|---|---|
-| `gitlab_issues_notes_list` | List notes (comments) on an issue. Optional `order_by` and `sort`. |
-| `gitlab_issues_notes_get` | Get a single note by note ID. |
-| `gitlab_issues_notes_create` | Post a new note on an issue (`body` required). |
-| `gitlab_issues_notes_update` | Update the body of a note. |
-| `gitlab_issues_notes_delete` | Delete a note (permanent). |
+Full CRUD on issues, plus notes (comments) and issue links (`relates_to`,
+`blocks`, `is_blocked_by`). `gitlab_issues_get` enriches the GitLab payload
+with a `linked_issues` array and a `closed_by` array (MRs that close the issue
+on merge). Filters on list include state, labels, search text, scope,
+assignee/author IDs, and ISO 8601 created/updated date ranges.
 
 ### Merge Requests
 
-| Tool | Description |
-|---|---|
-| `gitlab_mrs_list` | List MRs. Filters: `state`, `source_branch`, `target_branch`, `draft`, `labels`, `scope`, `created_after`/`created_before`, `updated_after`/`updated_before` (ISO 8601). |
-| `gitlab_mrs_get` | Get a single MR by IID. |
-| `gitlab_mrs_create` | Create an MR (`source_branch`, `target_branch`, `title` required). |
-| `gitlab_mrs_update` | Update an MR. Use `state_event` to close/reopen; `draft` to toggle draft status. |
-| `gitlab_mrs_delete` | Delete an MR (Maintainer role required). |
-| `gitlab_mrs_merge` | Accept and merge an MR. |
-
-#### MR Discussions
-
-| Tool | Description |
-|---|---|
-| `gitlab_mrs_discussions_list` | List discussion threads on an MR. Each thread has an `individual_note` flag and a `notes[]` array. |
-| `gitlab_mrs_discussions_get` | Get a single discussion thread by discussion ID (hex string). |
-| `gitlab_mrs_discussions_create` | Start a new discussion thread (`body` required). Supports optional diff-note position params for inline code review comments. |
-| `gitlab_mrs_discussions_resolve` | Resolve or unresolve a discussion thread (`resolved: true/false`). Requires Developer role or being the change author. |
-| `gitlab_mrs_discussions_note_create` | Add a reply note to an existing discussion thread. |
-| `gitlab_mrs_discussions_note_update` | Update a note body or resolved state (provide exactly one of `body` or `resolved`). |
-| `gitlab_mrs_discussions_note_delete` | Delete a note from a discussion thread (permanent). |
+Full CRUD plus accept/merge, and a discussions subsystem covering threaded
+comments, inline diff notes with `position` (file, line, base/head/start SHA),
+note add/edit/delete, and resolve/unresolve.
 
 ### Branches
 
-| Tool | Description |
-|---|---|
-| `gitlab_branches_list` | List branches. Optional `search` (substring) or `regex` filter. |
-| `gitlab_branches_get` | Get a branch with commit details and protection status. |
-| `gitlab_branches_create` | Create a branch from a source branch or commit SHA. |
-| `gitlab_branches_delete` | Delete a branch (protected branches excluded). |
-| `gitlab_branches_delete_merged` | Delete all merged branches (protected branches excluded). |
+List, get (with commit details and protection status), create (from a source
+branch or SHA), delete a single branch, and bulk delete-merged. Protected
+branches are excluded from destructive operations.
 
 ### Pipelines
 
-| Tool | Description |
-|---|---|
-| `gitlab_pipelines_list` | List pipelines. Filters: `status`, `source`, `ref`, `sha`. |
-| `gitlab_pipelines_get` | Get a single pipeline by ID. |
-| `gitlab_pipelines_get_latest` | Get the latest pipeline for a ref. |
-| `gitlab_pipelines_get_variables` | List variables for a pipeline. |
-| `gitlab_pipelines_get_test_report` | Get the full test report for a pipeline. |
-| `gitlab_pipelines_get_test_report_summary` | Get a summary of the test report. |
-| `gitlab_pipelines_create` | Trigger a new pipeline on a ref. |
-| `gitlab_pipelines_retry` | Retry failed jobs in a pipeline. |
-| `gitlab_pipelines_cancel` | Cancel all running jobs in a pipeline. |
-| `gitlab_pipelines_delete` | Delete a pipeline. |
-| `gitlab_pipelines_update_metadata` | Update pipeline metadata (e.g. name). |
+List/get/get-latest, fetch pipeline variables, get full and summary test
+reports, create on a ref, retry/cancel/delete, and update pipeline metadata
+(e.g. name).
+
+### Pipeline Schedules
+
+Full CRUD on schedules, plus `take_ownership` and `play` (run immediately),
+listing pipelines triggered by a schedule, and CRUD on per-schedule variables
+(`env_var` and `file` types).
 
 ### Jobs
 
-| Tool | Description |
-|---|---|
-| `gitlab_jobs_list` | List jobs for a project. |
-| `gitlab_jobs_list_for_pipeline` | List jobs for a specific pipeline. |
-| `gitlab_jobs_list_bridges` | List bridge (trigger) jobs for a pipeline. |
-| `gitlab_jobs_get` | Get a single job by ID. |
-| `gitlab_jobs_get_trace` | Get the raw log output for a job. |
-| `gitlab_jobs_cancel` | Cancel a running job. |
-| `gitlab_jobs_retry` | Retry a failed or canceled job. |
-| `gitlab_jobs_erase` | Erase a job's artifacts and trace. |
-| `gitlab_jobs_play` | Trigger a manual job. |
+List (project-wide, per-pipeline, and bridge/trigger jobs), get, fetch the raw
+trace log, cancel/retry/erase, and play a manual job.
 
 ### Commits
 
-| Tool | Description |
-|---|---|
-| `gitlab_commits_list` | List commits for a branch or path. |
-| `gitlab_commits_create` | Create a commit with multiple file actions. |
-| `gitlab_commits_get` | Get a single commit by SHA. |
-| `gitlab_commits_diff` | Get the diff for a commit. |
-| `gitlab_commits_refs` | List branches and tags a commit belongs to. |
-| `gitlab_commits_sequence` | Check if one commit is an ancestor of another. |
-| `gitlab_commits_cherry_pick` | Cherry-pick a commit onto a branch. |
-| `gitlab_commits_revert` | Revert a commit. |
-| `gitlab_commits_comments_list` | List comments on a commit. |
-| `gitlab_commits_comment_create` | Add a comment to a commit. |
-| `gitlab_commits_discussions_list` | List threaded discussions on a commit. |
-| `gitlab_commits_statuses_list` | List CI statuses for a commit. |
-| `gitlab_commits_status_set` | Set a CI status on a commit. |
-| `gitlab_commits_merge_requests` | List MRs that include a commit. |
-| `gitlab_commits_signature` | Get the GPG/SSH signature for a commit. |
+List/get/create commits (with multi-file actions), diff, refs (branches/tags
+containing a commit), ancestry check, cherry-pick, revert, comments and
+threaded discussions, CI status get/set, find MRs that include a commit, and
+GPG/SSH signature lookup.
 
 ### Repository Files
 
-| Tool | Description |
-|---|---|
-| `gitlab_file_get` | Get file content and metadata at a ref. |
-| `gitlab_file_raw` | Get raw file content at a ref. |
-| `gitlab_file_blame` | Get blame information for a file. |
-| `gitlab_file_create` | Create a new file with a commit message. |
-| `gitlab_file_update` | Update an existing file with a commit message. |
-| `gitlab_file_delete` | Delete a file with a commit message. |
+Get file content + metadata at a ref, get raw content, get blame, and create,
+update, or delete a file with a commit message.
 
 ### Repositories
 
-| Tool | Description |
-|---|---|
-| `gitlab_repo_tree` | List files and directories at a path. |
-| `gitlab_repo_blob_get` | Get a blob by SHA (metadata + content). |
-| `gitlab_repo_blob_raw` | Get raw blob content by SHA. |
-| `gitlab_repo_compare` | Compare two refs (diff, commits, diffs). |
-| `gitlab_repo_contributors` | List repository contributors. |
-| `gitlab_repo_merge_base` | Find the common ancestor of two refs. |
-| `gitlab_repo_changelog_get` | Get the changelog for a version. |
-| `gitlab_repo_changelog_add` | Generate and commit a changelog entry. |
-| `gitlab_repo_health` | Check repository health status. |
+Tree listing, blob get (with metadata + content) and raw blob, compare refs
+(commits + diffs), contributors, merge-base, changelog get/add, and repository
+health.
 
 ### Epics
 
-Group-level epics are exposed via a REST-style surface backed by GitLab's GraphQL API. `group_id` accepts either a numeric ID or a full namespace path (`"mygroup"` or `"mygroup/subgroup"`). `epic_iid` is the IID shown in the URL `/groups/<g>/-/epics/<iid>` — global `gid://gitlab/WorkItem/NNN` strings never appear in the tool surface. List pagination is cursor-based: pass `first` (default 20, max 100) and `after` (the `end_cursor` from the previous response) instead of `page` / `per_page`.
+Group-level epics via the REST Epics API (`/api/v4/groups/:id/epics`). `group_id`
+accepts a numeric ID or a full namespace path; `epic_iid` is the per-group IID
+shown in the URL. Full CRUD plus `state_event`-based open/close, parent epic
+linking (`parent_epic_iid=0` clears the parent), and date widget management.
+`gitlab_epics_get` embeds an `issues` array (the epic's child issues) via the
+epic's `/issues` endpoint. Pagination is standard `page`/`per_page`. The REST endpoint is
+deprecated since GitLab 17.0 but remains functional on EE 18.x, where it is
+the only working surface for epics.
 
-| Tool | Description |
-|---|---|
-| `gitlab_epics_list` | List epics in a group. Filter by `state`, `search`, `author_username`, `assignee_usernames`, `label_name`, `iids`, or `sort` (`CREATED_DESC`, `UPDATED_DESC`, `TITLE_ASC`, etc.). |
-| `gitlab_epics_get` | Get a single epic by group and IID. Returns description, assignees, labels, milestone, start/due dates, time tracking, weight, hierarchy (parent + child work items), `linkedItems` (issues/work items linked via the GitLab UI; first 20), and notes (first 20 discussions). |
-| `gitlab_epics_create` | Create an epic. Required: `group_id`, `title`. Optional: `description`, `assignee_usernames`, `parent_epic_iid`, `start_date`, `due_date`. Unknown `assignee_usernames` cause an error rather than being silently dropped. |
-| `gitlab_epics_update` | Update an epic by group and IID. Use `state_event="CLOSE"`/`"REOPEN"` to change state; `assignee_usernames=[]` to clear all assignees; `parent_epic_iid=0` to remove the existing parent. |
-| `gitlab_epics_delete` | Delete an epic (permanent). |
+### Search
+
+Three scopes — global instance, group, and project search — over `projects`,
+`issues`, `merge_requests`, `milestones`, `snippet_titles`, `users`,
+`wiki_blobs`, `commits`, `blobs`, and `notes`. Supports `search_type` selection
+(`basic`/`advanced`/`zoekt`), confidentiality and state filtering, and field
+restriction (Premium/Ultimate).
+
+### Metadata
+
+Returns GitLab instance metadata: version, revision, enterprise flag, and KAS
+(Kubernetes Agent Server) information.
 
 ---
 
