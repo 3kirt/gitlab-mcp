@@ -176,11 +176,12 @@ pub async fn snippet_create(
         .into_iter()
         .map(|f| json!({"content": f.content, "file_path": f.file_path}))
         .collect();
+    let visibility = p.visibility.as_deref().unwrap_or("private");
     let body = BodyBuilder::new()
         .req("title", &p.title)
         .req("files", &files)
         .opt("description", p.description)
-        .opt("visibility", p.visibility)
+        .req("visibility", visibility)
         .build();
     client.post("/api/v4/snippets", &body).await
 }
