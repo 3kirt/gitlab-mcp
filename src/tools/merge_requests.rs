@@ -110,24 +110,15 @@ pub struct MrGetParams {
 pub async fn mr_get(client: &GitlabClient, p: MrGetParams) -> Result<Value, GitlabError> {
     let pid = encode_namespace_id(&p.project_id);
     let iid = p.merge_request_iid;
-    let mut mr = client
-        .get(&format!("/api/v4/projects/{pid}/merge_requests/{iid}"))
-        .await?;
-    let closes_issues = unwrap_404_as_empty_array(
-        client
-            .get(&format!(
-                "/api/v4/projects/{pid}/merge_requests/{iid}/closes_issues"
-            ))
-            .await,
+    let mr_path = format!("/api/v4/projects/{pid}/merge_requests/{iid}");
+    let closes_path = format!("/api/v4/projects/{pid}/merge_requests/{iid}/closes_issues");
+    let related_path = format!("/api/v4/projects/{pid}/merge_requests/{iid}/related_issues");
+    let (mut mr, closes_issues, related_issues) = tokio::try_join!(
+        client.get(&mr_path),
+        async { unwrap_404_as_empty_array(client.get(&closes_path).await) },
+        async { unwrap_404_or_403_as_empty_array(client.get(&related_path).await) },
     )?;
     mr["closes_issues"] = closes_issues;
-    let related_issues = unwrap_404_or_403_as_empty_array(
-        client
-            .get(&format!(
-                "/api/v4/projects/{pid}/merge_requests/{iid}/related_issues"
-            ))
-            .await,
-    )?;
     mr["related_issues"] = related_issues;
     Ok(mr)
 }
@@ -330,4 +321,177 @@ pub async fn mr_merge(client: &GitlabClient, p: MrMergeParams) -> Result<Value, 
         )
         .build();
     client.put(&path, &body).await
+}
+
+// --------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::{MrGetParams, mr_get};
+    use crate::client::GitlabClient;
+
+    fn mock_client(server: &MockServer) -> GitlabClient {
+        GitlabClient::new(server.uri(), "test-token").unwrap()
+    }
+
+    fn mr_json(iid: u64) -> serde_json::Value {
+        serde_json::json!({
+            "id": iid * 100,
+            "iid": iid,
+            "project_id": 1,
+            "title": format!("MR {iid}"),
+            "state": "opened",
+            "source_branch": "feature",
+            "target_branch": "main",
+            "web_url": format!("https://gitlab.example.com/p/-/mrs/{iid}"),
+        })
+    }
+
+    #[tokio::test]
+    async fn mr_get_embeds_closes_and_related_issues() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/mygroup%2Fmyrepo/merge_requests/12"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mr_json(12)))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(
+                "/api/v4/projects/mygroup%2Fmyrepo/merge_requests/12/closes_issues",
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                { "id": 11, "iid": 4, "title": "Bug", "state": "opened", "project_id": 1 }
+            ])))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path(
+                "/api/v4/projects/mygroup%2Fmyrepo/merge_requests/12/related_issues",
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                { "id": 22, "iid": 5, "title": "Linked", "state": "opened", "project_id": 1 }
+            ])))
+            .mount(&server)
+            .await;
+
+        let item = mr_get(
+            &mock_client(&server),
+            MrGetParams {
+                project_id: "mygroup/myrepo".into(),
+                merge_request_iid: 12,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(item["iid"], 12);
+        assert_eq!(item["closes_issues"][0]["iid"], 4);
+        assert_eq!(item["related_issues"][0]["iid"], 5);
+    }
+
+    #[tokio::test]
+    async fn mr_get_degrades_related_issues_on_403() {
+        // related_issues is Premium/Ultimate; lower tiers return 403. Must surface as [].
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/merge_requests/3"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mr_json(3)))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/merge_requests/3/closes_issues"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/merge_requests/3/related_issues"))
+            .respond_with(ResponseTemplate::new(403).set_body_string("Forbidden"))
+            .mount(&server)
+            .await;
+
+        let item = mr_get(
+            &mock_client(&server),
+            MrGetParams {
+                project_id: "p".into(),
+                merge_request_iid: 3,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(item["closes_issues"], serde_json::json!([]));
+        assert_eq!(item["related_issues"], serde_json::json!([]));
+    }
+
+    #[tokio::test]
+    async fn mr_get_does_not_swallow_403_on_closes_issues() {
+        // closes_issues is not tier-gated; a 403 there is a real failure, not licensing.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/merge_requests/3"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(mr_json(3)))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/merge_requests/3/closes_issues"))
+            .respond_with(ResponseTemplate::new(403).set_body_string("Forbidden"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/merge_requests/3/related_issues"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server)
+            .await;
+
+        let err = mr_get(
+            &mock_client(&server),
+            MrGetParams {
+                project_id: "p".into(),
+                merge_request_iid: 3,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(err, crate::client::GitlabError::Api { status, .. } if status.as_u16() == 403)
+        );
+    }
+
+    #[tokio::test]
+    async fn mr_get_propagates_404_for_mr_itself() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/merge_requests/999"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/merge_requests/999/closes_issues"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/merge_requests/999/related_issues"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server)
+            .await;
+
+        let err = mr_get(
+            &mock_client(&server),
+            MrGetParams {
+                project_id: "p".into(),
+                merge_request_iid: 999,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(err, crate::client::GitlabError::Api { status, .. } if status.as_u16() == 404)
+        );
+    }
 }

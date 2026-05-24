@@ -91,20 +91,15 @@ pub struct IssueGetParams {
 pub async fn issue_get(client: &GitlabClient, p: IssueGetParams) -> Result<Value, GitlabError> {
     let pid = encode_namespace_id(&p.project_id);
     let iid = p.issue_iid;
-    let mut issue = client
-        .get(&format!("/api/v4/projects/{pid}/issues/{iid}"))
-        .await?;
-    let links = unwrap_404_as_empty_array(
-        client
-            .get(&format!("/api/v4/projects/{pid}/issues/{iid}/links"))
-            .await,
+    let issue_path = format!("/api/v4/projects/{pid}/issues/{iid}");
+    let links_path = format!("/api/v4/projects/{pid}/issues/{iid}/links");
+    let closed_by_path = format!("/api/v4/projects/{pid}/issues/{iid}/closed_by");
+    let (mut issue, links, closed_by) = tokio::try_join!(
+        client.get(&issue_path),
+        async { unwrap_404_as_empty_array(client.get(&links_path).await) },
+        async { unwrap_404_as_empty_array(client.get(&closed_by_path).await) },
     )?;
     issue["linked_issues"] = links;
-    let closed_by = unwrap_404_as_empty_array(
-        client
-            .get(&format!("/api/v4/projects/{pid}/issues/{iid}/closed_by"))
-            .await,
-    )?;
     issue["closed_by"] = closed_by;
     Ok(issue)
 }
@@ -334,4 +329,169 @@ pub async fn issue_link_delete(
         p.issue_link_id
     );
     client.delete_json(&path).await
+}
+
+// --------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::{IssueGetParams, issue_get};
+    use crate::client::GitlabClient;
+
+    fn mock_client(server: &MockServer) -> GitlabClient {
+        GitlabClient::new(server.uri(), "test-token").unwrap()
+    }
+
+    fn issue_json(iid: u64) -> serde_json::Value {
+        serde_json::json!({
+            "id": iid * 100,
+            "iid": iid,
+            "project_id": 1,
+            "title": format!("Issue {iid}"),
+            "state": "opened",
+            "web_url": format!("https://gitlab.example.com/p/-/issues/{iid}"),
+        })
+    }
+
+    #[tokio::test]
+    async fn issue_get_embeds_links_and_closed_by() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/mygroup%2Fmyrepo/issues/7"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(issue_json(7)))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/mygroup%2Fmyrepo/issues/7/links"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                { "id": 99, "iid": 8, "link_type": "blocks", "issue_link_id": 12 }
+            ])))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/mygroup%2Fmyrepo/issues/7/closed_by"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                { "id": 555, "iid": 3, "title": "Fix it", "state": "merged", "project_id": 1 }
+            ])))
+            .mount(&server)
+            .await;
+
+        let item = issue_get(
+            &mock_client(&server),
+            IssueGetParams {
+                project_id: "mygroup/myrepo".into(),
+                issue_iid: 7,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(item["iid"], 7);
+        assert_eq!(item["linked_issues"][0]["link_type"], "blocks");
+        assert_eq!(item["closed_by"][0]["iid"], 3);
+    }
+
+    #[tokio::test]
+    async fn issue_get_tolerates_missing_embed_endpoints() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/issues/4"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(issue_json(4)))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/issues/4/links"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/issues/4/closed_by"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+
+        let item = issue_get(
+            &mock_client(&server),
+            IssueGetParams {
+                project_id: "p".into(),
+                issue_iid: 4,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(item["linked_issues"], serde_json::json!([]));
+        assert_eq!(item["closed_by"], serde_json::json!([]));
+    }
+
+    #[tokio::test]
+    async fn issue_get_propagates_404_for_issue_itself() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/issues/999"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+        // Mock the embed endpoints so a concurrent fetch doesn't 404 with no route.
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/issues/999/links"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/issues/999/closed_by"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server)
+            .await;
+
+        let err = issue_get(
+            &mock_client(&server),
+            IssueGetParams {
+                project_id: "p".into(),
+                issue_iid: 999,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, crate::client::GitlabError::Api { .. }));
+    }
+
+    #[tokio::test]
+    async fn issue_get_propagates_500_from_embed() {
+        // A non-404/403 error on a supplemental fetch must surface, not be silently swallowed.
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/issues/5"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(issue_json(5)))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/issues/5/links"))
+            .respond_with(ResponseTemplate::new(500).set_body_string("oops"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/p/issues/5/closed_by"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server)
+            .await;
+
+        let err = issue_get(
+            &mock_client(&server),
+            IssueGetParams {
+                project_id: "p".into(),
+                issue_iid: 5,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(
+            matches!(err, crate::client::GitlabError::Api { status, .. } if status.as_u16() == 500)
+        );
+    }
 }

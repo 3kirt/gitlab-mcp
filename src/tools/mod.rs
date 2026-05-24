@@ -1431,6 +1431,65 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    // unwrap_404_as_empty_array / unwrap_404_or_403_as_empty_array
+
+    fn api_err(status: StatusCode) -> Result<Value, GitlabError> {
+        Err(GitlabError::Api {
+            status,
+            body: "x".into(),
+        })
+    }
+
+    #[test]
+    fn unwrap_404_passes_through_ok() {
+        let r = unwrap_404_as_empty_array(Ok(json!([{"id": 1}]))).unwrap();
+        assert_eq!(r, json!([{"id": 1}]));
+    }
+
+    #[test]
+    fn unwrap_404_swallows_404() {
+        let r = unwrap_404_as_empty_array(api_err(StatusCode::NOT_FOUND)).unwrap();
+        assert_eq!(r, json!([]));
+    }
+
+    #[test]
+    fn unwrap_404_propagates_403() {
+        let err = unwrap_404_as_empty_array(api_err(StatusCode::FORBIDDEN)).unwrap_err();
+        assert!(matches!(err, GitlabError::Api { status, .. } if status == StatusCode::FORBIDDEN));
+    }
+
+    #[test]
+    fn unwrap_404_propagates_500() {
+        let err =
+            unwrap_404_as_empty_array(api_err(StatusCode::INTERNAL_SERVER_ERROR)).unwrap_err();
+        assert!(matches!(err, GitlabError::Api { .. }));
+    }
+
+    #[test]
+    fn unwrap_404_or_403_passes_through_ok() {
+        let r = unwrap_404_or_403_as_empty_array(Ok(json!([{"id": 1}]))).unwrap();
+        assert_eq!(r, json!([{"id": 1}]));
+    }
+
+    #[test]
+    fn unwrap_404_or_403_swallows_404() {
+        let r = unwrap_404_or_403_as_empty_array(api_err(StatusCode::NOT_FOUND)).unwrap();
+        assert_eq!(r, json!([]));
+    }
+
+    #[test]
+    fn unwrap_404_or_403_swallows_403() {
+        let r = unwrap_404_or_403_as_empty_array(api_err(StatusCode::FORBIDDEN)).unwrap();
+        assert_eq!(r, json!([]));
+    }
+
+    #[test]
+    fn unwrap_404_or_403_propagates_500() {
+        let err = unwrap_404_or_403_as_empty_array(api_err(StatusCode::INTERNAL_SERVER_ERROR))
+            .unwrap_err();
+        assert!(matches!(err, GitlabError::Api { .. }));
+    }
+
     // BodyBuilder
 
     #[test]
