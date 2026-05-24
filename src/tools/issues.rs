@@ -87,12 +87,18 @@ pub struct IssueGetParams {
 }
 
 pub async fn issue_get(client: &GitlabClient, p: IssueGetParams) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/issues/{}",
-        encode_project_id(&p.project_id),
-        p.issue_iid
-    );
-    client.get(&path).await
+    let pid = encode_project_id(&p.project_id);
+    let iid = p.issue_iid;
+    let mut issue = client.get(&format!("/api/v4/projects/{pid}/issues/{iid}")).await?;
+    let links = issue_links_list(client, IssueLinksListParams {
+        project_id: p.project_id,
+        issue_iid: iid,
+    })
+    .await
+    .map(|(v, _)| v)
+    .unwrap_or(Value::Array(vec![]));
+    issue["linked_issues"] = links;
+    Ok(issue)
 }
 
 // --------------------------------------------------------------------------

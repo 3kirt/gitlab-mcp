@@ -251,7 +251,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single GitLab issue by project ID and issue IID (the issue number shown in the GitLab UI)."
+        description = "Get a single GitLab issue by project ID and issue IID (the issue number shown in the GitLab UI). The response includes a linked_issues array showing all linked issues with their link type (relates_to, blocks, is_blocked_by) and issue_link_id."
     )]
     async fn gitlab_issues_get(
         &self,
