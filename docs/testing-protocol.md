@@ -2,7 +2,7 @@
 
 This document describes how to verify all Issues, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, and Epics API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics).
 
-**Automated coverage (not retested here):** `encode_project_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`. For epics and the underlying work-item plumbing, `type_name_to_gid` (all 9 type mappings, case-insensitivity, GID pass-through), `check_mutation_errors` (empty/absent/non-empty arrays), `resolve_group_path` (path passthrough, numeric → REST lookup, 404, empty input), `resolve_epic_gid` (happy path, null group, missing IID), and all five epic domain functions (success paths, parent resolution, parent-clear via `iid=0`, error propagation) are covered by wiremock tests. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
+**Automated coverage (not retested here):** `encode_project_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`. For epics, all five REST-based domain functions (list with pagination, get with linked-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) are covered by wiremock tests. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
 
 ---
 
@@ -13,8 +13,6 @@ The following behaviors apply across all sections. They are not re-stated per se
 **Numeric project IDs** — `encode_project_id` is unit-tested. Run one live smoke test at the start of any section using `project_id="82279422"` instead of the path form. No need to repeat the numeric-ID variant in every section.
 
 **List response shape (REST)** — Every REST list endpoint returns an envelope object: `{ "items": [...], "page", "per_page", "total", "total_pages", "next_page" }`. The pagination fields are populated from GitLab's `X-*` response headers and any field GitLab omits (e.g. `X-Total` on large endpoints, `X-Next-Page` on the last page) is omitted from the envelope. Item-level invariants in the tables below apply to entries in `items`.
-
-**List response shape (GraphQL / Epics)** — Epic list responses use cursor-based pagination: `{ "items": [...], "has_next_page": bool, "end_cursor": string | null }`. There are no `page`, `per_page`, or `total` fields. Pass `end_cursor` as `after` in the next call to advance the cursor; `has_next_page: false` with `end_cursor: null` signals the last page. Use `first` to control page size (default 20, max 100).
 
 **Empty results** — Any search, filter, or regex with no matches returns `{"items": []}` (plus whatever pagination fields GitLab populates); no error. Not retested per section.
 
@@ -122,19 +120,30 @@ Check these on every response.
 
 | Property | What to verify |
 |---|---|
-| `id` | Non-empty global ID string (`gid://gitlab/WorkItem/NNN`) — internal; users key off `iid` |
-| `iid` | Non-empty string representing the group-relative integer (matches URL) |
+| `id` | Positive integer (numeric REST ID) |
+| `iid` | Positive integer (group-relative, matches URL) |
+| `group_id` | Positive integer |
 | `title` | Non-empty string |
-| `state` | `"OPEN"` or `"CLOSED"` — uppercase, unlike the REST issues `opened`/`closed` |
-| `createdAt` | Non-null ISO 8601 datetime (camelCase, not `created_at`) |
-| `updatedAt` | Non-null ISO 8601 datetime |
-| `webUrl` | Non-empty URL |
-| `workItemType.name` | `"Epic"` |
-| `widgets` | Array of objects each with a `type` field (e.g. `"DESCRIPTION"`, `"ASSIGNEES"`, `"HIERARCHY"`, `"START_AND_DUE_DATE"`) |
-| List envelope shape | `{ items: [...], has_next_page: bool, end_cursor: string\|null }` — no page/total fields |
+| `state` | `"opened"` or `"closed"` — lowercase, same convention as REST issues |
+| `created_at` | Non-null ISO 8601 datetime |
+| `updated_at` | Non-null ISO 8601 datetime |
+| `web_url` | Non-empty URL |
+| `author` | Object with at least `id`, `username`, `name` |
+| List envelope shape | Standard REST envelope: `{items: [...], page, per_page, total?, total_pages?, next_page?}` — same as all other list endpoints |
 | Delete confirmation | Success text message, not a JSON object |
 
-> **Key differences from REST:** epic tools take `group_id` (numeric ID or full namespace path) instead of `project_id`, and `epic_iid` (the IID from the URL) on get/update/delete. The global `gid://gitlab/WorkItem/NNN` ID is never exposed in tool inputs. Group-level epics require GitLab Premium/Ultimate; on Free tier the call returns a "group not found or not accessible" error.
+**Epics (get only — additional fields):**
+
+| Property | What to verify |
+|---|---|
+| `description` | String or null (present on get, stripped on list) |
+| `start_date` | ISO 8601 date string or null |
+| `due_date` | ISO 8601 date string or null |
+| `parent_id` | Integer (parent epic's REST id) or null if top-level |
+| `parent_iid` | Integer (parent epic's IID) or null if top-level |
+| `linked_issues` | Array of issue objects (may be empty; populated from `/groups/:id/epics/:iid/issues`) |
+
+> **Key differences from other tools:** epic tools take `group_id` (numeric ID or full namespace path) instead of `project_id`, and `epic_iid` (the IID from the URL) on get/update/delete. Group-level epics require GitLab Premium/Ultimate. The REST Epics API is deprecated since GitLab 17.0 but remains functional on all EE 18.x versions; it is preferred over the work-items GraphQL API for EE compatibility.
 
 ---
 
@@ -281,7 +290,7 @@ gitlab_epics_create(
 ```
 Record `iid` as `epic-3-iid`.
 
-After seeding: 3 epics; all `OPEN`; `epic-1` has one child (`epic-2`).
+After seeding: 3 epics; all `state == "opened"`; `epic-1` has one child (`epic-2`).
 
 ---
 
@@ -1374,7 +1383,7 @@ Returns a success text message. A subsequent `gitlab_issues_notes_get` with the 
 
 ## Epics (Sections 43–47 + Workflow H)
 
-> **GitLab EE regression target (issue #7):** Sections 43–47 must be run against a GitLab EE instance with at least one group that has the Epics feature enabled (Premium/Ultimate). The specific regression to confirm: `gitlab_epics_get` previously returned a `500 Internal Server Error` on GitLab 18.x-ee due to unsupported widget types in the GraphQL query. All calls in Sections 43–47 and Workflow H should succeed without any 500 error. The test instance and group path should be substituted for `3kirt1` throughout.
+> **GitLab EE regression target (issue #7):** Sections 43–47 should ideally be run against a GitLab EE 18.x instance with a group that has the Epics feature enabled (Premium/Ultimate). The specific regression to confirm: `gitlab_epics_get` previously returned a `500 Internal Server Error` on GitLab 18.x-ee because it used the work-items GraphQL API which rejected Epic GIDs. The fix migrates all epic operations to the REST API (`/api/v4/groups/:id/epics`), which remains functional on all EE 18.x versions. All calls in Sections 43–47 and Workflow H should succeed without any 500 error on EE 18.x. Substitute the test instance and group path for `3kirt1` throughout.
 
 ---
 
@@ -1384,20 +1393,20 @@ Returns a success text message. A subsequent `gitlab_issues_notes_get` with the 
 ```
 gitlab_epics_list(group_id="3kirt1")
 ```
-Returns at least 3 items (the 3 seeded in Step 8). Each satisfies epic universal invariants. Envelope has `has_next_page` and `end_cursor` fields.
+Returns at least 3 items (the 3 seeded in Step 8). Each satisfies epic universal invariants. Envelope uses standard REST pagination: `{items: [...], page, per_page, total?, ...}`.
 
 ### 43.2 List using numeric group_id
 Look up the numeric group ID via the GitLab UI or `GET /api/v4/groups/3kirt1`, then:
 ```
 gitlab_epics_list(group_id="<numeric-id>")
 ```
-Returns the same items as 43.1. Confirms numeric → path resolution.
+Returns the same items as 43.1. Confirms numeric group ID is accepted directly in the REST path.
 
 ### 43.3 Filter by state
 ```
 gitlab_epics_list(group_id="3kirt1", state="opened")
 ```
-Returns all 3 seeded epics. Then:
+Returns all 3 seeded epics (all `state == "opened"`). Then:
 ```
 gitlab_epics_list(group_id="3kirt1", state="closed")
 ```
@@ -1415,27 +1424,27 @@ gitlab_epics_list(group_id="3kirt1", iids=["<epic-1-iid>"])
 ```
 Returns exactly 1 item matching `epic-1`.
 
-### 43.6 Cursor pagination
+### 43.6 Page-based pagination
 ```
-gitlab_epics_list(group_id="3kirt1", first=1)
+gitlab_epics_list(group_id="3kirt1", per_page=1, page=1)
 ```
-`items` contains exactly 1 epic. `has_next_page == true`, `end_cursor` is a non-null string. Then:
+`items` contains exactly 1 epic. Envelope reports `page == 1`, `per_page == 1`, `next_page == 2`. Then:
 ```
-gitlab_epics_list(group_id="3kirt1", first=1, after="<end_cursor>")
+gitlab_epics_list(group_id="3kirt1", per_page=1, page=2)
 ```
-Returns the second epic; no overlap with the first page. On the final page, `has_next_page == false` and `end_cursor == null`.
+Returns the second epic; no overlap with the first page.
 
 ### 43.7 Sort order
 ```
-gitlab_epics_list(group_id="3kirt1", sort="TITLE_ASC")
+gitlab_epics_list(group_id="3kirt1", order_by="title", sort="asc")
 ```
-Returns items ordered alphabetically by title.
+Returns items ordered alphabetically by title ascending.
 
-### 43.8 Hierarchy widget in list response
+### 43.8 Parent reference in list response
 ```
 gitlab_epics_list(group_id="3kirt1", iids=["<epic-2-iid>"])
 ```
-The result for `epic-2` has a widget with `type == "HIERARCHY"` where `parent.iid == "<epic-1-iid>"` and `parent.title == "Q3 Initiative"`.
+The result for `epic-2` has `parent_iid == <epic-1-iid>` and `parent_id` is a positive integer (the numeric REST id of `epic-1`).
 
 ---
 
@@ -1445,25 +1454,28 @@ The result for `epic-2` has a widget with `type == "HIERARCHY"` where `parent.ii
 ```
 gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-1-iid>)
 ```
-`iid == "<epic-1-iid>"`, `title == "Q3 Initiative"`, `state == "OPEN"`, `workItemType.name == "Epic"`. The response includes `author`, `namespace.fullPath`, and a `widgets` array. A widget with `type == "HIERARCHY"` is present with `hasChildren == true` and at least one entry in `children.nodes`.
+`iid == <epic-1-iid>`, `title == "Q3 Initiative"`, `state == "opened"`. The response includes `author`, `group_id`, `web_url`, `created_at`, `updated_at`, and a `linked_issues` array (may be empty). Since `epic-1` has `epic-2` as a child, `epic-2`'s `parent_iid` should equal `epic-1-iid` (verify via 43.8 or a separate get on epic-2).
 
 ### 44.2 Get with numeric group_id
 ```
 gitlab_epics_get(group_id="<numeric-id>", epic_iid=<epic-1-iid>)
 ```
-Same response as 44.1. Confirms numeric resolution.
+Same response as 44.1. Confirms numeric group ID is accepted.
 
 ### 44.3 Get a non-existent epic IID
 ```
 gitlab_epics_get(group_id="3kirt1", epic_iid=999999)
 ```
-Returns a GraphQL error containing `"epic !999999 not found in group 3kirt1"`.
+Returns a `404` API error (GitLab REST `404 Not Found`).
 
-### 44.5 Get from a non-existent group
+### 44.4 Get from a non-existent group
 ```
 gitlab_epics_get(group_id="nonexistent-group-xyz", epic_iid=1)
 ```
-Returns a GraphQL error containing `"group not found or not accessible"`.
+Returns a `404` API error.
+
+### 44.5 Verify linked_issues field
+If any issues have been linked to `epic-3` via the GitLab UI, verify `linked_issues` contains them. If no issues are linked, `linked_issues == []` with no error.
 
 ---
 
@@ -1473,18 +1485,18 @@ Returns a GraphQL error containing `"group not found or not accessible"`.
 ```
 gitlab_epics_create(group_id="3kirt1", title="Minimal epic")
 ```
-Returned `title == "Minimal epic"`, `state == "OPEN"`, `workItemType.name == "Epic"`. Record `iid` as `epic-scratch-iid`.
+Returned `title == "Minimal epic"`, `state == "opened"`, `iid` is a positive integer. Record `iid` as `epic-scratch-iid`.
 
-### 45.2 Create with description and assignee
+### 45.2 Create with description and labels
 ```
 gitlab_epics_create(
   group_id="3kirt1",
   title="Epic with description",
   description="## Details\n\nFull description here.",
-  assignee_usernames=["3kirt1"]
+  labels="roadmap"
 )
 ```
-Confirm via `gitlab_epics_get`: a widget with `type == "DESCRIPTION"` has `description` containing `"## Details"`. A widget with `type == "ASSIGNEES"` has a non-empty `assignees.nodes`. Record `iid` as `epic-desc-iid`.
+`description` contains `"## Details"`. `labels` contains `"roadmap"` (verify via `gitlab_epics_get` — `description` is present on get, stripped from list). Record `iid` as `epic-desc-iid`.
 
 ### 45.3 Create with start and due dates
 ```
@@ -1495,7 +1507,7 @@ gitlab_epics_create(
   due_date="2026-06-30"
 )
 ```
-Confirm via `gitlab_epics_get`: a widget with `type == "START_AND_DUE_DATE"` has `startDate == "2026-06-01"` and `dueDate == "2026-06-30"`. Record `iid` as `epic-dates-iid`.
+Returned `start_date == "2026-06-01"` and `due_date == "2026-06-30"` (top-level fields, not nested in widgets). Record `iid` as `epic-dates-iid`.
 
 ### 45.4 Create with parent (hierarchy)
 ```
@@ -1505,17 +1517,7 @@ gitlab_epics_create(
   parent_epic_iid=<epic-scratch-iid>
 )
 ```
-Confirm via `gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-scratch-iid>)`: the HIERARCHY widget now has `hasChildren == true` and the new epic appears in `children.nodes`. Record the new epic's `iid` as `epic-child-iid`.
-
-### 45.5 Reject unknown assignee username
-```
-gitlab_epics_create(
-  group_id="3kirt1",
-  title="Epic with bad assignee",
-  assignee_usernames=["3kirt1", "definitely-not-a-real-user"]
-)
-```
-Returns an error text result containing `unknown username(s): definitely-not-a-real-user`. The known username (`3kirt1`) must not appear in the error message. No epic was created (verify via list).
+Returned `parent_iid == <epic-scratch-iid>` and `parent_id` is a positive integer. Record the new epic's `iid` as `epic-child-iid`.
 
 ---
 
@@ -1533,47 +1535,47 @@ Returned `title == "Updated epic title"`.
 ```
 gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-scratch-iid>, description="Updated description.")
 ```
-Confirm via `gitlab_epics_get`: DESCRIPTION widget has `description == "Updated description."`.
+Returned `description == "Updated description."` (present on update response; verify via `gitlab_epics_get` if needed).
 
 ### 46.3 Close via state_event
 ```
-gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-scratch-iid>, state_event="CLOSE")
+gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-scratch-iid>, state_event="close")
 ```
-Returned `state == "CLOSED"`.
+Returned `state == "closed"`.
 
 ### 46.4 Reopen via state_event
 ```
-gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-scratch-iid>, state_event="REOPEN")
+gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-scratch-iid>, state_event="reopen")
 ```
-Returned `state == "OPEN"`.
+Returned `state == "opened"`.
 
-### 46.5 Replace assignees
+### 46.5 Update labels incrementally
 ```
-gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-desc-iid>, assignee_usernames=["3kirt1"])
+gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-desc-iid>, add_labels="q3,planning")
 ```
-Confirm via `gitlab_epics_get`: ASSIGNEES widget has exactly one entry with `username == "3kirt1"`. Then clear:
+Returned `labels` contains `"q3"` and `"planning"` (in addition to any existing labels). Then:
 ```
-gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-desc-iid>, assignee_usernames=[])
+gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-desc-iid>, remove_labels="planning")
 ```
-Confirm via `gitlab_epics_get`: ASSIGNEES widget has `assignees.nodes == []`.
+Returned `labels` no longer contains `"planning"`.
 
 ### 46.6 Update dates
 ```
 gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-dates-iid>, start_date="2026-07-01", due_date="2026-07-31")
 ```
-Confirm via `gitlab_epics_get`: START_AND_DUE_DATE widget has `startDate == "2026-07-01"` and `dueDate == "2026-07-31"`.
+Returned `start_date == "2026-07-01"` and `due_date == "2026-07-31"` (top-level fields).
 
 ### 46.7 Change parent epic
 ```
 gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-child-iid>, parent_epic_iid=<epic-1-iid>)
 ```
-Confirm via `gitlab_epics_get`: HIERARCHY widget's `parent.iid == "<epic-1-iid>"`.
+Returned `parent_iid == <epic-1-iid>`. Confirm via `gitlab_epics_get` on `epic-child-iid`.
 
 ### 46.8 Clear parent epic via parent_epic_iid=0
 ```
 gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-child-iid>, parent_epic_iid=0)
 ```
-Confirm via `gitlab_epics_get`: HIERARCHY widget's `parent == null` (or absent). The epic is now top-level.
+Returned `parent_id == null` or `parent_id` absent. The epic is now top-level. Confirm via `gitlab_epics_get` on `epic-child-iid`.
 
 ---
 
@@ -1584,7 +1586,7 @@ Create a throwaway epic, record its `iid`, then:
 ```
 gitlab_epics_delete(group_id="3kirt1", epic_iid=<throwaway-iid>)
 ```
-Returns a success text message. A subsequent `gitlab_epics_get(group_id="3kirt1", epic_iid=<throwaway-iid>)` returns a GraphQL error (`epic !<iid> not found in group 3kirt1`).
+Returns a success text message. A subsequent `gitlab_epics_get(group_id="3kirt1", epic_iid=<throwaway-iid>)` returns a `404` API error.
 
 Delete the scratch epics from Section 45 (`epic-scratch-iid`, `epic-desc-iid`, `epic-dates-iid`, `epic-child-iid`) once testing is complete.
 
@@ -1593,11 +1595,11 @@ Delete the scratch epics from Section 45 (`epic-scratch-iid`, `epic-desc-iid`, `
 ## Workflow H: Epic lifecycle (create → get → update → close → delete)
 
 1. `gitlab_epics_create(group_id="3kirt1", title="Workflow H epic")` — record `iid` as `epic-h-iid`
-2. `gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm `title == "Workflow H epic"`, `state == "OPEN"`
+2. `gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm `title == "Workflow H epic"`, `state == "opened"`, `linked_issues` is present (may be empty array)
 3. `gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-h-iid>, title="Workflow H epic — updated", description="Added in step 3.")` — confirm both fields returned
 4. `gitlab_epics_list(group_id="3kirt1", search="Workflow H")` — confirm `epic-h-iid` appears in results
-5. `gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-h-iid>, state_event="CLOSE")` — confirm `state == "CLOSED"`
+5. `gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-h-iid>, state_event="close")` — confirm `state == "closed"`
 6. `gitlab_epics_list(group_id="3kirt1", state="closed")` — confirm `epic-h-iid` appears
 7. `gitlab_epics_delete(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm success message
-8. `gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm GraphQL error (`epic !<iid> not found in group 3kirt1`)
+8. `gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm `404` API error
 

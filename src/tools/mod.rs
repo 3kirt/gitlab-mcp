@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 
-use crate::client::{GitlabClient, GraphqlPageInfo, PaginationMeta};
+use crate::client::{GitlabClient, PaginationMeta};
 
 pub mod branches;
 pub mod commits;
@@ -27,7 +27,6 @@ pub mod pipelines;
 pub mod repositories;
 pub mod repository_files;
 mod slim;
-mod work_items;
 
 // --------------------------------------------------------------------------
 // Shared helpers
@@ -68,32 +67,6 @@ pub fn json_list_result(v: Value, meta: PaginationMeta) -> Result<CallToolResult
 
 pub fn tool_error(msg: &str) -> Result<CallToolResult, McpError> {
     Ok(CallToolResult::error(vec![Content::text(msg)]))
-}
-
-#[derive(Serialize)]
-struct GraphqlListEnvelope {
-    items: Value,
-    has_next_page: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    end_cursor: Option<String>,
-}
-
-pub fn json_graphql_list_result(
-    v: Value,
-    page_info: GraphqlPageInfo,
-) -> Result<CallToolResult, McpError> {
-    // Apply the lightweight slim pass: drops nulls, _links, references, and collapses
-    // user objects. GraphQL queries already field-select, so heavy slim_list (which
-    // strips description/pipeline/etc.) doesn't apply, but this keeps list and
-    // single-get responses consistent in shape for the same widget node.
-    let envelope = GraphqlListEnvelope {
-        items: slim::slim_get(v),
-        has_next_page: page_info.has_next_page,
-        end_cursor: page_info.end_cursor,
-    };
-    let text = serde_json::to_string_pretty(&envelope)
-        .map_err(|e| McpError::internal_error(format!("marshalling response: {e}"), None))?;
-    Ok(CallToolResult::success(vec![Content::text(text)]))
 }
 
 // --------------------------------------------------------------------------
@@ -217,16 +190,6 @@ macro_rules! delegate_update {
     };
 }
 
-macro_rules! delegate_graphql_list {
-    ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {{
-        let client = $self.get_client()?;
-        match $domain_fn(client, $p).await {
-            Ok((v, page_info)) => json_graphql_list_result(v, page_info),
-            Err(e) => tool_error(&format!("listing {}: {}", $noun, e.to_tool_message())),
-        }
-    }};
-}
-
 macro_rules! delegate_delete {
     ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {{
         let client = $self.get_client()?;
@@ -325,6 +288,46 @@ impl GitlabMcpServer {
         Parameters(p): Parameters<issues::IssueDeleteParams>,
     ) -> Result<CallToolResult, McpError> {
         delegate_delete!(self, issues::issue_delete, p, "issue")
+    }
+
+    #[tool(
+        description = "List all links for a GitLab issue. Returns linked issues with their link type (relates_to, blocks, is_blocked_by) and issue_link_id."
+    )]
+    async fn gitlab_issues_links_list(
+        &self,
+        Parameters(p): Parameters<issues::IssueLinksListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, issues::issue_links_list, p, "issue links")
+    }
+
+    #[tool(
+        description = "Get a single issue link by its relationship ID (issue_link_id). Returns source_issue, target_issue, and link_type."
+    )]
+    async fn gitlab_issues_links_get(
+        &self,
+        Parameters(p): Parameters<issues::IssueLinkGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, issues::issue_link_get, p, "issue link")
+    }
+
+    #[tool(
+        description = "Create a link between two GitLab issues. Required: project_id, issue_iid (source), target_project_id, target_issue_iid. Optional: link_type (\"relates_to\" (default), \"blocks\", or \"is_blocked_by\")."
+    )]
+    async fn gitlab_issues_links_create(
+        &self,
+        Parameters(p): Parameters<issues::IssueLinkCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, issues::issue_link_create, p, "issue link")
+    }
+
+    #[tool(
+        description = "Delete a link between two GitLab issues by its relationship ID (issue_link_id from the list response). Returns the deleted link object."
+    )]
+    async fn gitlab_issues_links_delete(
+        &self,
+        Parameters(p): Parameters<issues::IssueLinkDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(self, issues::issue_link_delete, p, "deleting", "issue link")
     }
 
     #[tool(
@@ -1100,17 +1103,17 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List epics in a GitLab group. Required: group_id (numeric ID or full namespace path like \"mygroup\"). Optional filters: state (opened/closed), search, author_username, assignee_usernames, label_name, iids (epic IIDs from the URL), sort (CREATED_DESC, UPDATED_DESC, TITLE_ASC, etc.). Cursor pagination: first (page size, default 20, max 100) and after (end_cursor from a previous response). Returns each epic with id, iid, title, state, and widget data (description, assignees, labels, hierarchy, dates)."
+        description = "List epics in a GitLab group. Required: group_id (numeric ID or full namespace path like \"mygroup\"). Optional filters: state (opened/closed/all), search, author_username, label_name (array of label names), iids (array of epic IIDs from the URL). Sort: order_by (created_at/updated_at/title) and sort (asc/desc). Pagination: page and per_page (default 20, max 100). Returns each epic with id, iid, title, state, author, labels, dates, and web_url."
     )]
     async fn gitlab_epics_list(
         &self,
         Parameters(p): Parameters<epics::EpicsListParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_graphql_list!(self, epics::epics_list, p, "epics")
+        delegate_list!(self, epics::epics_list, p, "epics")
     }
 
     #[tool(
-        description = "Get a single GitLab epic by group and epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`). group_id accepts a numeric ID or full namespace path. Returns full epic details including widgets: description, assignees, labels, milestone, start/due dates, time tracking, weight, and hierarchy (parent + child work items)."
+        description = "Get a single GitLab epic by group and epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`). group_id accepts a numeric ID or full namespace path. Returns full epic details: id, iid, title, description, state, author, labels, start_date, due_date, parent_id, parent_iid, web_url, and linked_issues (issues associated with the epic)."
     )]
     async fn gitlab_epics_get(
         &self,
@@ -1120,7 +1123,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create a new epic in a GitLab group. Required: group_id (numeric ID or full namespace path), title. Optional: description (Markdown), assignee_usernames (every username must resolve to a real user or the call fails), parent_epic_iid (an existing epic IID in the same group to set as the hierarchy parent), start_date and due_date (ISO 8601)."
+        description = "Create a new epic in a GitLab group. Required: group_id (numeric ID or full namespace path), title. Optional: description (Markdown), labels (comma-separated label names), parent_epic_iid (an existing epic IID in the same group to set as the hierarchy parent; 0 is not valid on create), start_date and due_date (ISO 8601)."
     )]
     async fn gitlab_epics_create(
         &self,
@@ -1130,7 +1133,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update an existing GitLab epic by group and epic IID. All fields are optional. Use state_event=\"CLOSE\" or \"REOPEN\" to change state. Providing assignee_usernames replaces the full assignee list (pass an empty list to clear all assignees). For parent_epic_iid: pass an existing epic IID to set a new parent, or 0 to remove the existing parent."
+        description = "Update an existing GitLab epic by group and epic IID. All fields are optional. Use state_event=\"close\" or \"reopen\" to change state. Use labels to replace all labels, add_labels/remove_labels to adjust them incrementally. For parent_epic_iid: pass an existing epic IID to set a new parent, or 0 to remove the existing parent."
     )]
     async fn gitlab_epics_update(
         &self,

@@ -26,16 +26,6 @@ pub struct PaginationMeta {
 /// Result type for list endpoints — JSON body plus pagination metadata.
 pub type ListResult = Result<(Value, PaginationMeta), GitlabError>;
 
-/// Cursor-based pagination metadata extracted from a GraphQL `pageInfo` object.
-#[derive(Debug, Default, Serialize)]
-pub struct GraphqlPageInfo {
-    pub has_next_page: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub end_cursor: Option<String>,
-}
-
-/// Result type for GraphQL list operations — JSON array of nodes plus cursor pagination.
-pub type GraphqlListResult = Result<(Value, GraphqlPageInfo), GitlabError>;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -182,6 +172,13 @@ impl GitlabClient {
         self.handle_response(resp).await
     }
 
+    /// DELETE {base_url}{path} — returns the JSON response body.
+    pub async fn delete_json(&self, path: &str) -> Result<Value, GitlabError> {
+        let url = self.url(path);
+        let resp = self.http.delete(&url).send().await?;
+        self.handle_response(resp).await
+    }
+
     /// DELETE {base_url}{path} — returns () on success (204 No Content expected).
     pub async fn delete(&self, path: &str) -> Result<(), GitlabError> {
         let url = self.url(path);
@@ -192,38 +189,6 @@ impl GitlabClient {
             return Err(GitlabError::Api { status, body });
         }
         Ok(())
-    }
-
-    /// POST /api/graphql — executes a GraphQL query or mutation.
-    ///
-    /// Returns the `data` field of the response. Top-level GraphQL `errors` are mapped
-    /// to `GitlabError::Graphql`; HTTP errors map to `GitlabError::Api`.
-    /// Mutation-level errors (inside `data.mutationName.errors`) must be checked
-    /// by the caller.
-    pub async fn graphql(&self, query: &str, variables: Value) -> Result<Value, GitlabError> {
-        let body = serde_json::json!({ "query": query, "variables": variables });
-        let url = self.url("/api/graphql");
-        let resp = self.http.post(&url).json(&body).send().await?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(GitlabError::Api { status, body });
-        }
-        let mut val: Value = resp.json().await?;
-        if let Some(errors) = val.get("errors") {
-            let msg = errors
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|e| e.get("message").and_then(|m| m.as_str()))
-                        .collect::<Vec<_>>()
-                        .join("; ")
-                })
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| errors.to_string());
-            return Err(GitlabError::Graphql(msg));
-        }
-        Ok(val["data"].take())
     }
 
     fn url(&self, path: &str) -> String {
@@ -467,6 +432,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn delete_json_returns_response_body() {
+        let server = MockServer::start().await;
+        let response_body = serde_json::json!({"issue_link_id": 7, "link_type": "relates_to"});
+        Mock::given(method("DELETE"))
+            .and(path("/api/v4/projects/1/issues/1/links/7"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(response_body.clone()))
+            .mount(&server)
+            .await;
+
+        let result = mock_client(&server)
+            .delete_json("/api/v4/projects/1/issues/1/links/7")
+            .await
+            .unwrap();
+        assert_eq!(result, response_body);
+    }
+
+    #[tokio::test]
+    async fn delete_json_error_returns_api_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/api/v4/projects/1/issues/1/links/99"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+
+        let err = mock_client(&server)
+            .delete_json("/api/v4/projects/1/issues/1/links/99")
+            .await
+            .unwrap_err();
+        match err {
+            GitlabError::Api { status, body } => {
+                assert_eq!(status, StatusCode::NOT_FOUND);
+                assert_eq!(body, "Not found");
+            }
+            other => panic!("expected GitlabError::Api, got {other}"),
+        }
+    }
+
+    #[tokio::test]
     async fn delete_with_body_sends_json_body() {
         let server = MockServer::start().await;
         let req_body = serde_json::json!({"branch": "old-feature"});
@@ -597,93 +601,4 @@ mod tests {
         }
     }
 
-    // --- graphql() tests ---
-
-    #[tokio::test]
-    async fn graphql_returns_data_field_on_success() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/graphql"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": { "workItem": { "id": "gid://gitlab/WorkItem/1", "title": "Test" } }
-            })))
-            .mount(&server)
-            .await;
-
-        let result = mock_client(&server)
-            .graphql(
-                "{ workItem(id: \"1\") { id title } }",
-                serde_json::json!({}),
-            )
-            .await
-            .unwrap();
-        assert_eq!(result["workItem"]["title"], "Test");
-    }
-
-    #[tokio::test]
-    async fn graphql_returns_error_on_top_level_errors() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/graphql"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "errors": [
-                    { "message": "Field 'foo' doesn't exist" },
-                    { "message": "Argument 'bar' is required" }
-                ]
-            })))
-            .mount(&server)
-            .await;
-
-        let err = mock_client(&server)
-            .graphql("{ foo }", serde_json::json!({}))
-            .await
-            .unwrap_err();
-        match err {
-            GitlabError::Graphql(msg) => {
-                assert!(msg.contains("Field 'foo' doesn't exist"));
-                assert!(msg.contains("Argument 'bar' is required"));
-            }
-            other => panic!("expected GitlabError::Graphql, got {other}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn graphql_http_error_returns_api_error() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/graphql"))
-            .respond_with(ResponseTemplate::new(401).set_body_string("Unauthorized"))
-            .mount(&server)
-            .await;
-
-        let err = mock_client(&server)
-            .graphql("{ workItem(id: \"1\") { id } }", serde_json::json!({}))
-            .await
-            .unwrap_err();
-        match err {
-            GitlabError::Api { status, body } => {
-                assert_eq!(status, StatusCode::UNAUTHORIZED);
-                assert_eq!(body, "Unauthorized");
-            }
-            other => panic!("expected GitlabError::Api, got {other}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn graphql_sends_private_token_header() {
-        let server = MockServer::start().await;
-        Mock::given(method("POST"))
-            .and(path("/api/graphql"))
-            .and(header("PRIVATE-TOKEN", "test-token"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "data": {}
-            })))
-            .mount(&server)
-            .await;
-
-        let result = mock_client(&server)
-            .graphql("{ __typename }", serde_json::json!({}))
-            .await;
-        assert!(result.is_ok());
-    }
 }
