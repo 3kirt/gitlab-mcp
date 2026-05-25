@@ -1,7 +1,9 @@
 ---
 model: claude-haiku-4-5-20251001
 ---
-Run the testing protocol for the API area given in $ARGUMENTS against the live test project. The binary is already built and the MCP is running with the latest tools.
+Run the testing protocol for the API area given in $ARGUMENTS against the live test project.
+
+The GitLab MCP tools are already loaded and available as tool calls in your context. Use them directly — do not run any shell commands, do not check whether a binary is built, and do not use curl or the Bash tool. Every interaction with GitLab must go through an MCP tool call (e.g., `gitlab_issues_list`, `gitlab_emoji_reactions_issues_create`).
 
 **Test project:** `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`). **Group (epics):** `3kirt1`.
 
@@ -36,7 +38,7 @@ Read the full sections — you will need the exact tool names, parameters, and a
 
 ## Step 3 — Discover seed data
 
-Query the live API to resolve placeholder IDs before running tests. Only fetch what the target sections actually need. Common lookups:
+Call MCP tools to resolve placeholder IDs before running tests. Only fetch what the target sections actually need. Common lookups:
 
 | Placeholder | How to resolve |
 |---|---|
@@ -56,7 +58,7 @@ If a seed item is not found, note it as MISSING and skip the test cases that dep
 
 Work through sections sequentially. For each numbered subsection (e.g., 71.1, 71.2):
 
-1. Call the MCP tool with real IDs substituted for all `<placeholders>`
+1. Make an MCP tool call with real IDs substituted for all `<placeholders>` — never use Bash or curl
 2. Check the response against the stated assertions (field presence, field values, response shape, error codes)
 3. Record intermediate IDs returned by create calls (e.g., `award-issue-tada`) for use in subsequent steps
 4. Mark the case PASS or FAIL with a one-line reason
