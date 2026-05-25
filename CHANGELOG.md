@@ -4,6 +4,26 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.14.0] — 2026-05-25
+
+### Added
+- **Emoji Reactions domain** — twenty-four new tools covering GitLab's
+  award_emoji surface across six resource types (issues, merge requests,
+  project snippets, and notes on each), each with list, get, create, and
+  delete operations: `gitlab_emoji_reactions_issues_*`,
+  `gitlab_emoji_reactions_mrs_*`, `gitlab_emoji_reactions_snippets_*`,
+  `gitlab_emoji_reactions_issue_notes_*`, `gitlab_emoji_reactions_mr_notes_*`,
+  `gitlab_emoji_reactions_snippet_notes_*`. Emoji `name` follows GitLab's
+  no-colons convention (e.g. `"thumbsup"`, `"tada"`); deletion requires the
+  reaction author or an administrator.
+
+### Documentation
+- Testing protocol extended with seed step 13 (emoji reaction seeding),
+  Sections 71–76 (one per resource family, with list/get/create/delete
+  subsections), and Workflow M (emoji lifecycle across an issue).
+
+---
+
 ## [0.13.0] — 2026-05-24
 
 ### Added
