@@ -21,6 +21,17 @@ All notable changes to gitlab-mcp are documented here.
 - Testing protocol extended with seed step 13 (emoji reaction seeding),
   Sections 71–76 (one per resource family, with list/get/create/delete
   subsections), and Workflow M (emoji lifecycle across an issue).
+- Fixed a label mix-up in Step 13d and Section 74 of the testing protocol
+  where the issue note seeded in Step 6 was referenced as `note-seed-1`
+  instead of `note-issue-seed-1` (the former is the MR discussion note
+  seeded in Step 7).
+
+### Developer experience
+- Added a `/test-api` skill (`.claude/commands/test-api.md`) that maps an
+  API-area argument to the corresponding section range in the testing
+  protocol, resolves seed placeholders via MCP tool lookups, and reports
+  per-case PASS/FAIL results. Forbids shell/curl invocations — every
+  GitLab interaction must go through an MCP tool call.
 
 ---
 
