@@ -510,12 +510,12 @@ gitlab_emoji_reactions_snippets_create(
 ```
 Record returned `id` as `award-seed-snippet`.
 
-**13d.** On the issue note seeded in Step 6 (`note-seed-1`):
+**13d.** On the issue note seeded in Step 6 (`note-issue-seed-1`):
 ```
 gitlab_emoji_reactions_issue_notes_create(
   project_id="3kirt1/gitlab-mcp-testing",
   issue_iid=<iid of seed-1>,
-  note_id=<id of note-seed-1>,
+  note_id=<id of note-issue-seed-1>,
   name="thumbsup"
 )
 ```
@@ -2810,7 +2810,7 @@ Confirm deletion; subsequent list does not include `award-snippet-heart`.
 gitlab_emoji_reactions_issue_notes_list(
   project_id="3kirt1/gitlab-mcp-testing",
   issue_iid=<iid of seed-1>,
-  note_id=<id of note-seed-1>
+  note_id=<id of note-issue-seed-1>
 )
 ```
 Returns at least one item — `award-seed-issue-note` from Seed Step 13d. `awardable_type == "Note"`.
@@ -2820,18 +2820,18 @@ Returns at least one item — `award-seed-issue-note` from Seed Step 13d. `award
 gitlab_emoji_reactions_issue_notes_get(
   project_id="3kirt1/gitlab-mcp-testing",
   issue_iid=<iid of seed-1>,
-  note_id=<id of note-seed-1>,
+  note_id=<id of note-issue-seed-1>,
   award_id=<award-seed-issue-note>
 )
 ```
-`name == "thumbsup"`, `awardable_id == <id of note-seed-1>`.
+`name == "thumbsup"`, `awardable_id == <id of note-issue-seed-1>`.
 
 ### 74.3 Create
 ```
 gitlab_emoji_reactions_issue_notes_create(
   project_id="3kirt1/gitlab-mcp-testing",
   issue_iid=<iid of seed-1>,
-  note_id=<id of note-seed-1>,
+  note_id=<id of note-issue-seed-1>,
   name="eyes"
 )
 ```
@@ -2842,7 +2842,7 @@ Record `id` as `award-issue-note-eyes`.
 gitlab_emoji_reactions_issue_notes_delete(
   project_id="3kirt1/gitlab-mcp-testing",
   issue_iid=<iid of seed-1>,
-  note_id=<id of note-seed-1>,
+  note_id=<id of note-issue-seed-1>,
   award_id=<award-issue-note-eyes>
 )
 ```

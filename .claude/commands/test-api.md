@@ -44,7 +44,8 @@ Call MCP tools to resolve placeholder IDs before running tests. Only fetch what 
 |---|---|
 | `<iid of seed-1>` | `gitlab_issues_list(project_id="3kirt1/gitlab-mcp-testing", state="all", search="Bug: login page crashes")` → first result's `iid` |
 | `<iid of mr-seed-1>` | `gitlab_mrs_list(project_id="3kirt1/gitlab-mcp-testing", state="all", search="Fix: correct off-by-one")` → first result's `iid` |
-| `<id of note-seed-1>` / `<id of note-issue-seed-1>` | `gitlab_issues_notes_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>)` → find note whose body starts with "Seeded note" → its `id` |
+| `<id of note-issue-seed-1>` | `gitlab_issues_notes_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>)` → find note whose body starts with "Seeded note" → its `id` |
+| `<id of note-seed-1>` (MR discussion note) | `gitlab_mrs_discussions_list(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid of mr-seed-1>)` → find `disc-seed-1` whose first note body starts with "Seeded review comment" → `notes[0].id` |
 | `<award-seed-issue>` | `gitlab_emoji_reactions_issues_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>)` → find reaction with `name=="thumbsup"` → its `id` |
 | `<award-seed-mr>` | `gitlab_emoji_reactions_mrs_list(...)` on `mr-seed-1` → thumbsup reaction id |
 | `<award-seed-issue-note>` | `gitlab_emoji_reactions_issue_notes_list(...)` on `seed-1` note → thumbsup reaction id |
