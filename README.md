@@ -5,7 +5,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that co
 Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Create a merge request from feature-branch to main"*, or *"Close MR #42"* — the server translates them into real GitLab API calls and returns structured results.
 
 - **Full CRUD** — create, read, update, and delete GitLab resources
-- **Broad coverage of common GitLab workflows** — issues, merge requests, branches, commits, repository files, pipelines, jobs, epics, snippets, search, and more
+- **Broad coverage of common GitLab workflows** — issues, merge requests, branches, commits, repository files, pipelines, jobs, epics, snippets, emoji reactions, search, and more
 - **Token-efficient responses** — list results are automatically slimmed (descriptions, pipelines, and other bulk fields stripped); use single-get tools when full detail is needed
 
 ---
@@ -117,7 +117,7 @@ claude mcp list
 
 The server covers the GitLab API surface most teams reach for day-to-day:
 issues, merge requests, branches, commits, repository files, pipelines, jobs,
-epics, snippets, search, and more. All tools accept `project_id` (or `group_id`
+epics, snippets, emoji reactions, search, and more. All tools accept `project_id` (or `group_id`
 for group-scoped endpoints) as either a numeric ID (`42`) or a namespace path
 (`mygroup/myrepo`).
 
@@ -220,6 +220,16 @@ automatically). Create and update accept a `files` array — each entry specifie
 `delete`, or `move`), optional `file_path`, `previous_path`, and `content` on
 update. `gitlab_snippets_user_agent_detail` is an admin-only endpoint that
 returns the IP address and user-agent string used to create the snippet.
+
+### Emoji Reactions
+
+Award emoji (e.g. `thumbsup`, `tada`) on issues, merge requests, project
+snippets, and notes on each. Twenty-four tools — list, get, create, delete —
+across `gitlab_emoji_reactions_issues_*`, `gitlab_emoji_reactions_mrs_*`,
+`gitlab_emoji_reactions_snippets_*`, `gitlab_emoji_reactions_issue_notes_*`,
+`gitlab_emoji_reactions_mr_notes_*`, and `gitlab_emoji_reactions_snippet_notes_*`.
+Emoji names are passed without surrounding colons. Only the reaction author
+or an administrator can delete a reaction.
 
 ### Search
 

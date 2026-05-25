@@ -19,6 +19,7 @@ use crate::client::{GitlabClient, GitlabError, PaginationMeta};
 pub mod branches;
 pub mod commits;
 pub mod discussions;
+pub mod emoji_reactions;
 pub mod epics;
 pub mod issue_notes;
 pub mod issues;
@@ -1496,6 +1497,355 @@ impl GitlabMcpServer {
             snippets::snippet_user_agent_detail,
             p,
             "snippet user agent detail"
+        )
+    }
+
+    #[tool(
+        description = "List all emoji reactions on a GitLab issue. Paginate with page and per_page."
+    )]
+    async fn gitlab_emoji_reactions_issues_list(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::IssueEmojiListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(
+            self,
+            emoji_reactions::issue_emoji_list,
+            p,
+            "issue emoji reactions"
+        )
+    }
+
+    #[tool(description = "Get a single emoji reaction on a GitLab issue by award ID.")]
+    async fn gitlab_emoji_reactions_issues_get(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::IssueEmojiGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(
+            self,
+            emoji_reactions::issue_emoji_get,
+            p,
+            "issue emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "Add an emoji reaction to a GitLab issue. Required: project_id, issue_iid, name (emoji name without colons, e.g. \"thumbsup\")."
+    )]
+    async fn gitlab_emoji_reactions_issues_create(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::IssueEmojiCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(
+            self,
+            emoji_reactions::issue_emoji_create,
+            p,
+            "issue emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "Delete an emoji reaction from a GitLab issue. Only the reaction author or administrators may delete. Required: project_id, issue_iid, award_id."
+    )]
+    async fn gitlab_emoji_reactions_issues_delete(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::IssueEmojiDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(
+            self,
+            emoji_reactions::issue_emoji_delete,
+            p,
+            "issue emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "List all emoji reactions on a GitLab merge request. Paginate with page and per_page."
+    )]
+    async fn gitlab_emoji_reactions_mrs_list(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::MrEmojiListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(
+            self,
+            emoji_reactions::mr_emoji_list,
+            p,
+            "MR emoji reactions"
+        )
+    }
+
+    #[tool(description = "Get a single emoji reaction on a GitLab merge request by award ID.")]
+    async fn gitlab_emoji_reactions_mrs_get(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::MrEmojiGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, emoji_reactions::mr_emoji_get, p, "MR emoji reaction")
+    }
+
+    #[tool(
+        description = "Add an emoji reaction to a GitLab merge request. Required: project_id, merge_request_iid, name (emoji name without colons, e.g. \"thumbsup\")."
+    )]
+    async fn gitlab_emoji_reactions_mrs_create(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::MrEmojiCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(
+            self,
+            emoji_reactions::mr_emoji_create,
+            p,
+            "MR emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "Delete an emoji reaction from a GitLab merge request. Only the reaction author or administrators may delete. Required: project_id, merge_request_iid, award_id."
+    )]
+    async fn gitlab_emoji_reactions_mrs_delete(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::MrEmojiDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(
+            self,
+            emoji_reactions::mr_emoji_delete,
+            p,
+            "MR emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "List all emoji reactions on a GitLab project snippet. Paginate with page and per_page."
+    )]
+    async fn gitlab_emoji_reactions_snippets_list(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::SnippetEmojiListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(
+            self,
+            emoji_reactions::snippet_emoji_list,
+            p,
+            "snippet emoji reactions"
+        )
+    }
+
+    #[tool(description = "Get a single emoji reaction on a GitLab project snippet by award ID.")]
+    async fn gitlab_emoji_reactions_snippets_get(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::SnippetEmojiGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(
+            self,
+            emoji_reactions::snippet_emoji_get,
+            p,
+            "snippet emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "Add an emoji reaction to a GitLab project snippet. Required: project_id, snippet_id, name (emoji name without colons, e.g. \"thumbsup\")."
+    )]
+    async fn gitlab_emoji_reactions_snippets_create(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::SnippetEmojiCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(
+            self,
+            emoji_reactions::snippet_emoji_create,
+            p,
+            "snippet emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "Delete an emoji reaction from a GitLab project snippet. Only the reaction author or administrators may delete. Required: project_id, snippet_id, award_id."
+    )]
+    async fn gitlab_emoji_reactions_snippets_delete(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::SnippetEmojiDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(
+            self,
+            emoji_reactions::snippet_emoji_delete,
+            p,
+            "snippet emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "List all emoji reactions on a note (comment) on a GitLab issue. Paginate with page and per_page."
+    )]
+    async fn gitlab_emoji_reactions_issue_notes_list(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::IssueNoteEmojiListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(
+            self,
+            emoji_reactions::issue_note_emoji_list,
+            p,
+            "issue note emoji reactions"
+        )
+    }
+
+    #[tool(
+        description = "Get a single emoji reaction on a note (comment) on a GitLab issue by award ID."
+    )]
+    async fn gitlab_emoji_reactions_issue_notes_get(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::IssueNoteEmojiGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(
+            self,
+            emoji_reactions::issue_note_emoji_get,
+            p,
+            "issue note emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "Add an emoji reaction to a note (comment) on a GitLab issue. Required: project_id, issue_iid, note_id, name (emoji name without colons, e.g. \"thumbsup\")."
+    )]
+    async fn gitlab_emoji_reactions_issue_notes_create(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::IssueNoteEmojiCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(
+            self,
+            emoji_reactions::issue_note_emoji_create,
+            p,
+            "issue note emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "Delete an emoji reaction from a note (comment) on a GitLab issue. Only the reaction author or administrators may delete. Required: project_id, issue_iid, note_id, award_id."
+    )]
+    async fn gitlab_emoji_reactions_issue_notes_delete(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::IssueNoteEmojiDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(
+            self,
+            emoji_reactions::issue_note_emoji_delete,
+            p,
+            "issue note emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "List all emoji reactions on a note (comment) on a GitLab merge request. Paginate with page and per_page."
+    )]
+    async fn gitlab_emoji_reactions_mr_notes_list(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::MrNoteEmojiListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(
+            self,
+            emoji_reactions::mr_note_emoji_list,
+            p,
+            "MR note emoji reactions"
+        )
+    }
+
+    #[tool(
+        description = "Get a single emoji reaction on a note (comment) on a GitLab merge request by award ID."
+    )]
+    async fn gitlab_emoji_reactions_mr_notes_get(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::MrNoteEmojiGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(
+            self,
+            emoji_reactions::mr_note_emoji_get,
+            p,
+            "MR note emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "Add an emoji reaction to a note (comment) on a GitLab merge request. Required: project_id, merge_request_iid, note_id, name (emoji name without colons, e.g. \"thumbsup\")."
+    )]
+    async fn gitlab_emoji_reactions_mr_notes_create(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::MrNoteEmojiCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(
+            self,
+            emoji_reactions::mr_note_emoji_create,
+            p,
+            "MR note emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "Delete an emoji reaction from a note (comment) on a GitLab merge request. Only the reaction author or administrators may delete. Required: project_id, merge_request_iid, note_id, award_id."
+    )]
+    async fn gitlab_emoji_reactions_mr_notes_delete(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::MrNoteEmojiDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(
+            self,
+            emoji_reactions::mr_note_emoji_delete,
+            p,
+            "MR note emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "List all emoji reactions on a note (comment) on a GitLab project snippet. Paginate with page and per_page."
+    )]
+    async fn gitlab_emoji_reactions_snippet_notes_list(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::SnippetNoteEmojiListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(
+            self,
+            emoji_reactions::snippet_note_emoji_list,
+            p,
+            "snippet note emoji reactions"
+        )
+    }
+
+    #[tool(
+        description = "Get a single emoji reaction on a note (comment) on a GitLab project snippet by award ID."
+    )]
+    async fn gitlab_emoji_reactions_snippet_notes_get(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::SnippetNoteEmojiGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(
+            self,
+            emoji_reactions::snippet_note_emoji_get,
+            p,
+            "snippet note emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "Add an emoji reaction to a note (comment) on a GitLab project snippet. Required: project_id, snippet_id, note_id, name (emoji name without colons, e.g. \"thumbsup\")."
+    )]
+    async fn gitlab_emoji_reactions_snippet_notes_create(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::SnippetNoteEmojiCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(
+            self,
+            emoji_reactions::snippet_note_emoji_create,
+            p,
+            "snippet note emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "Delete an emoji reaction from a note (comment) on a GitLab project snippet. Only the reaction author or administrators may delete. Required: project_id, snippet_id, note_id, award_id."
+    )]
+    async fn gitlab_emoji_reactions_snippet_notes_delete(
+        &self,
+        Parameters(p): Parameters<emoji_reactions::SnippetNoteEmojiDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(
+            self,
+            emoji_reactions::snippet_note_emoji_delete,
+            p,
+            "snippet note emoji reaction"
         )
     }
 }

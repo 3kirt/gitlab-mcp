@@ -475,6 +475,55 @@ Record `id` as `snippet-seed-2`. The snippet repository's default branch is `mai
 
 After seeding: 2 personal snippets; 1 public, 1 private.
 
+### Step 13: Seed Emoji Reactions
+
+Add one reaction on each of the four parent resources so list/get/delete sections
+have stable positive cases. Record each returned `id` as `award-seed-<resource>`.
+
+**13a.** On `seed-1` (issue):
+```
+gitlab_emoji_reactions_issues_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  name="thumbsup"
+)
+```
+Record returned `id` as `award-seed-issue`.
+
+**13b.** On `mr-seed-1` (merge request):
+```
+gitlab_emoji_reactions_mrs_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  name="thumbsup"
+)
+```
+Record returned `id` as `award-seed-mr`.
+
+**13c.** On `snippet-seed-1` (project snippet — recreate as a project snippet for emoji testing, or use a previously-seeded project snippet `proj-snippet-seed-1`; if only personal snippets are seeded, skip 13c and the Section 73 cases):
+```
+gitlab_emoji_reactions_snippets_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  snippet_id=<proj-snippet-seed-1>,
+  name="thumbsup"
+)
+```
+Record returned `id` as `award-seed-snippet`.
+
+**13d.** On the issue note seeded in Step 6 (`note-seed-1`):
+```
+gitlab_emoji_reactions_issue_notes_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  note_id=<id of note-seed-1>,
+  name="thumbsup"
+)
+```
+Record returned `id` as `award-seed-issue-note`.
+
+After seeding: 4 emoji reactions across 4 resources, all `name=="thumbsup"`,
+all authored by the test token's user.
+
 ### Step 11: Wire an MR-to-Issue Closing Relationship
 
 Update mr-seed-1's description to reference seed-1 with a closing keyword. This
@@ -2603,3 +2652,297 @@ If the token has admin privileges: returns an object with `user_agent` (non-empt
 7. `gitlab_snippets_list()` — confirm `snippet-wl` appears in `items` with the updated title
 8. `gitlab_snippets_delete(id=<snippet-wl>)` — confirm success message
 9. `gitlab_snippets_get(id=<snippet-wl>)` — confirm `404` error
+
+---
+
+## Emoji Reactions — universal invariants
+
+Every emoji reaction object returned by the tools below satisfies:
+- `id` is a positive integer.
+- `name` is a string with no surrounding colons (e.g. `"thumbsup"`, not `":thumbsup:"`).
+- `user` is an object with `id`, `username`, and `name`.
+- `created_at` and `updated_at` are ISO-8601 timestamps.
+- `awardable_id` matches the parent (issue ID, MR ID, snippet ID, or note ID).
+- `awardable_type` is one of `"Issue"`, `"MergeRequest"`, `"Snippet"`, or `"Note"`.
+
+Each Section 71–76 verifies these invariants on the returned record; the
+subsections call out only what differs (parent IDs, paging, deletion semantics).
+
+---
+
+## Section 71: Issues — Emoji Reactions
+
+### 71.1 List
+```
+gitlab_emoji_reactions_issues_list(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>
+)
+```
+Returns at least one item — `award-seed-issue` from Seed Step 13a. Universal invariants hold.
+
+### 71.2 Get
+```
+gitlab_emoji_reactions_issues_get(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  award_id=<award-seed-issue>
+)
+```
+Returns the single seeded reaction. `name == "thumbsup"`, `awardable_type == "Issue"`.
+
+### 71.3 Create
+```
+gitlab_emoji_reactions_issues_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  name="tada"
+)
+```
+Returns the new reaction. Record `id` as `award-issue-tada`. Confirm `name == "tada"`.
+
+### 71.4 Delete
+```
+gitlab_emoji_reactions_issues_delete(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  award_id=<award-issue-tada>
+)
+```
+Confirm `"issue emoji reaction deleted"`. A follow-up list no longer contains `award-issue-tada`.
+
+---
+
+## Section 72: Merge Requests — Emoji Reactions
+
+### 72.1 List
+```
+gitlab_emoji_reactions_mrs_list(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>
+)
+```
+Returns at least one item — `award-seed-mr` from Seed Step 13b.
+
+### 72.2 Get
+```
+gitlab_emoji_reactions_mrs_get(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  award_id=<award-seed-mr>
+)
+```
+`awardable_type == "MergeRequest"`, `name == "thumbsup"`.
+
+### 72.3 Create
+```
+gitlab_emoji_reactions_mrs_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  name="rocket"
+)
+```
+Record `id` as `award-mr-rocket`.
+
+### 72.4 Delete
+```
+gitlab_emoji_reactions_mrs_delete(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  award_id=<award-mr-rocket>
+)
+```
+Confirm deletion message; subsequent list does not include `award-mr-rocket`.
+
+---
+
+## Section 73: Snippets — Emoji Reactions
+
+Requires a project snippet (`proj-snippet-seed-1`) and the corresponding
+reaction `award-seed-snippet` from Seed Step 13c. Skip this section if only
+personal snippets were seeded — the REST endpoint exists only for project snippets.
+
+### 73.1 List
+```
+gitlab_emoji_reactions_snippets_list(
+  project_id="3kirt1/gitlab-mcp-testing",
+  snippet_id=<proj-snippet-seed-1>
+)
+```
+Returns at least one item — `award-seed-snippet`.
+
+### 73.2 Get
+```
+gitlab_emoji_reactions_snippets_get(
+  project_id="3kirt1/gitlab-mcp-testing",
+  snippet_id=<proj-snippet-seed-1>,
+  award_id=<award-seed-snippet>
+)
+```
+`awardable_type == "Snippet"`, `name == "thumbsup"`.
+
+### 73.3 Create
+```
+gitlab_emoji_reactions_snippets_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  snippet_id=<proj-snippet-seed-1>,
+  name="heart"
+)
+```
+Record `id` as `award-snippet-heart`.
+
+### 73.4 Delete
+```
+gitlab_emoji_reactions_snippets_delete(
+  project_id="3kirt1/gitlab-mcp-testing",
+  snippet_id=<proj-snippet-seed-1>,
+  award_id=<award-snippet-heart>
+)
+```
+Confirm deletion; subsequent list does not include `award-snippet-heart`.
+
+---
+
+## Section 74: Issue Notes — Emoji Reactions
+
+### 74.1 List
+```
+gitlab_emoji_reactions_issue_notes_list(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  note_id=<id of note-seed-1>
+)
+```
+Returns at least one item — `award-seed-issue-note` from Seed Step 13d. `awardable_type == "Note"`.
+
+### 74.2 Get
+```
+gitlab_emoji_reactions_issue_notes_get(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  note_id=<id of note-seed-1>,
+  award_id=<award-seed-issue-note>
+)
+```
+`name == "thumbsup"`, `awardable_id == <id of note-seed-1>`.
+
+### 74.3 Create
+```
+gitlab_emoji_reactions_issue_notes_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  note_id=<id of note-seed-1>,
+  name="eyes"
+)
+```
+Record `id` as `award-issue-note-eyes`.
+
+### 74.4 Delete
+```
+gitlab_emoji_reactions_issue_notes_delete(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  note_id=<id of note-seed-1>,
+  award_id=<award-issue-note-eyes>
+)
+```
+Confirm deletion; subsequent list does not include `award-issue-note-eyes`.
+
+---
+
+## Section 75: MR Notes — Emoji Reactions
+
+Requires an MR note (from the MR discussion seeded in Step 7 — record its
+note `id` as `mr-note-seed-1`).
+
+### 75.1 Create then list
+```
+gitlab_emoji_reactions_mr_notes_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  note_id=<mr-note-seed-1>,
+  name="thumbsup"
+)
+```
+Record `id` as `award-mr-note`. Follow-up:
+```
+gitlab_emoji_reactions_mr_notes_list(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  note_id=<mr-note-seed-1>
+)
+```
+Returns the created reaction.
+
+### 75.2 Get
+```
+gitlab_emoji_reactions_mr_notes_get(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  note_id=<mr-note-seed-1>,
+  award_id=<award-mr-note>
+)
+```
+`awardable_type == "Note"`, `name == "thumbsup"`.
+
+### 75.3 Delete
+```
+gitlab_emoji_reactions_mr_notes_delete(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  note_id=<mr-note-seed-1>,
+  award_id=<award-mr-note>
+)
+```
+Confirm deletion; subsequent list returns `{"items": []}`.
+
+---
+
+## Section 76: Snippet Notes — Emoji Reactions
+
+Requires a project snippet (`proj-snippet-seed-1`) with at least one note. If
+no snippet note has been seeded, create one first via the GitLab UI or
+`POST /projects/:id/snippets/:id/notes` (no MCP tool for snippet notes yet) —
+record its `id` as `snippet-note-seed-1`. Skip if neither prerequisite exists.
+
+### 76.1 Create then list
+```
+gitlab_emoji_reactions_snippet_notes_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  snippet_id=<proj-snippet-seed-1>,
+  note_id=<snippet-note-seed-1>,
+  name="thumbsup"
+)
+```
+Record `id` as `award-snippet-note`. Follow-up `gitlab_emoji_reactions_snippet_notes_list(...)` returns it.
+
+### 76.2 Get and delete
+```
+gitlab_emoji_reactions_snippet_notes_get(
+  project_id="3kirt1/gitlab-mcp-testing",
+  snippet_id=<proj-snippet-seed-1>,
+  note_id=<snippet-note-seed-1>,
+  award_id=<award-snippet-note>
+)
+```
+Then:
+```
+gitlab_emoji_reactions_snippet_notes_delete(
+  project_id="3kirt1/gitlab-mcp-testing",
+  snippet_id=<proj-snippet-seed-1>,
+  note_id=<snippet-note-seed-1>,
+  award_id=<award-snippet-note>
+)
+```
+Confirm deletion message; subsequent list returns `{"items": []}`.
+
+---
+
+## Workflow M: Emoji lifecycle on an issue
+
+1. `gitlab_emoji_reactions_issues_create(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>, name="rocket")` — record `id` as `award-wm`
+2. `gitlab_emoji_reactions_issues_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>)` — confirm `award-wm` appears in `items` with `name == "rocket"`
+3. `gitlab_emoji_reactions_issues_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>, award_id=<award-wm>)` — confirm `name == "rocket"`, `awardable_type == "Issue"`
+4. `gitlab_emoji_reactions_issues_create(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>, name="rocket")` — confirm GitLab rejects with 4xx (same emoji from same user is not duplicated)
+5. `gitlab_emoji_reactions_issues_delete(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>, award_id=<award-wm>)` — confirm success message
+6. `gitlab_emoji_reactions_issues_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>, award_id=<award-wm>)` — confirm `404` error
