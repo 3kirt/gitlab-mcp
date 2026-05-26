@@ -1361,7 +1361,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get details of a GitLab group by ID or full namespace path (e.g. \"mygroup\" or \"mygroup/subgroup\"). Returns id, name, path, full_path, description, visibility, web_url, parent_id, created_at, and member/project counts. Set with_projects=true to include the group's projects (max 100) in the response."
+        description = "Get details of a GitLab group by ID or full namespace path (e.g. \"mygroup\" or \"mygroup/subgroup\"). Returns id, name, path, full_path, description, visibility, web_url, parent_id, and created_at. Set with_projects=true to include the group's projects (max 100) in the response."
     )]
     async fn gitlab_groups_get(
         &self,

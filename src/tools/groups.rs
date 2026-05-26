@@ -72,8 +72,11 @@ pub struct GroupGetParams {
 
 pub async fn group_get(client: &GitlabClient, p: GroupGetParams) -> Result<Value, GitlabError> {
     let gid = encode_namespace_id(&p.group_id);
+    // GitLab's upstream default for `with_projects` is true (deprecated but still functional),
+    // which would embed up to 100 projects on every group fetch. Send it explicitly so the
+    // tool default stays compact and matches the schemars description.
     let params = QueryBuilder::new()
-        .opt("with_projects", p.with_projects)
+        .opt("with_projects", Some(p.with_projects.unwrap_or(false)))
         .into_params();
     client
         .get_with_params(&format!("/api/v4/groups/{gid}"), &params)
@@ -273,6 +276,56 @@ mod tests {
         .unwrap();
 
         assert_eq!(item["id"], 42);
+    }
+
+    #[tokio::test]
+    async fn group_get_defaults_with_projects_to_false() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/groups/mygroup"))
+            .and(query_param("with_projects", "false"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(group_json(1, "My Group", "mygroup")),
+            )
+            .mount(&server)
+            .await;
+
+        let item = group_get(
+            &mock_client(&server),
+            GroupGetParams {
+                group_id: "mygroup".into(),
+                with_projects: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(item["name"], "My Group");
+    }
+
+    #[tokio::test]
+    async fn group_get_forwards_with_projects_true() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/groups/mygroup"))
+            .and(query_param("with_projects", "true"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(group_json(1, "My Group", "mygroup")),
+            )
+            .mount(&server)
+            .await;
+
+        let item = group_get(
+            &mock_client(&server),
+            GroupGetParams {
+                group_id: "mygroup".into(),
+                with_projects: Some(true),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(item["name"], "My Group");
     }
 
     #[tokio::test]
