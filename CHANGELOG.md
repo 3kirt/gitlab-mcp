@@ -4,6 +4,23 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.15.0] — 2026-05-26
+
+### Added
+- **Groups domain (read-only)** — two new tools: `gitlab_groups_list` and
+  `gitlab_groups_get`. `gitlab_groups_list` supports `search`, `owned`,
+  `all_available`, `min_access_level`, `top_level_only`, plus standard
+  pagination and sorting. `gitlab_groups_get` accepts a numeric ID or full
+  namespace path, with an optional `with_projects` flag (defaults to `false`
+  to keep responses compact — GitLab's upstream default is `true`, which
+  would embed up to 100 projects on every fetch).
+
+### Documentation
+- Testing protocol extended with Sections 77–78 (Groups list and get) and
+  the groups universal-invariants table.
+
+---
+
 ## [0.14.0] — 2026-05-25
 
 ### Added
