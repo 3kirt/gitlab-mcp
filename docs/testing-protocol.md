@@ -1,6 +1,6 @@
 # GitLab MCP Testing Protocol
 
-This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, Epics, Pipeline Schedules, Snippets, Search, and Metadata API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics and group search).
+This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, Epics, Pipeline Schedules, Snippets, Search, Groups, and Metadata API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics, group search, and groups).
 
 **Automated coverage (not retested here):** `encode_namespace_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with child-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) are covered by wiremock tests. For snippets, `snippet_file_raw` path encoding (slash → `%2F` in `file_path`) is covered by two wiremock tests — one with a plain path and one with a sub-directory path. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
 
@@ -178,6 +178,27 @@ Check these on every response.
 | `issues` | Array of issue objects (may be empty; populated from `/groups/:id/epics/:iid/issues`) |
 
 > **Key differences from other tools:** epic tools take `group_id` (numeric ID or full namespace path) instead of `project_id`, and `epic_iid` (the IID from the URL) on get/update/delete. Group-level epics require GitLab Premium/Ultimate. The REST Epics API is deprecated since GitLab 17.0 but remains functional on all EE 18.x versions; it is preferred over the work-items GraphQL API for EE compatibility.
+
+**Groups (list and get):**
+
+| Property | What to verify |
+|---|---|
+| `id` | Positive integer (numeric group ID) |
+| `name` | Non-empty string |
+| `path` | Non-empty string |
+| `full_path` | Non-empty string (may include parent path for subgroups) |
+| `visibility` | One of `"public"`, `"internal"`, or `"private"` |
+| `web_url` | Non-empty URL |
+| `created_at` | Non-null ISO 8601 datetime |
+| List envelope shape | Standard pagination envelope; invariants apply to each entry in `items` |
+
+**Groups (get only — additional fields):**
+
+| Property | What to verify |
+|---|---|
+| `description` | String or null |
+| `parent_id` | Integer (parent group's numeric ID) or null if top-level |
+| `projects` | Present only when `with_projects=true`; array (max 100 entries) |
 
 **Pipeline schedules (list and get):**
 
@@ -2946,3 +2967,78 @@ Confirm deletion message; subsequent list returns `{"items": []}`.
 4. `gitlab_emoji_reactions_issues_create(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>, name="rocket")` — confirm GitLab rejects with 4xx (same emoji from same user is not duplicated)
 5. `gitlab_emoji_reactions_issues_delete(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>, award_id=<award-wm>)` — confirm success message
 6. `gitlab_emoji_reactions_issues_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>, award_id=<award-wm>)` — confirm `404` error
+
+---
+
+## Section 77: Groups — List
+
+> No seed data is required. The `3kirt1` group must exist and be accessible to the test token. All items in `items` must satisfy the groups list universal invariants.
+
+### 77.1 List all accessible groups (no filter)
+```
+gitlab_groups_list()
+```
+Returns an envelope with at least 1 item. The `3kirt1` group appears in results (as owner or member). Each item has `id`, `name`, `path`, `full_path`, `visibility`, `web_url`, and `created_at`.
+
+### 77.2 Search by name
+```
+gitlab_groups_list(search="3kirt1")
+```
+Returns an envelope containing the `3kirt1` group. `name == "3kirt1"` (or whichever display name the group uses). No groups unrelated to the search term appear.
+
+### 77.3 Filter to owned groups
+```
+gitlab_groups_list(owned=true)
+```
+Returns only groups owned by the token's user. The `3kirt1` group appears (assuming the test token is the group owner). All other items are also owned by the same user.
+
+### 77.4 Paginate
+```
+gitlab_groups_list(per_page=1, page=1)
+```
+`items` contains exactly 1 group. Envelope reports `page == 1`, `per_page == 1`. If more groups exist, `next_page == 2`.
+
+### 77.5 No-match search returns empty
+```
+gitlab_groups_list(search="zzznomatchgroup999")
+```
+Returns `{"items": []}` — no error.
+
+### 77.6 Numeric ID smoke test
+After getting the numeric ID from 78.1 or Section 43.2: confirm the list includes a group whose `id` matches the numeric ID of `3kirt1`.
+
+---
+
+## Section 78: Groups — Get
+
+> No seed data is required. The `3kirt1` group must exist and be accessible to the test token.
+
+### 78.1 Get by namespace path
+```
+gitlab_groups_get(group_id="3kirt1")
+```
+Returns a group object. `path == "3kirt1"` (or the configured path), `full_path == "3kirt1"`. All groups get universal invariants satisfied. Record the returned `id` as `<numeric-group-id>` for use in 78.2 and 77.6.
+
+### 78.2 Get by numeric ID
+```
+gitlab_groups_get(group_id="<numeric-group-id>")
+```
+Returns the same group as 78.1. Confirms numeric group ID is accepted in the REST path.
+
+### 78.3 Get with projects included
+```
+gitlab_groups_get(group_id="3kirt1", with_projects=true)
+```
+Returned object contains a `projects` array (may contain up to 100 entries). At least one entry has `name == "gitlab-mcp-testing"` and `id == 82279422`. Each project entry has at least `id`, `name`, `path_with_namespace`.
+
+### 78.4 Get without projects (default)
+```
+gitlab_groups_get(group_id="3kirt1")
+```
+Returned object does not contain a `projects` key (or `projects` is absent/null). Confirms the default excludes the embedded projects array.
+
+### 78.5 Get a non-existent group
+```
+gitlab_groups_get(group_id="nonexistent-group-xyz-abc")
+```
+Returns a `404` API error.

@@ -21,6 +21,7 @@ pub mod commits;
 pub mod discussions;
 pub mod emoji_reactions;
 pub mod epics;
+pub mod groups;
 pub mod issue_notes;
 pub mod issues;
 pub mod jobs;
@@ -1347,6 +1348,26 @@ impl GitlabMcpServer {
             p,
             "MR discussion note"
         )
+    }
+
+    #[tool(
+        description = "List GitLab groups accessible to the current user. Optional filters: search (by name or path), all_available (true to include all accessible groups, not just member groups), owned (limit to owned groups), min_access_level (10=Guest, 20=Reporter, 30=Developer, 40=Maintainer, 50=Owner), top_level_only (exclude subgroups). Sort with order_by (name/path/id/similarity) and sort (asc/desc). Paginate with page and per_page."
+    )]
+    async fn gitlab_groups_list(
+        &self,
+        Parameters(p): Parameters<groups::GroupsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, groups::groups_list, p, "groups")
+    }
+
+    #[tool(
+        description = "Get details of a GitLab group by ID or full namespace path (e.g. \"mygroup\" or \"mygroup/subgroup\"). Returns id, name, path, full_path, description, visibility, web_url, parent_id, created_at, and member/project counts. Set with_projects=true to include the group's projects (max 100) in the response."
+    )]
+    async fn gitlab_groups_get(
+        &self,
+        Parameters(p): Parameters<groups::GroupGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, groups::group_get, p, "group")
     }
 
     #[tool(

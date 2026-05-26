@@ -5,7 +5,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that co
 Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Create a merge request from feature-branch to main"*, or *"Close MR #42"* — the server translates them into real GitLab API calls and returns structured results.
 
 - **Full CRUD** — create, read, update, and delete GitLab resources
-- **Broad coverage of common GitLab workflows** — issues, merge requests, branches, commits, repository files, pipelines, jobs, epics, snippets, emoji reactions, search, and more
+- **Broad coverage of common GitLab workflows** — issues, merge requests, branches, commits, repository files, pipelines, jobs, epics, groups, snippets, emoji reactions, search, and more
 - **Token-efficient responses** — list results are automatically slimmed (descriptions, pipelines, and other bulk fields stripped); use single-get tools when full detail is needed
 
 ---
@@ -117,9 +117,9 @@ claude mcp list
 
 The server covers the GitLab API surface most teams reach for day-to-day:
 issues, merge requests, branches, commits, repository files, pipelines, jobs,
-epics, snippets, emoji reactions, search, and more. All tools accept `project_id` (or `group_id`
-for group-scoped endpoints) as either a numeric ID (`42`) or a namespace path
-(`mygroup/myrepo`).
+epics, groups, snippets, emoji reactions, search, and more. All tools accept
+`project_id` (or `group_id` for group-scoped endpoints) as either a numeric ID
+(`42`) or a namespace path (`mygroup/myrepo`).
 
 List operations support `page`/`per_page` pagination and return an envelope:
 ```json
@@ -193,6 +193,15 @@ update, or delete a file with a commit message.
 Tree listing, blob get (with metadata + content) and raw blob, compare refs
 (commits + diffs), contributors, merge-base, changelog get/add, and repository
 health.
+
+### Groups
+
+Read-only access to GitLab groups. `gitlab_groups_list` returns all groups accessible
+to the token with optional filters: `search` (by name or path), `owned` (only groups
+the token's user owns), `all_available` (include all accessible groups, not just member
+groups), `min_access_level`, and `top_level_only` (exclude subgroups). `gitlab_groups_get`
+returns full details for a group by numeric ID or full namespace path. Set
+`with_projects=true` to embed the group's projects (up to 100) in the response.
 
 ### Epics
 
