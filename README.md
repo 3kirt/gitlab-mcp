@@ -5,7 +5,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that co
 Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Create a merge request from feature-branch to main"*, or *"Close MR #42"* — the server translates them into real GitLab API calls and returns structured results.
 
 - **Full CRUD** — create, read, update, and delete GitLab resources
-- **Broad coverage of common GitLab workflows** — issues, merge requests, branches, commits, repository files, pipelines, jobs, epics, groups, snippets, emoji reactions, search, and more
+- **Broad coverage of common GitLab workflows** — issues, merge requests, branches, commits, repository files, pipelines, jobs, runners, epics, groups, snippets, emoji reactions, search, and more
 - **Token-efficient responses** — list results are automatically slimmed (descriptions, pipelines, and other bulk fields stripped); use single-get tools when full detail is needed
 
 ---
@@ -117,7 +117,7 @@ claude mcp list
 
 The server covers the GitLab API surface most teams reach for day-to-day:
 issues, merge requests, branches, commits, repository files, pipelines, jobs,
-epics, groups, snippets, emoji reactions, search, and more. All tools accept
+runners, epics, groups, snippets, emoji reactions, search, and more. All tools accept
 `project_id` (or `group_id` for group-scoped endpoints) as either a numeric ID
 (`42`) or a namespace path (`mygroup/myrepo`).
 
@@ -179,6 +179,20 @@ listing pipelines triggered by a schedule, and CRUD on per-schedule variables
 
 List (project-wide, per-pipeline, and bridge/trigger jobs), get, fetch the raw
 trace log, cancel/retry/erase, and play a manual job.
+
+### Runners
+
+Read-only access to GitLab runners. Seven tools covering all runner scopes:
+
+- `gitlab_runners_list` — runners available to the current user (filtered by `type`, `status`, `paused`, `tag_list`, or `version_prefix`)
+- `gitlab_runners_all_list` — all runners on the instance (administrators only; same filters)
+- `gitlab_runners_get` — full detail for a single runner: architecture, platform, version, tag list, projects, access level, and last contact time
+- `gitlab_runners_jobs_list` — jobs that a specific runner has processed (filter by `status` or `system_id`; sort `asc`/`desc`)
+- `gitlab_runners_managers_list` — individual machine instances (runner managers) registered under a runner, with system ID, version, and contact info
+- `gitlab_runners_list_for_project` — runners available to a project (`project_id` accepts a numeric ID or namespace path)
+- `gitlab_runners_list_for_group` — runners available to a group (`group_id` accepts a numeric ID or namespace path)
+
+All list tools support `page`/`per_page` pagination.
 
 ### Commits
 

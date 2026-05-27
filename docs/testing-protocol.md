@@ -1,8 +1,8 @@
 # GitLab MCP Testing Protocol
 
-This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, MR Approvals, Repository/Files, Epics, Epic Issues, Pipeline Schedules, Snippets, Search, Groups, Projects, and Metadata API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics, group search, and groups).
+This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, MR Approvals, Repository/Files, Epics, Epic Issues, Pipeline Schedules, Snippets, Search, Groups, Projects, Metadata, and Runners API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics, group search, groups, and group runners).
 
-**Automated coverage (not retested here):** `encode_namespace_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with child-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) plus epic-issue assign (POST returns association object) and epic-issue remove (DELETE returns deleted association) are covered by wiremock tests. For MR approvals, both `mr_approve` (POST → JSON body) and `mr_unapprove` (POST → no body via `post_void`) are covered by wiremock tests. For projects, `project_get` (GET by path or numeric ID, optional `statistics` query param) is covered by four wiremock tests. For snippets, `snippet_file_raw` path encoding (slash → `%2F` in `file_path`) is covered by two wiremock tests — one with a plain path and one with a sub-directory path. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
+**Automated coverage (not retested here):** `encode_namespace_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. For runners, all seven domain functions (`runners_list`, `runners_all_list`, `runner_get`, `runner_jobs_list`, `runner_managers_list`, `project_runners_list`, `group_runners_list`) are covered by wiremock tests including path encoding, status filter forwarding, 404 propagation, and namespace path encoding for both project and group endpoints. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with child-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) plus epic-issue assign (POST returns association object) and epic-issue remove (DELETE returns deleted association) are covered by wiremock tests. For MR approvals, both `mr_approve` (POST → JSON body) and `mr_unapprove` (POST → no body via `post_void`) are covered by wiremock tests. For projects, `project_get` (GET by path or numeric ID, optional `statistics` query param) is covered by four wiremock tests. For snippets, `snippet_file_raw` path encoding (slash → `%2F` in `file_path`) is covered by two wiremock tests — one with a plain path and one with a sub-directory path. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
 
 ---
 
@@ -279,6 +279,61 @@ Check these on every response.
 | `id` | Positive integer |
 | List envelope shape | Standard pagination envelope; invariants apply to each entry in `items` |
 | Scope-specific fields | issues/MRs include `iid`, `title`, `state`, `project_id`; projects include `name`, `path_with_namespace`; commits include `short_id`, `title`, `author_name`; blobs include `filename`, `ref`, `data` |
+
+---
+
+**Runners (list):**
+
+| Property | What to verify |
+|---|---|
+| `id` | Positive integer (runner's global numeric ID) |
+| `description` | String (may be empty) |
+| `status` | One of `"online"`, `"offline"`, `"stale"`, `"never_contacted"` |
+| `paused` | `true` or `false`, never absent |
+| `is_shared` | `true` or `false`, never absent |
+| `runner_type` | One of `"instance_type"`, `"group_type"`, `"project_type"` |
+| List envelope shape | Standard pagination envelope; invariants apply to each entry in `items` |
+
+**Runners (get — additional fields):**
+
+| Property | What to verify |
+|---|---|
+| `architecture` | String or null |
+| `platform` | String or null |
+| `version` | String or null |
+| `revision` | String or null |
+| `tag_list` | Array of strings (may be empty) |
+| `access_level` | One of `"ref_protected"`, `"not_protected"` |
+| `maximum_timeout` | Integer or null |
+| `contacted_at` | ISO 8601 datetime or null |
+| `projects` | Array of project objects (may be empty); each has `id`, `name`, `path_with_namespace` |
+| `ip_address` | String or null |
+
+**Runner managers (list):**
+
+| Property | What to verify |
+|---|---|
+| `id` | Positive integer (manager record ID) |
+| `system_id` | Non-empty string (e.g. `"s_abc123"`) |
+| `status` | One of `"online"`, `"offline"`, `"stale"`, `"never_contacted"` |
+| `version` | String or null |
+| `platform` | String or null |
+| `architecture` | String or null |
+| `created_at` | ISO 8601 datetime |
+| `contacted_at` | ISO 8601 datetime or null |
+| `ip_address` | String or null |
+
+**Runner jobs (list):**
+
+| Property | What to verify |
+|---|---|
+| `id` | Positive integer (job ID) |
+| `status` | One of `"running"`, `"success"`, `"failed"`, `"canceled"` |
+| `stage` | Non-empty string |
+| `name` | Non-empty string |
+| `ref` | Non-empty string |
+| `created_at` | ISO 8601 datetime |
+| `project` | Object with at least `id`, `name` |
 
 ---
 
@@ -3196,3 +3251,199 @@ Returned object contains a `statistics` key. `statistics.commit_count` is a non-
 gitlab_projects_get(project_id="nonexistent-group-xyz/nonexistent-repo-abc")
 ```
 Returns a `404` API error.
+
+---
+
+## Runners (Sections 80–86 + Workflow N)
+
+> **Prerequisites:** At least one runner must be registered on the GitLab instance or associated with the test project for the get/jobs/managers sections to return data. If no runners exist, list endpoints return `{"items": []}` without error — confirm that rather than skipping the section. Obtain a live runner ID by running Section 80 first and recording any `id` from the results as `<runner-id>`.
+
+---
+
+## Section 80: Runners — List (Current User)
+
+### 80.1 List all runners (no filter)
+```
+gitlab_runners_list()
+```
+Returns an envelope. If runners are accessible, each item satisfies runner list universal invariants. If none are registered, `items == []` — no error.
+
+### 80.2 Filter by type
+```
+gitlab_runners_list(type="project_type")
+```
+All returned items have `runner_type == "project_type"`. No error if empty.
+
+### 80.3 Filter by status
+```
+gitlab_runners_list(status="online")
+```
+All returned items have `status == "online"`. No error if empty.
+
+### 80.4 Filter by paused
+```
+gitlab_runners_list(paused=false)
+```
+All returned items have `paused == false`.
+
+### 80.5 Filter by tag_list
+```
+gitlab_runners_list(tag_list=["docker"])
+```
+All returned items have `"docker"` in their tag list. No error if empty.
+
+### 80.6 Paginate
+```
+gitlab_runners_list(per_page=1, page=1)
+```
+`items` contains at most 1 runner. Envelope reports `page == 1`, `per_page == 1`.
+
+---
+
+## Section 81: Runners — All List (Admin)
+
+> This endpoint requires administrator access. A `403 Forbidden` response is acceptable if the token does not have admin privileges — confirm no crash.
+
+### 81.1 List all instance runners
+```
+gitlab_runners_all_list()
+```
+If the token has admin access: returns an envelope; each item satisfies runner list universal invariants. If not: returns a `403` error — no crash.
+
+### 81.2 Filter by type (admin)
+```
+gitlab_runners_all_list(type="instance_type")
+```
+All returned items have `runner_type == "instance_type"` (shared/instance runners). No error if empty.
+
+---
+
+## Section 82: Runners — Get
+
+> Requires a valid runner ID. Obtain one from Section 80 and record it as `<runner-id>`. If no runners are available, skip Sections 82–84.
+
+### 82.1 Get a runner by ID
+```
+gitlab_runners_get(id=<runner-id>)
+```
+Returns a runner detail object. All runner get universal invariants satisfied: `id == <runner-id>`, `status` is non-null, `tag_list` is an array, `projects` is an array.
+
+### 82.2 Get a non-existent runner
+```
+gitlab_runners_get(id=999999999)
+```
+Returns a `404` API error.
+
+---
+
+## Section 83: Runner Jobs — List
+
+### 83.1 List all jobs for a runner
+```
+gitlab_runners_jobs_list(id=<runner-id>)
+```
+Returns an envelope. Each item satisfies runner jobs list universal invariants. May be empty if the runner has not processed any jobs.
+
+### 83.2 Filter by status
+```
+gitlab_runners_jobs_list(id=<runner-id>, status="success")
+```
+All returned items have `status == "success"`. No error if empty.
+
+### 83.3 Sort ascending
+```
+gitlab_runners_jobs_list(id=<runner-id>, sort="asc")
+```
+If multiple jobs exist, first item has the smallest `id`. No error if empty.
+
+### 83.4 Paginate
+```
+gitlab_runners_jobs_list(id=<runner-id>, per_page=1, page=1)
+```
+`items` contains at most 1 job. Envelope reports `page == 1`, `per_page == 1`.
+
+---
+
+## Section 84: Runner Managers — List
+
+### 84.1 List all managers for a runner
+```
+gitlab_runners_managers_list(id=<runner-id>)
+```
+Returns an envelope. Each item satisfies runner managers list universal invariants: `id`, `system_id`, `status`, `created_at` all present. May be empty on older GitLab versions that do not support the managers endpoint.
+
+### 84.2 Paginate
+```
+gitlab_runners_managers_list(id=<runner-id>, per_page=1, page=1)
+```
+`items` contains at most 1 manager. Envelope reports `page == 1`, `per_page == 1`.
+
+---
+
+## Section 85: Project Runners — List
+
+### 85.1 List runners for the test project
+```
+gitlab_runners_list_for_project(project_id="3kirt1/gitlab-mcp-testing")
+```
+Returns an envelope. Items that are present satisfy runner list universal invariants. May be empty if no runners are assigned to the project.
+
+### 85.2 Numeric project_id smoke test
+```
+gitlab_runners_list_for_project(project_id="82279422")
+```
+Returns the same result as 85.1. Confirms numeric project ID is accepted.
+
+### 85.3 Filter by type
+```
+gitlab_runners_list_for_project(project_id="3kirt1/gitlab-mcp-testing", type="project_type")
+```
+All returned items have `runner_type == "project_type"`. No error if empty.
+
+### 85.4 Non-existent project
+```
+gitlab_runners_list_for_project(project_id="nonexistent-group/nonexistent-repo")
+```
+Returns a `404` API error.
+
+---
+
+## Section 86: Group Runners — List
+
+### 86.1 List runners for the test group
+```
+gitlab_runners_list_for_group(group_id="3kirt1")
+```
+Returns an envelope. Items that are present satisfy runner list universal invariants. May be empty if no runners are assigned to the group.
+
+### 86.2 Numeric group_id smoke test
+```
+gitlab_runners_list_for_group(group_id="<numeric-group-id>")
+```
+Returns the same result as 86.1. Confirms numeric group ID is accepted in the REST path.
+
+### 86.3 Filter by status
+```
+gitlab_runners_list_for_group(group_id="3kirt1", status="online")
+```
+All returned items have `status == "online"`. No error if empty.
+
+### 86.4 Non-existent group
+```
+gitlab_runners_list_for_group(group_id="nonexistent-group-xyz-abc")
+```
+Returns a `404` API error.
+
+---
+
+## Workflow N: Runner discovery across scopes
+
+> Demonstrates using the four list tools together to build a complete picture of runner availability. Skip steps that return empty results if no runners are registered.
+
+1. `gitlab_runners_list()` — record any runner `id` as `<runner-id>`; note `runner_type` for each item
+2. `gitlab_runners_list_for_project(project_id="3kirt1/gitlab-mcp-testing")` — confirm project-scoped view shows a subset of (or the same as) the instance list
+3. `gitlab_runners_list_for_group(group_id="3kirt1")` — confirm group-scoped view
+4. `gitlab_runners_get(id=<runner-id>)` — confirm `projects` array lists the project(s) the runner serves; confirm `tag_list` and `version` are present
+5. `gitlab_runners_managers_list(id=<runner-id>)` — if non-empty, confirm each manager has a distinct `system_id`
+6. `gitlab_runners_jobs_list(id=<runner-id>)` — if non-empty, confirm `project.id` in each item matches a project the runner serves (from step 4)
+7. `gitlab_runners_list(status="online")` — confirm `<runner-id>` appears if and only if its `status == "online"` in the get response from step 4
