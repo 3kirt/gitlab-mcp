@@ -22,7 +22,33 @@ the new version. This is the only step that runs without `--locked`.
 cargo build
 ```
 
-### 4. Run the full quality gate — all four checks must pass
+### 4. Audit dependencies
+
+Run these two checks:
+
+```
+cargo outdated
+cargo audit
+```
+
+**Security (`cargo audit`):** If any vulnerabilities are reported, stop immediately and
+report them to the user. Do not proceed to the quality gate or tagging until the
+vulnerabilities are resolved.
+
+**Outdated dependencies (`cargo outdated`):** Report the results to the user. Focus on
+direct dependencies listed in `Cargo.toml` (the top-level rows). If any direct
+dependencies are behind, ask the user whether to update them before continuing;
+transitive-only updates are informational and do not require confirmation. Either
+way, proceed to the quality gate once the user has been informed.
+
+If `cargo outdated` or `cargo audit` are not installed, install them first:
+
+```
+cargo install cargo-outdated
+cargo install cargo-audit
+```
+
+### 5. Run the full quality gate — all four checks must pass
 
 Run these commands. If any fails, stop and report the error; do not proceed to
 tagging.
@@ -37,7 +63,7 @@ cargo build --release
 If `cargo fmt --check` fails, run `cargo fmt` to fix formatting, then re-run
 `cargo fmt --check` to confirm it passes before continuing.
 
-### 5. Update CHANGELOG.md
+### 6. Update CHANGELOG.md
 
 Read `CHANGELOG.md`. Add a new section for the new version at the top of the
 changelog (immediately after the `# Changelog` heading and any introductory
@@ -54,7 +80,7 @@ Removed, Documentation) — omit any category that has no entries. Exclude
 housekeeping commits such as version bumps, `cargo fmt`, and `rustfmt` runs.
 Write the entries in the same style as the existing changelog entries.
 
-### 6. Commit the version bump and changelog
+### 7. Commit the version bump and changelog
 
 Stage `Cargo.toml`, `Cargo.lock`, and `CHANGELOG.md`, then commit:
 
@@ -63,13 +89,13 @@ git add Cargo.toml Cargo.lock CHANGELOG.md
 git commit -m "Bump version to <new version>"
 ```
 
-### 7. Tag the release
+### 8. Tag the release
 
 ```
 git tag v<new version>
 ```
 
-### 8. Confirm before pushing
+### 9. Confirm before pushing
 
 Show the user the new version, the commit SHA, and the tag, then ask whether to
 push both to origin. If they confirm, run:
