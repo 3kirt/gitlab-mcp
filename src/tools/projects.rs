@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::encode_namespace_id;
+use crate::tools::{QueryBuilder, encode_namespace_id};
 
 // --------------------------------------------------------------------------
 // Get single project
@@ -18,15 +18,11 @@ pub struct ProjectGetParams {
     pub statistics: Option<bool>,
 }
 
-pub async fn project_get(
-    client: &GitlabClient,
-    p: ProjectGetParams,
-) -> Result<Value, GitlabError> {
+pub async fn project_get(client: &GitlabClient, p: ProjectGetParams) -> Result<Value, GitlabError> {
     let pid = encode_namespace_id(&p.project_id);
-    let params: Vec<(&str, String)> = p
-        .statistics
-        .map(|v| vec![("statistics", v.to_string())])
-        .unwrap_or_default();
+    let params = QueryBuilder::new()
+        .opt("statistics", p.statistics)
+        .into_params();
     client
         .get_with_params(&format!("/api/v4/projects/{pid}"), &params)
         .await
@@ -70,8 +66,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/api/v4/projects/mygroup%2Fmyrepo"))
             .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(project_json(1, "My Repo", "myrepo")),
+                ResponseTemplate::new(200).set_body_json(project_json(1, "My Repo", "myrepo")),
             )
             .mount(&server)
             .await;
@@ -96,8 +91,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/api/v4/projects/42"))
             .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_json(project_json(42, "Numeric", "numeric")),
+                ResponseTemplate::new(200).set_body_json(project_json(42, "Numeric", "numeric")),
             )
             .mount(&server)
             .await;
@@ -121,13 +115,11 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/api/v4/projects/mygroup%2Fmyrepo"))
             .and(query_param("statistics", "true"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json({
-                    let mut p = project_json(1, "My Repo", "myrepo");
-                    p["statistics"] = serde_json::json!({ "commit_count": 10 });
-                    p
-                }),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json({
+                let mut p = project_json(1, "My Repo", "myrepo");
+                p["statistics"] = serde_json::json!({ "commit_count": 10 });
+                p
+            }))
             .mount(&server)
             .await;
 

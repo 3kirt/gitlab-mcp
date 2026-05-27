@@ -526,7 +526,12 @@ impl GitlabMcpServer {
         &self,
         Parameters(p): Parameters<merge_requests::MrApproveParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_create!(self, merge_requests::mr_approve, p, "merge request approval")
+        delegate_create!(
+            self,
+            merge_requests::mr_approve,
+            p,
+            "merge request approval"
+        )
     }
 
     #[tool(

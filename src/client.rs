@@ -373,6 +373,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn post_void_success_returns_unit() {
+        let server = MockServer::start().await;
+        let req_body = serde_json::json!({});
+        Mock::given(method("POST"))
+            .and(path("/api/v4/projects/1/merge_requests/3/unapprove"))
+            .and(body_json(req_body.clone()))
+            .respond_with(ResponseTemplate::new(201))
+            .mount(&server)
+            .await;
+
+        let result = mock_client(&server)
+            .post_void("/api/v4/projects/1/merge_requests/3/unapprove", &req_body)
+            .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn post_void_error_returns_api_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v4/projects/1/merge_requests/99/unapprove"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+
+        let err = mock_client(&server)
+            .post_void(
+                "/api/v4/projects/1/merge_requests/99/unapprove",
+                &serde_json::json!({}),
+            )
+            .await
+            .unwrap_err();
+        assert!(matches!(err, GitlabError::Api { status, .. } if status.as_u16() == 404));
+    }
+
+    #[tokio::test]
     async fn put_sends_json_body_and_returns_response() {
         let server = MockServer::start().await;
         let req_body = serde_json::json!({"title": "Updated"});

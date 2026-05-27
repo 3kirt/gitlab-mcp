@@ -2021,16 +2021,21 @@ Returns a `404` API error.
 
 ---
 
-## Workflow H: Epic lifecycle (create → get → update → close → delete)
+## Workflow H: Epic lifecycle (create → assign issue → get → update → unassign → close → delete)
 
 1. `gitlab_epics_create(group_id="3kirt1", title="Workflow H epic")` — record `iid` as `epic-h-iid`
 2. `gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm `title == "Workflow H epic"`, `state == "opened"`, `issues` is present (may be empty array)
-3. `gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-h-iid>, title="Workflow H epic — updated", description="Added in step 3.")` — confirm both fields returned
-4. `gitlab_epics_list(group_id="3kirt1", search="Workflow H")` — confirm `epic-h-iid` appears in results
-5. `gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-h-iid>, state_event="close")` — confirm `state == "closed"`
-6. `gitlab_epics_list(group_id="3kirt1", state="closed")` — confirm `epic-h-iid` appears
-7. `gitlab_epics_delete(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm success message
-8. `gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm `404` API error
+3. `gitlab_issues_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-2>)` — record top-level `id` as `seed-2-global-id`
+4. `gitlab_epics_issue_assign(group_id="3kirt1", epic_iid=<epic-h-iid>, issue_id=<seed-2-global-id>)` — record returned `id` as `wfh-assoc-id`
+5. `gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm the `issues` array contains an entry whose `id == wfh-assoc-id` and whose `iid` equals `seed-2`'s IID
+6. `gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-h-iid>, title="Workflow H epic — updated", description="Added in step 6.")` — confirm both fields returned
+7. `gitlab_epics_list(group_id="3kirt1", search="Workflow H")` — confirm `epic-h-iid` appears in results
+8. `gitlab_epics_issue_remove(group_id="3kirt1", epic_iid=<epic-h-iid>, epic_issue_id=<wfh-assoc-id>)` — confirm the deleted association is returned
+9. `gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm the `issues` array no longer contains `seed-2`
+10. `gitlab_epics_update(group_id="3kirt1", epic_iid=<epic-h-iid>, state_event="close")` — confirm `state == "closed"`
+11. `gitlab_epics_list(group_id="3kirt1", state="closed")` — confirm `epic-h-iid` appears
+12. `gitlab_epics_delete(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm success message
+13. `gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-h-iid>)` — confirm `404` API error
 
 ---
 

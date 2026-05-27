@@ -14,10 +14,29 @@ All notable changes to gitlab-mcp are documented here.
   **global** issue ID (not the project-scoped IID); remove takes the
   **association** ID returned in the `id` field of the issues array from
   `gitlab_epics_get` (or from the assign response).
+- **MR approvals** — two new tools: `gitlab_mrs_approve`
+  (`POST /projects/:id/merge_requests/:iid/approve`, returns the updated
+  approval state with `approvals_left` and `approved_by`; optional `sha`
+  guards against approving a since-updated MR) and `gitlab_mrs_unapprove`
+  (`POST /projects/:id/merge_requests/:iid/unapprove`, no response body).
+- **Projects domain (read-only)** — one new tool: `gitlab_projects_get`
+  (`GET /projects/:id`), accepting a numeric ID or full namespace path.
+  Optional `statistics=true` embeds commit and storage counts (requires
+  Reporter role or higher).
+
+### Internal
+- New `GitlabClient::post_void` helper for `POST` endpoints that return no
+  response body (used by `mr_unapprove`); covered by dedicated wiremock
+  tests for both success and non-2xx propagation.
 
 ### Documentation
-- README Epics section updated to mention issue assignment/removal.
-- Testing protocol extended with cases for the two new tools.
+- README Epics, Merge Requests, and Projects sections updated for the new
+  tools. The Epics section calls out the global-issue-ID vs association-ID
+  distinction for assign/remove.
+- Testing protocol extended with Section 17B (MR approve/unapprove),
+  Section 47B (epic-issue assign/remove), and Section 79 (project get),
+  plus a Projects universal-invariants table. Workflow H now exercises
+  epic-issue assign and remove as part of the epic lifecycle.
 
 ---
 

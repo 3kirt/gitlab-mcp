@@ -386,7 +386,9 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::{MrApproveParams, MrGetParams, MrUnapproveParams, mr_approve, mr_get, mr_unapprove};
+    use super::{
+        MrApproveParams, MrGetParams, MrUnapproveParams, mr_approve, mr_get, mr_unapprove,
+    };
     use crate::client::GitlabClient;
 
     fn mock_client(server: &MockServer) -> GitlabClient {
@@ -557,7 +559,9 @@ mod tests {
     async fn mr_approve_posts_and_returns_approval_state() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/api/v4/projects/mygroup%2Fmyrepo/merge_requests/3/approve"))
+            .and(path(
+                "/api/v4/projects/mygroup%2Fmyrepo/merge_requests/3/approve",
+            ))
             .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
                 "id": 3,
                 "iid": 3,
