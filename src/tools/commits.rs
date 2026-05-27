@@ -604,3 +604,166 @@ pub async fn commit_signature(
     );
     client.get(&path).await
 }
+
+// --------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::{CommitAction, CommitCreateParams, commit_create};
+    use crate::client::GitlabClient;
+
+    fn mock_client(server: &MockServer) -> GitlabClient {
+        GitlabClient::new(server.uri(), "test-token").unwrap()
+    }
+
+    fn captured_post_body(reqs: &[wiremock::Request]) -> serde_json::Value {
+        reqs.iter()
+            .find(|r| r.method == wiremock::http::Method::POST)
+            .and_then(|r| r.body_json::<serde_json::Value>().ok())
+            .expect("POST request not found")
+    }
+
+    fn action(action: &str, file_path: &str) -> CommitAction {
+        CommitAction {
+            action: action.into(),
+            file_path: file_path.into(),
+            content: None,
+            encoding: None,
+            previous_path: None,
+            last_commit_id: None,
+            execute_filemode: None,
+        }
+    }
+
+    fn base_params(actions: Vec<CommitAction>) -> CommitCreateParams {
+        CommitCreateParams {
+            project_id: "42".into(),
+            branch: "main".into(),
+            commit_message: "test commit".into(),
+            actions,
+            start_branch: None,
+            start_sha: None,
+            start_project: None,
+            author_name: None,
+            author_email: None,
+            force: None,
+            allow_empty: None,
+            stats: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn commit_create_builds_nested_actions_array_with_single_create() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v4/projects/42/repository/commits"))
+            .respond_with(
+                ResponseTemplate::new(201).set_body_json(serde_json::json!({ "id": "deadbeef" })),
+            )
+            .mount(&server)
+            .await;
+
+        let mut act = action("create", "src/new.rs");
+        act.content = Some("fn x() {}".into());
+        act.encoding = Some("text".into());
+        commit_create(&mock_client(&server), base_params(vec![act]))
+            .await
+            .unwrap();
+
+        let body = captured_post_body(&server.received_requests().await.unwrap());
+        assert_eq!(body["branch"], "main");
+        assert_eq!(body["commit_message"], "test commit");
+        assert!(body["actions"].is_array());
+        assert_eq!(body["actions"].as_array().unwrap().len(), 1);
+        assert_eq!(body["actions"][0]["action"], "create");
+        assert_eq!(body["actions"][0]["file_path"], "src/new.rs");
+        assert_eq!(body["actions"][0]["content"], "fn x() {}");
+        assert_eq!(body["actions"][0]["encoding"], "text");
+        assert!(body["actions"][0].get("previous_path").is_none());
+    }
+
+    #[tokio::test]
+    async fn commit_create_emits_multiple_actions_in_order() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v4/projects/42/repository/commits"))
+            .respond_with(
+                ResponseTemplate::new(201).set_body_json(serde_json::json!({ "id": "deadbeef" })),
+            )
+            .mount(&server)
+            .await;
+
+        let mut create = action("create", "a.rs");
+        create.content = Some("a".into());
+        let mut update = action("update", "b.rs");
+        update.content = Some("b".into());
+        let delete = action("delete", "c.rs");
+
+        commit_create(
+            &mock_client(&server),
+            base_params(vec![create, update, delete]),
+        )
+        .await
+        .unwrap();
+
+        let body = captured_post_body(&server.received_requests().await.unwrap());
+        let actions = body["actions"].as_array().unwrap();
+        assert_eq!(actions.len(), 3);
+        assert_eq!(actions[0]["action"], "create");
+        assert_eq!(actions[0]["file_path"], "a.rs");
+        assert_eq!(actions[1]["action"], "update");
+        assert_eq!(actions[1]["file_path"], "b.rs");
+        assert_eq!(actions[2]["action"], "delete");
+        assert_eq!(actions[2]["file_path"], "c.rs");
+        // delete had no content set, so it must not appear in the action object
+        assert!(actions[2].get("content").is_none());
+    }
+
+    #[tokio::test]
+    async fn commit_create_move_action_includes_previous_path() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v4/projects/42/repository/commits"))
+            .respond_with(
+                ResponseTemplate::new(201).set_body_json(serde_json::json!({ "id": "deadbeef" })),
+            )
+            .mount(&server)
+            .await;
+
+        let mut mv = action("move", "src/new_name.rs");
+        mv.previous_path = Some("src/old_name.rs".into());
+        mv.last_commit_id = Some("abc123".into());
+        commit_create(&mock_client(&server), base_params(vec![mv]))
+            .await
+            .unwrap();
+
+        let body = captured_post_body(&server.received_requests().await.unwrap());
+        assert_eq!(body["actions"][0]["action"], "move");
+        assert_eq!(body["actions"][0]["file_path"], "src/new_name.rs");
+        assert_eq!(body["actions"][0]["previous_path"], "src/old_name.rs");
+        assert_eq!(body["actions"][0]["last_commit_id"], "abc123");
+    }
+
+    #[tokio::test]
+    async fn commit_create_propagates_400() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v4/projects/42/repository/commits"))
+            .respond_with(ResponseTemplate::new(400).set_body_string("Bad request"))
+            .mount(&server)
+            .await;
+
+        let err = commit_create(
+            &mock_client(&server),
+            base_params(vec![action("create", "x.rs")]),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, crate::client::GitlabError::Api { .. }));
+    }
+}

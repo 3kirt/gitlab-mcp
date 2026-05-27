@@ -260,3 +260,244 @@ pub async fn file_delete(client: &GitlabClient, p: FileDeleteParams) -> Result<(
     client.delete_with_body(&path, &body).await?;
     Ok(())
 }
+
+// --------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::{
+        FileBlameParams, FileCreateParams, FileDeleteParams, FileGetParams, FileRawParams,
+        FileUpdateParams, file_blame, file_create, file_delete, file_get, file_raw, file_update,
+    };
+    use crate::client::GitlabClient;
+
+    fn mock_client(server: &MockServer) -> GitlabClient {
+        GitlabClient::new(server.uri(), "test-token").unwrap()
+    }
+
+    fn captured_body(reqs: &[wiremock::Request], m: wiremock::http::Method) -> serde_json::Value {
+        reqs.iter()
+            .find(|r| r.method == m)
+            .and_then(|r| r.body_json::<serde_json::Value>().ok())
+            .expect("request not found")
+    }
+
+    #[tokio::test]
+    async fn file_get_encodes_slashes_in_file_path() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/repository/files/src%2Fmain.rs"))
+            .and(query_param("ref", "main"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "file_path": "src/main.rs",
+                "ref": "main"
+            })))
+            .mount(&server)
+            .await;
+
+        let item = file_get(
+            &mock_client(&server),
+            FileGetParams {
+                project_id: "42".into(),
+                file_path: "src/main.rs".into(),
+                ref_name: "main".into(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(item["file_path"], "src/main.rs");
+    }
+
+    #[tokio::test]
+    async fn file_raw_wraps_text_response_in_content_field() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/repository/files/README.md/raw"))
+            .and(query_param("ref", "main"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("# hello"))
+            .mount(&server)
+            .await;
+
+        let item = file_raw(
+            &mock_client(&server),
+            FileRawParams {
+                project_id: "42".into(),
+                file_path: "README.md".into(),
+                ref_name: Some("main".into()),
+                lfs: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(item["content"], "# hello");
+    }
+
+    #[tokio::test]
+    async fn file_blame_uses_bracket_range_query_params() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path(
+                "/api/v4/projects/42/repository/files/src%2Flib.rs/blame",
+            ))
+            .and(query_param("ref", "main"))
+            .and(query_param("range[start]", "10"))
+            .and(query_param("range[end]", "20"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server)
+            .await;
+
+        file_blame(
+            &mock_client(&server),
+            FileBlameParams {
+                project_id: "42".into(),
+                file_path: "src/lib.rs".into(),
+                ref_name: "main".into(),
+                range_start: Some(10),
+                range_end: Some(20),
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn file_create_posts_body_with_branch_and_content() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(
+                "/api/v4/projects/42/repository/files/docs%2FREADME.md",
+            ))
+            .respond_with(
+                ResponseTemplate::new(201)
+                    .set_body_json(serde_json::json!({ "file_path": "docs/README.md" })),
+            )
+            .mount(&server)
+            .await;
+
+        file_create(
+            &mock_client(&server),
+            FileCreateParams {
+                project_id: "42".into(),
+                file_path: "docs/README.md".into(),
+                branch: "main".into(),
+                commit_message: "Add README".into(),
+                content: "# Hello".into(),
+                encoding: Some("text".into()),
+                author_name: None,
+                author_email: None,
+                execute_filemode: None,
+                start_branch: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let body = captured_body(
+            &server.received_requests().await.unwrap(),
+            wiremock::http::Method::POST,
+        );
+        assert_eq!(body["branch"], "main");
+        assert_eq!(body["commit_message"], "Add README");
+        assert_eq!(body["content"], "# Hello");
+        assert_eq!(body["encoding"], "text");
+    }
+
+    #[tokio::test]
+    async fn file_update_puts_body_with_last_commit_id() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/api/v4/projects/42/repository/files/src%2Fa.rs"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "file_path": "src/a.rs" })),
+            )
+            .mount(&server)
+            .await;
+
+        file_update(
+            &mock_client(&server),
+            FileUpdateParams {
+                project_id: "42".into(),
+                file_path: "src/a.rs".into(),
+                branch: "main".into(),
+                commit_message: "Update a.rs".into(),
+                content: "fn main() {}".into(),
+                encoding: None,
+                author_name: None,
+                author_email: None,
+                execute_filemode: None,
+                last_commit_id: Some("abc123".into()),
+                start_branch: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let body = captured_body(
+            &server.received_requests().await.unwrap(),
+            wiremock::http::Method::PUT,
+        );
+        assert_eq!(body["last_commit_id"], "abc123");
+        assert!(body.get("encoding").is_none());
+    }
+
+    #[tokio::test]
+    async fn file_delete_sends_delete_with_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/api/v4/projects/42/repository/files/old%2Ffile.txt"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+
+        file_delete(
+            &mock_client(&server),
+            FileDeleteParams {
+                project_id: "42".into(),
+                file_path: "old/file.txt".into(),
+                branch: "main".into(),
+                commit_message: "Drop file".into(),
+                author_name: None,
+                author_email: None,
+                last_commit_id: None,
+                start_branch: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let body = captured_body(
+            &server.received_requests().await.unwrap(),
+            wiremock::http::Method::DELETE,
+        );
+        assert_eq!(body["branch"], "main");
+        assert_eq!(body["commit_message"], "Drop file");
+    }
+
+    #[tokio::test]
+    async fn file_get_propagates_404() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/repository/files/ghost.rs"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+
+        let err = file_get(
+            &mock_client(&server),
+            FileGetParams {
+                project_id: "42".into(),
+                file_path: "ghost.rs".into(),
+                ref_name: "main".into(),
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, crate::client::GitlabError::Api { .. }));
+    }
+}

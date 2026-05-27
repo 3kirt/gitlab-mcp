@@ -621,3 +621,134 @@ pub async fn snippet_note_emoji_delete(
     );
     client.delete(&path).await
 }
+
+// --------------------------------------------------------------------------
+// Tests
+// --------------------------------------------------------------------------
+//
+// These tests cover URL routing across the six emoji-reaction families. The
+// real failure mode this guards against is path-template mix-ups (e.g. the
+// issue family accidentally hitting the merge_requests URL after a refactor),
+// so the assertions are deliberately path-shape focused. One representative
+// from each family + the deepest nested family (issue notes) is enough; the
+// other families share identical structure.
+
+#[cfg(test)]
+mod tests {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::{
+        IssueEmojiCreateParams, IssueNoteEmojiCreateParams, MrEmojiDeleteParams,
+        SnippetEmojiListParams, issue_emoji_create, issue_note_emoji_create, mr_emoji_delete,
+        snippet_emoji_list,
+    };
+    use crate::client::GitlabClient;
+    use crate::tools::PaginationParams;
+
+    fn mock_client(server: &MockServer) -> GitlabClient {
+        GitlabClient::new(server.uri(), "test-token").unwrap()
+    }
+
+    #[tokio::test]
+    async fn issue_emoji_create_hits_issue_award_emoji_url_with_name_body() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v4/projects/42/issues/7/award_emoji"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+                "id": 1, "name": "thumbsup"
+            })))
+            .mount(&server)
+            .await;
+
+        let item = issue_emoji_create(
+            &mock_client(&server),
+            IssueEmojiCreateParams {
+                project_id: "42".into(),
+                issue_iid: 7,
+                name: "thumbsup".into(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(item["name"], "thumbsup");
+
+        let reqs = server.received_requests().await.unwrap();
+        let body = reqs
+            .iter()
+            .find(|r| r.method == wiremock::http::Method::POST)
+            .and_then(|r| r.body_json::<serde_json::Value>().ok())
+            .expect("POST request not found");
+        assert_eq!(body["name"], "thumbsup");
+    }
+
+    #[tokio::test]
+    async fn mr_emoji_delete_hits_merge_requests_award_emoji_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/api/v4/projects/42/merge_requests/3/award_emoji/99"))
+            .respond_with(ResponseTemplate::new(204))
+            .mount(&server)
+            .await;
+
+        mr_emoji_delete(
+            &mock_client(&server),
+            MrEmojiDeleteParams {
+                project_id: "42".into(),
+                merge_request_iid: 3,
+                award_id: 99,
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn snippet_emoji_list_hits_snippets_award_emoji_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/snippets/5/award_emoji"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
+            .mount(&server)
+            .await;
+
+        snippet_emoji_list(
+            &mock_client(&server),
+            SnippetEmojiListParams {
+                project_id: "42".into(),
+                snippet_id: 5,
+                pagination: PaginationParams {
+                    page: None,
+                    per_page: None,
+                },
+            },
+        )
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn issue_note_emoji_create_hits_nested_notes_award_emoji_url() {
+        // Deepest-nested family — the easiest to break by miswriting the path template.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v4/projects/42/issues/7/notes/11/award_emoji"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+                "id": 1, "name": "tada"
+            })))
+            .mount(&server)
+            .await;
+
+        issue_note_emoji_create(
+            &mock_client(&server),
+            IssueNoteEmojiCreateParams {
+                project_id: "42".into(),
+                issue_iid: 7,
+                note_id: 11,
+                name: "tada".into(),
+            },
+        )
+        .await
+        .unwrap();
+    }
+}
