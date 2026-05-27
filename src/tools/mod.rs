@@ -1421,6 +1421,26 @@ impl GitlabMcpServer {
     }
 
     #[tool(
+        description = "Assign an issue to a GitLab epic. Required: group_id (numeric ID or full namespace path), epic_iid (epic's IID from the URL), issue_id (the global numeric issue ID — not the project-scoped IID; use gitlab_issues_get to find it). Returns the epic-issue association object, which includes an `id` field (the epic_issue_id) needed to remove or reorder the issue."
+    )]
+    async fn gitlab_epics_issue_assign(
+        &self,
+        Parameters(p): Parameters<epics::EpicIssueAssignParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, epics::epic_issue_assign, p, "epic-issue association")
+    }
+
+    #[tool(
+        description = "Remove an issue from a GitLab epic. Required: group_id (numeric ID or full namespace path), epic_iid (epic's IID from the URL), epic_issue_id (the association ID — the `id` field returned by gitlab_epics_get in the issues array, or by gitlab_epics_issue_assign). Returns the deleted association object."
+    )]
+    async fn gitlab_epics_issue_remove(
+        &self,
+        Parameters(p): Parameters<epics::EpicIssueRemoveParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, epics::epic_issue_remove, p, "epic-issue association")
+    }
+
+    #[tool(
         description = "List snippets for the current authenticated user. Optional: created_after, created_before (ISO 8601). Paginate with page and per_page."
     )]
     async fn gitlab_snippets_list(

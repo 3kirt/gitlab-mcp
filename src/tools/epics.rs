@@ -247,6 +247,65 @@ pub async fn epic_update(client: &GitlabClient, p: EpicUpdateParams) -> Result<V
 }
 
 // --------------------------------------------------------------------------
+// Assign issue to epic
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct EpicIssueAssignParams {
+    #[schemars(description = "Group ID (numeric) or full namespace path")]
+    pub group_id: String,
+    #[schemars(description = "Epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`)")]
+    pub epic_iid: u64,
+    #[schemars(
+        description = "Global numeric issue ID (not the project-scoped IID — use issue_get to find it)"
+    )]
+    pub issue_id: u64,
+}
+
+pub async fn epic_issue_assign(
+    client: &GitlabClient,
+    p: EpicIssueAssignParams,
+) -> Result<Value, GitlabError> {
+    let gid = encode_namespace_id(&p.group_id);
+    let iid = p.epic_iid;
+    let issue_id = p.issue_id;
+    client
+        .post(
+            &format!("/api/v4/groups/{gid}/epics/{iid}/issues/{issue_id}"),
+            &serde_json::json!({}),
+        )
+        .await
+}
+
+// --------------------------------------------------------------------------
+// Remove issue from epic
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct EpicIssueRemoveParams {
+    #[schemars(description = "Group ID (numeric) or full namespace path")]
+    pub group_id: String,
+    #[schemars(description = "Epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`)")]
+    pub epic_iid: u64,
+    #[schemars(
+        description = "Epic-issue association ID (the `id` field from the issue list in epic_get, not the issue's own ID)"
+    )]
+    pub epic_issue_id: u64,
+}
+
+pub async fn epic_issue_remove(
+    client: &GitlabClient,
+    p: EpicIssueRemoveParams,
+) -> Result<Value, GitlabError> {
+    let gid = encode_namespace_id(&p.group_id);
+    let iid = p.epic_iid;
+    let eid = p.epic_issue_id;
+    client
+        .delete_json(&format!("/api/v4/groups/{gid}/epics/{iid}/issues/{eid}"))
+        .await
+}
+
+// --------------------------------------------------------------------------
 // Delete epic
 // --------------------------------------------------------------------------
 
@@ -276,8 +335,9 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{
-        EpicCreateParams, EpicDeleteParams, EpicGetParams, EpicUpdateParams, EpicsListParams,
-        epic_create, epic_delete, epic_get, epic_update, epics_list,
+        EpicCreateParams, EpicDeleteParams, EpicGetParams, EpicIssueAssignParams,
+        EpicIssueRemoveParams, EpicUpdateParams, EpicsListParams, epic_create, epic_delete,
+        epic_get, epic_issue_assign, epic_issue_remove, epic_update, epics_list,
     };
     use crate::client::GitlabClient;
 
@@ -694,6 +754,114 @@ mod tests {
             .and_then(|r| r.body_json::<serde_json::Value>().ok())
             .expect("PUT request not found");
         assert_eq!(put_body["parent_id"], 0);
+    }
+
+    // ------------------------------------------------------------------
+    // epic_issue_assign
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn epic_issue_assign_posts_and_returns_association() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v4/groups/mygroup/epics/5/issues/101"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+                "id": 999,
+                "epic": { "iid": 5, "title": "Big Feature" },
+                "issue": { "id": 101, "iid": 1, "title": "Sub-issue" }
+            })))
+            .mount(&server)
+            .await;
+
+        let item = epic_issue_assign(
+            &mock_client(&server),
+            EpicIssueAssignParams {
+                group_id: "mygroup".into(),
+                epic_iid: 5,
+                issue_id: 101,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(item["id"], 999);
+        assert_eq!(item["issue"]["title"], "Sub-issue");
+    }
+
+    #[tokio::test]
+    async fn epic_issue_assign_propagates_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v4/groups/mygroup/epics/5/issues/999"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+
+        let err = epic_issue_assign(
+            &mock_client(&server),
+            EpicIssueAssignParams {
+                group_id: "mygroup".into(),
+                epic_iid: 5,
+                issue_id: 999,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, crate::client::GitlabError::Api { .. }));
+    }
+
+    // ------------------------------------------------------------------
+    // epic_issue_remove
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn epic_issue_remove_deletes_and_returns_association() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/api/v4/groups/mygroup/epics/5/issues/999"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": 999,
+                "epic": { "iid": 5, "title": "Big Feature" },
+                "issue": { "id": 101, "iid": 1, "title": "Sub-issue" }
+            })))
+            .mount(&server)
+            .await;
+
+        let item = epic_issue_remove(
+            &mock_client(&server),
+            EpicIssueRemoveParams {
+                group_id: "mygroup".into(),
+                epic_iid: 5,
+                epic_issue_id: 999,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(item["id"], 999);
+        assert_eq!(item["issue"]["title"], "Sub-issue");
+    }
+
+    #[tokio::test]
+    async fn epic_issue_remove_propagates_404() {
+        let server = MockServer::start().await;
+        Mock::given(method("DELETE"))
+            .and(path("/api/v4/groups/mygroup/epics/5/issues/404"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+
+        let err = epic_issue_remove(
+            &mock_client(&server),
+            EpicIssueRemoveParams {
+                group_id: "mygroup".into(),
+                epic_iid: 5,
+                epic_issue_id: 404,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, crate::client::GitlabError::Api { .. }));
     }
 
     // ------------------------------------------------------------------
