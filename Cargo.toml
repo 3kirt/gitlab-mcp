@@ -1,6 +1,6 @@
 [package]
 name = "gitlab-mcp"
-version = "0.15.0"
+version = "0.16.0"
 edition = "2024"
 description = "An MCP server that exposes the GitLab API as tools for Claude and other MCP clients"
 license = "GPL-3.0"

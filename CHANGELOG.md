@@ -4,7 +4,7 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
-## [Unreleased]
+## [0.16.0] — 2026-05-27
 
 ### Added
 - **Epic-issue linking** — two new tools: `gitlab_epics_issue_assign`
