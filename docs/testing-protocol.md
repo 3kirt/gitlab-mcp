@@ -1,8 +1,8 @@
 # GitLab MCP Testing Protocol
 
-This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, Epics, Pipeline Schedules, Snippets, Search, Groups, and Metadata API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics, group search, and groups).
+This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, MR Approvals, Repository/Files, Epics, Epic Issues, Pipeline Schedules, Snippets, Search, Groups, and Metadata API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics, group search, and groups).
 
-**Automated coverage (not retested here):** `encode_namespace_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with child-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) are covered by wiremock tests. For snippets, `snippet_file_raw` path encoding (slash → `%2F` in `file_path`) is covered by two wiremock tests — one with a plain path and one with a sub-directory path. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
+**Automated coverage (not retested here):** `encode_namespace_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with child-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) plus epic-issue assign (POST returns association object) and epic-issue remove (DELETE returns deleted association) are covered by wiremock tests. For MR approvals, both `mr_approve` (POST → JSON body) and `mr_unapprove` (POST → no body via `post_void`) are covered by wiremock tests. For snippets, `snippet_file_raw` path encoding (slash → `%2F` in `file_path`) is covered by two wiremock tests — one with a plain path and one with a sub-directory path. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
 
 ---
 
@@ -1064,6 +1064,47 @@ gitlab_mrs_merge(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid 
 Returned `state == "merged"`, `merged_at` non-null, `merge_commit_sha` present.
 
 > After Section 17, proceed to Section 11 (Branches — Delete Merged).
+
+---
+
+## Section 17B: Merge Requests — Approve and Unapprove
+
+Operates on `mr-seed-1` (open, not merged). The approval state is scoped to the authenticated user — only the approving user can unapprove.
+
+### 17B.1 Approve an MR
+```
+gitlab_mrs_approve(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid of mr-seed-1>)
+```
+Returns the approval state object. Verify:
+- `approvals_left` is a non-negative integer (may be 0 if now fully approved).
+- `approved_by` is a non-empty array; at least one entry has `user.username` matching the token owner.
+
+### 17B.2 Approve with sha guard
+Get the current HEAD SHA from `gitlab_mrs_get`:
+```
+gitlab_mrs_get(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid of mr-seed-1>)
+```
+Record `sha`. Then:
+```
+gitlab_mrs_approve(
+  project_id="3kirt1/gitlab-mcp-testing",
+  merge_request_iid=<iid of mr-seed-1>,
+  sha=<recorded sha>
+)
+```
+Succeeds (SHA matches current HEAD). Returns the same approval state shape as 17B.1.
+
+### 17B.3 Unapprove an MR
+```
+gitlab_mrs_unapprove(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid of mr-seed-1>)
+```
+Returns the success text message `"merge request unapproved"`. A subsequent `gitlab_mrs_approve` call succeeds again, confirming the unapproval took effect.
+
+### 17B.4 Approve a non-existent MR
+```
+gitlab_mrs_approve(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=999999)
+```
+Returns a `404` API error.
 
 ---
 

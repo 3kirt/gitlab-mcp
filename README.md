@@ -146,12 +146,16 @@ assignee/author IDs, and ISO 8601 created/updated date ranges.
 
 ### Merge Requests
 
-Full CRUD plus accept/merge, and a discussions subsystem covering threaded
-comments, inline diff notes with `position` (file, line, base/head/start SHA),
-note add/edit/delete, and resolve/unresolve. `gitlab_mrs_get` enriches the
-GitLab payload with a `closes_issues` array (issues this MR will close on
-merge) and a `related_issues` array (all linked + closing issues;
-Premium/Ultimate — empty on lower tiers).
+Full CRUD plus accept/merge, approve/unapprove, and a discussions subsystem
+covering threaded comments, inline diff notes with `position` (file, line,
+base/head/start SHA), note add/edit/delete, and resolve/unresolve.
+`gitlab_mrs_approve` approves a merge request on behalf of the current user and
+returns the updated approval state (`approvals_left`, `approved_by`); an
+optional `sha` parameter guards against approving a since-updated MR.
+`gitlab_mrs_unapprove` removes the current user's approval.
+`gitlab_mrs_get` enriches the GitLab payload with a `closes_issues` array
+(issues this MR will close on merge) and a `related_issues` array (all linked +
+closing issues; Premium/Ultimate — empty on lower tiers).
 
 ### Branches
 
