@@ -32,6 +32,7 @@ pub mod pipelines;
 pub mod projects;
 pub mod repositories;
 pub mod repository_files;
+pub mod runners;
 pub mod search;
 mod slim;
 pub mod snippets;
@@ -1939,6 +1940,76 @@ impl GitlabMcpServer {
             p,
             "snippet note emoji reaction"
         )
+    }
+
+    #[tool(
+        description = "List runners available to the current authenticated user. Optional filters: type (\"instance_type\", \"group_type\", \"project_type\"), status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page."
+    )]
+    async fn gitlab_runners_list(
+        &self,
+        Parameters(p): Parameters<runners::RunnersListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, runners::runners_list, p, "runners")
+    }
+
+    #[tool(
+        description = "List all runners registered on the GitLab instance (administrators only). Optional filters: type (\"instance_type\", \"group_type\", \"project_type\"), status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page."
+    )]
+    async fn gitlab_runners_all_list(
+        &self,
+        Parameters(p): Parameters<runners::RunnersAllListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, runners::runners_all_list, p, "runners")
+    }
+
+    #[tool(
+        description = "Get details of a single GitLab runner by ID. Returns architecture, description, ip_address, status, tag_list, version, platform, projects, and more."
+    )]
+    async fn gitlab_runners_get(
+        &self,
+        Parameters(p): Parameters<runners::RunnerGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, runners::runner_get, p, "runner")
+    }
+
+    #[tool(
+        description = "List jobs processed by a specific GitLab runner. Optional filters: system_id (runner manager), status (\"running\", \"success\", \"failed\", \"canceled\"), sort (\"asc\" or \"desc\"). Paginate with page and per_page."
+    )]
+    async fn gitlab_runners_jobs_list(
+        &self,
+        Parameters(p): Parameters<runners::RunnerJobsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, runners::runner_jobs_list, p, "runner jobs")
+    }
+
+    #[tool(
+        description = "List runner managers (individual machines) registered under a GitLab runner. Returns system_id, version, platform, architecture, ip_address, status, and last contact time. Paginate with page and per_page."
+    )]
+    async fn gitlab_runners_managers_list(
+        &self,
+        Parameters(p): Parameters<runners::RunnerManagersListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, runners::runner_managers_list, p, "runner managers")
+    }
+
+    #[tool(
+        description = "List runners available to a GitLab project. project_id accepts a numeric ID or namespace path. Optional filters: type (\"instance_type\", \"group_type\", \"project_type\"), status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page."
+    )]
+    async fn gitlab_runners_list_for_project(
+        &self,
+        Parameters(p): Parameters<runners::ProjectRunnersListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, runners::project_runners_list, p, "project runners")
+    }
+
+    #[tool(
+        description = "List runners available to a GitLab group. group_id accepts a numeric ID or namespace path. Optional filters: status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page."
+    )]
+    async fn gitlab_runners_list_for_group(
+        &self,
+        Parameters(p): Parameters<runners::GroupRunnersListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, runners::group_runners_list, p, "group runners")
     }
 }
 
