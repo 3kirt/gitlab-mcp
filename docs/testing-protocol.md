@@ -1,8 +1,8 @@
 # GitLab MCP Testing Protocol
 
-This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, MR Approvals, Repository/Files, Epics, Epic Issues, Pipeline Schedules, Snippets, Search, Groups, and Metadata API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics, group search, and groups).
+This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, MR Approvals, Repository/Files, Epics, Epic Issues, Pipeline Schedules, Snippets, Search, Groups, Projects, and Metadata API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics, group search, and groups).
 
-**Automated coverage (not retested here):** `encode_namespace_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with child-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) plus epic-issue assign (POST returns association object) and epic-issue remove (DELETE returns deleted association) are covered by wiremock tests. For MR approvals, both `mr_approve` (POST → JSON body) and `mr_unapprove` (POST → no body via `post_void`) are covered by wiremock tests. For snippets, `snippet_file_raw` path encoding (slash → `%2F` in `file_path`) is covered by two wiremock tests — one with a plain path and one with a sub-directory path. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
+**Automated coverage (not retested here):** `encode_namespace_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with child-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) plus epic-issue assign (POST returns association object) and epic-issue remove (DELETE returns deleted association) are covered by wiremock tests. For MR approvals, both `mr_approve` (POST → JSON body) and `mr_unapprove` (POST → no body via `post_void`) are covered by wiremock tests. For projects, `project_get` (GET by path or numeric ID, optional `statistics` query param) is covered by four wiremock tests. For snippets, `snippet_file_raw` path encoding (slash → `%2F` in `file_path`) is covered by two wiremock tests — one with a plain path and one with a sub-directory path. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
 
 ---
 
@@ -178,6 +178,21 @@ Check these on every response.
 | `issues` | Array of issue objects (may be empty; populated from `/groups/:id/epics/:iid/issues`) |
 
 > **Key differences from other tools:** epic tools take `group_id` (numeric ID or full namespace path) instead of `project_id`, and `epic_iid` (the IID from the URL) on get/update/delete. Group-level epics require GitLab Premium/Ultimate. The REST Epics API is deprecated since GitLab 17.0 but remains functional on all EE 18.x versions; it is preferred over the work-items GraphQL API for EE compatibility.
+
+**Projects (get):**
+
+| Property | What to verify |
+|---|---|
+| `id` | Positive integer (numeric project ID) |
+| `name` | Non-empty string |
+| `path` | Non-empty string (short name, no namespace) |
+| `path_with_namespace` | Non-empty string (e.g. `"mygroup/myrepo"`) |
+| `visibility` | One of `"public"`, `"internal"`, or `"private"` |
+| `default_branch` | Non-empty string (e.g. `"main"`) |
+| `web_url` | Non-empty URL |
+| `http_url_to_repo` | Non-empty URL ending in `.git` |
+| `namespace` | Object with at least `id`, `name`, `path` |
+| `created_at` | Non-null ISO 8601 datetime |
 
 **Groups (list and get):**
 
@@ -3144,5 +3159,35 @@ Returned object does not contain a `projects` key (or `projects` is absent/null)
 ### 78.5 Get a non-existent group
 ```
 gitlab_groups_get(group_id="nonexistent-group-xyz-abc")
+```
+Returns a `404` API error.
+
+---
+
+## Section 79: Projects — Get
+
+> No seed data is required. The `3kirt1/gitlab-mcp-testing` project (numeric ID `82279422`) must be accessible to the test token.
+
+### 79.1 Get by namespace path
+```
+gitlab_projects_get(project_id="3kirt1/gitlab-mcp-testing")
+```
+Returns a project object. All project universal invariants satisfied. `path == "gitlab-mcp-testing"`, `path_with_namespace == "3kirt1/gitlab-mcp-testing"`, `namespace.path == "3kirt1"`.
+
+### 79.2 Get by numeric ID
+```
+gitlab_projects_get(project_id="82279422")
+```
+Returns the same project as 79.1. Confirms numeric project ID is accepted in the REST path.
+
+### 79.3 Get with statistics
+```
+gitlab_projects_get(project_id="3kirt1/gitlab-mcp-testing", statistics=true)
+```
+Returned object contains a `statistics` key. `statistics.commit_count` is a non-negative integer. `statistics.repository_size` is a non-negative integer.
+
+### 79.4 Get a non-existent project
+```
+gitlab_projects_get(project_id="nonexistent-group-xyz/nonexistent-repo-abc")
 ```
 Returns a `404` API error.

@@ -198,6 +198,13 @@ Tree listing, blob get (with metadata + content) and raw blob, compare refs
 (commits + diffs), contributors, merge-base, changelog get/add, and repository
 health.
 
+### Projects
+
+Read-only access to GitLab projects. `gitlab_projects_get` returns full details
+for a project by numeric ID or full namespace path (e.g. `mygroup/myrepo`).
+Optional `statistics=true` embeds commit and storage counts (requires Reporter
+role or higher).
+
 ### Groups
 
 Read-only access to GitLab groups. `gitlab_groups_list` returns all groups accessible

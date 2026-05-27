@@ -29,6 +29,7 @@ pub mod merge_requests;
 pub mod metadata;
 pub mod pipeline_schedules;
 pub mod pipelines;
+pub mod projects;
 pub mod repositories;
 pub mod repository_files;
 pub mod search;
@@ -1397,6 +1398,16 @@ impl GitlabMcpServer {
         Parameters(p): Parameters<groups::GroupGetParams>,
     ) -> Result<CallToolResult, McpError> {
         delegate_get!(self, groups::group_get, p, "group")
+    }
+
+    #[tool(
+        description = "Get a GitLab project by ID or namespace path. project_id accepts a numeric ID (e.g. \"42\") or a full namespace path (e.g. \"mygroup/myrepo\"). Optional: statistics=true to include commit/storage counts (requires Reporter role or higher). Returns core project details: id, name, path, path_with_namespace, description, visibility, default_branch, web_url, http_url_to_repo, namespace, created_at, and feature settings."
+    )]
+    async fn gitlab_projects_get(
+        &self,
+        Parameters(p): Parameters<projects::ProjectGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, projects::project_get, p, "project")
     }
 
     #[tool(
