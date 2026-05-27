@@ -4,6 +4,34 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.17.0] — 2026-05-27
+
+### Added
+- **Runners domain (read-only)** — seven new tools covering all runner scopes:
+  `gitlab_runners_list` (runners available to the current user),
+  `gitlab_runners_all_list` (all runners on the instance; admin only),
+  `gitlab_runners_get` (full details for a single runner),
+  `gitlab_runners_jobs_list` (jobs processed by a specific runner),
+  `gitlab_runners_managers_list` (individual machine instances registered
+  under a runner), `gitlab_runners_list_for_project` (runners available to a
+  project), and `gitlab_runners_list_for_group` (runners available to a
+  group). All list tools support `page`/`per_page` pagination; filter
+  parameters include `type`, `status`, `paused`, `tag_list`, and
+  `version_prefix` where applicable.
+
+### Changed
+- Updated `reqwest` to `0.13.4`; removed the obsolete `webpki-roots` feature
+  (dropped upstream in that release).
+
+### Documentation
+- README Available Tools section and intro updated for runners support.
+- Testing protocol extended with runner universal invariants (Sections 80–86)
+  and Workflow N (runner discovery across scopes).
+- Release skill updated to include dependency audit (`cargo outdated`) and
+  security check (`cargo audit`) steps before the quality gate.
+
+---
+
 ## [0.16.0] — 2026-05-27
 
 ### Added

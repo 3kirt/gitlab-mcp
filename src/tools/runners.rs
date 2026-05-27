@@ -26,9 +26,7 @@ pub struct RunnersListParams {
     pub paused: Option<bool>,
     #[schemars(description = "Filter by runner tags; all listed tags must match")]
     pub tag_list: Option<Vec<String>>,
-    #[schemars(
-        description = "Filter runners by version prefix (e.g. \"15.0\", \"16.1.241\")"
-    )]
+    #[schemars(description = "Filter runners by version prefix (e.g. \"15.0\", \"16.1.241\")")]
     pub version_prefix: Option<String>,
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -69,9 +67,7 @@ pub struct RunnersAllListParams {
     pub paused: Option<bool>,
     #[schemars(description = "Filter by runner tags; all listed tags must match")]
     pub tag_list: Option<Vec<String>>,
-    #[schemars(
-        description = "Filter runners by version prefix (e.g. \"15.0\", \"16.1.241\")"
-    )]
+    #[schemars(description = "Filter runners by version prefix (e.g. \"15.0\", \"16.1.241\")")]
     pub version_prefix: Option<String>,
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -113,9 +109,7 @@ pub async fn runner_get(client: &GitlabClient, p: RunnerGetParams) -> Result<Val
 pub struct RunnerJobsListParams {
     #[schemars(description = "Runner ID")]
     pub id: u64,
-    #[schemars(
-        description = "Machine system ID used to filter to a specific runner manager"
-    )]
+    #[schemars(description = "Machine system ID used to filter to a specific runner manager")]
     pub system_id: Option<String>,
     #[schemars(
         description = "Filter by job status: \"running\", \"success\", \"failed\", or \"canceled\""
@@ -189,9 +183,7 @@ pub struct ProjectRunnersListParams {
     pub paused: Option<bool>,
     #[schemars(description = "Filter by runner tags; all listed tags must match")]
     pub tag_list: Option<Vec<String>>,
-    #[schemars(
-        description = "Filter runners by version prefix (e.g. \"15.0\", \"16.1.241\")"
-    )]
+    #[schemars(description = "Filter runners by version prefix (e.g. \"15.0\", \"16.1.241\")")]
     pub version_prefix: Option<String>,
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -235,9 +227,7 @@ pub struct GroupRunnersListParams {
     pub paused: Option<bool>,
     #[schemars(description = "Filter by runner tags; all listed tags must match")]
     pub tag_list: Option<Vec<String>>,
-    #[schemars(
-        description = "Filter runners by version prefix (e.g. \"15.0\", \"16.1.241\")"
-    )]
+    #[schemars(description = "Filter runners by version prefix (e.g. \"15.0\", \"16.1.241\")")]
     pub version_prefix: Option<String>,
     #[serde(flatten)]
     pub pagination: PaginationParams,
@@ -316,9 +306,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/api/v4/runners/all"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!([{"id": 2}])),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([{"id": 2}])))
             .mount(&server)
             .await;
 
@@ -343,13 +331,11 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/api/v4/runners/42"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                    "id": 42,
-                    "description": "my-runner",
-                    "status": "online"
-                })),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "id": 42,
+                "description": "my-runner",
+                "status": "online"
+            })))
             .mount(&server)
             .await;
 
@@ -437,9 +423,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/api/v4/projects/mygroup%2Fmyrepo/runners"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!([{"id": 5}])),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([{"id": 5}])))
             .mount(&server)
             .await;
 
@@ -493,9 +477,7 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
             .and(path("/api/v4/groups/mygroup%2Fsub/runners"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_json(serde_json::json!([])),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([])))
             .mount(&server)
             .await;
 
