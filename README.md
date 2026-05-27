@@ -210,7 +210,11 @@ accepts a numeric ID or a full namespace path; `epic_iid` is the per-group IID
 shown in the URL. Full CRUD plus `state_event`-based open/close, parent epic
 linking (`parent_epic_iid=0` clears the parent), and date widget management.
 `gitlab_epics_get` embeds an `issues` array (the epic's child issues) via the
-epic's `/issues` endpoint. Pagination is standard `page`/`per_page`. The REST endpoint is
+epic's `/issues` endpoint. Issues can be linked to or unlinked from an epic via
+`gitlab_epics_issue_assign` (takes the **global** issue ID) and
+`gitlab_epics_issue_remove` (takes the **association** ID — the `id` field of
+each entry in the embedded `issues` array, not the issue's own ID).
+Pagination is standard `page`/`per_page`. The REST endpoint is
 deprecated since GitLab 17.0 but remains functional on EE 18.x, where it is
 the only working surface for epics.
 

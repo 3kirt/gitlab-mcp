@@ -1437,7 +1437,13 @@ impl GitlabMcpServer {
         &self,
         Parameters(p): Parameters<epics::EpicIssueRemoveParams>,
     ) -> Result<CallToolResult, McpError> {
-        delegate_get!(self, epics::epic_issue_remove, p, "epic-issue association")
+        delegate_json!(
+            self,
+            epics::epic_issue_remove,
+            p,
+            "removing",
+            "epic-issue association"
+        )
     }
 
     #[tool(

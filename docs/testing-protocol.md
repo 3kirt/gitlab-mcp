@@ -1691,9 +1691,9 @@ Returns a success text message. A subsequent `gitlab_issues_notes_get` with the 
 
 ---
 
-## Epics (Sections 43–47 + Workflow H)
+## Epics (Sections 43–47B + Workflow H)
 
-> **GitLab EE regression target (issue #7):** Sections 43–47 should ideally be run against a GitLab EE 18.x instance with a group that has the Epics feature enabled (Premium/Ultimate). The specific regression to confirm: `gitlab_epics_get` previously returned a `500 Internal Server Error` on GitLab 18.x-ee because it used the work-items GraphQL API which rejected Epic GIDs. The fix migrates all epic operations to the REST API (`/api/v4/groups/:id/epics`), which remains functional on all EE 18.x versions. All calls in Sections 43–47 and Workflow H should succeed without any 500 error on EE 18.x. Substitute the test instance and group path for `3kirt1` throughout.
+> **GitLab EE regression target (issue #7):** Sections 43–47B should ideally be run against a GitLab EE 18.x instance with a group that has the Epics feature enabled (Premium/Ultimate). The specific regression to confirm: `gitlab_epics_get` previously returned a `500 Internal Server Error` on GitLab 18.x-ee because it used the work-items GraphQL API which rejected Epic GIDs. The fix migrates all epic operations to the REST API (`/api/v4/groups/:id/epics`), which remains functional on all EE 18.x versions. All calls in Sections 43–47B and Workflow H should succeed without any 500 error on EE 18.x. Substitute the test instance and group path for `3kirt1` throughout.
 
 ---
 
@@ -1899,6 +1899,69 @@ gitlab_epics_delete(group_id="3kirt1", epic_iid=<throwaway-iid>)
 Returns a success text message. A subsequent `gitlab_epics_get(group_id="3kirt1", epic_iid=<throwaway-iid>)` returns a `404` API error.
 
 Delete the scratch epics from Section 45 (`epic-scratch-iid`, `epic-desc-iid`, `epic-dates-iid`, `epic-child-iid`) once testing is complete.
+
+---
+
+## Section 47B: Epic Issues — Assign and Remove
+
+These tools link issues to and from an epic via
+`POST/DELETE /groups/:id/epics/:iid/issues/...`. The two ID fields trip people
+up — read carefully:
+
+- **`issue_id`** (assign) is the **global** numeric issue ID (the top-level `id`
+  field returned by `gitlab_issues_get`), **not** the project-scoped IID.
+- **`epic_issue_id`** (remove) is the **association** ID — the `id` field on
+  each entry in the `issues` array returned by `gitlab_epics_get`, or the `id`
+  field returned by `gitlab_epics_issue_assign`. It is **not** the issue's own
+  ID.
+
+For these cases, look up `seed-4`'s global ID first:
+```
+gitlab_issues_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-4>)
+```
+Record the top-level `id` as `seed-4-global-id`.
+
+### 47B.1 Assign an issue to an epic
+```
+gitlab_epics_issue_assign(group_id="3kirt1", epic_iid=<epic-1-iid>, issue_id=<seed-4-global-id>)
+```
+Returns the association object with a numeric `id`, plus `epic` and `issue`
+sub-objects. Record `id` as `epic-1-seed-4-assoc-id`.
+
+Verify via `gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-1-iid>)` — the
+`issues` array now contains an entry whose `iid` equals `seed-4`'s IID, and
+whose `id` (the association ID) equals `epic-1-seed-4-assoc-id`.
+
+### 47B.2 Assign rejects an unknown issue ID
+```
+gitlab_epics_issue_assign(group_id="3kirt1", epic_iid=<epic-1-iid>, issue_id=999999999)
+```
+Returns a `404` API error (issue not found / not accessible).
+
+### 47B.3 Remove rejects the wrong ID type (footgun check)
+Attempt to remove using `seed-4`'s **global issue ID** instead of the
+association ID:
+```
+gitlab_epics_issue_remove(group_id="3kirt1", epic_iid=<epic-1-iid>, epic_issue_id=<seed-4-global-id>)
+```
+Returns a `404` API error — confirms `epic_issue_id` must be the association
+ID, not the issue ID. (Skip if the two IDs happen to coincide on your test
+instance.)
+
+### 47B.4 Remove an issue from an epic
+```
+gitlab_epics_issue_remove(group_id="3kirt1", epic_iid=<epic-1-iid>, epic_issue_id=<epic-1-seed-4-assoc-id>)
+```
+Returns the deleted association object. Verify via
+`gitlab_epics_get(group_id="3kirt1", epic_iid=<epic-1-iid>)` — the `issues`
+array no longer contains `seed-4`.
+
+### 47B.5 Remove on an already-removed association
+Re-run 47B.4 with the same `epic_issue_id`:
+```
+gitlab_epics_issue_remove(group_id="3kirt1", epic_iid=<epic-1-iid>, epic_issue_id=<epic-1-seed-4-assoc-id>)
+```
+Returns a `404` API error.
 
 ---
 

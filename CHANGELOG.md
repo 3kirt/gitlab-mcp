@@ -4,6 +4,23 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Epic-issue linking** — two new tools: `gitlab_epics_issue_assign`
+  (`POST /groups/:id/epics/:iid/issues/:issue_id`) and
+  `gitlab_epics_issue_remove`
+  (`DELETE /groups/:id/epics/:iid/issues/:epic_issue_id`). Assign takes the
+  **global** issue ID (not the project-scoped IID); remove takes the
+  **association** ID returned in the `id` field of the issues array from
+  `gitlab_epics_get` (or from the assign response).
+
+### Documentation
+- README Epics section updated to mention issue assignment/removal.
+- Testing protocol extended with cases for the two new tools.
+
+---
+
 ## [0.15.0] — 2026-05-26
 
 ### Added

@@ -257,7 +257,7 @@ pub struct EpicIssueAssignParams {
     #[schemars(description = "Epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`)")]
     pub epic_iid: u64,
     #[schemars(
-        description = "Global numeric issue ID (not the project-scoped IID — use issue_get to find it)"
+        description = "Global numeric issue ID (not the project-scoped IID — use gitlab_issues_get to find it)"
     )]
     pub issue_id: u64,
 }
