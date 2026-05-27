@@ -324,6 +324,60 @@ pub async fn mr_merge(client: &GitlabClient, p: MrMergeParams) -> Result<Value, 
 }
 
 // --------------------------------------------------------------------------
+// Approve merge request
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct MrApproveParams {
+    #[schemars(description = "Project ID or URL-encoded path")]
+    pub project_id: String,
+    #[schemars(description = "Merge request internal ID (IID)")]
+    pub merge_request_iid: u64,
+    #[schemars(
+        description = "The HEAD commit SHA of the merge request. If specified, GitLab rejects the approval if the MR has since been updated."
+    )]
+    pub sha: Option<String>,
+    #[schemars(
+        description = "Current user's password. Required only if re-authentication is enabled on the instance."
+    )]
+    pub approval_password: Option<String>,
+}
+
+pub async fn mr_approve(client: &GitlabClient, p: MrApproveParams) -> Result<Value, GitlabError> {
+    let path = format!(
+        "/api/v4/projects/{}/merge_requests/{}/approve",
+        encode_namespace_id(&p.project_id),
+        p.merge_request_iid
+    );
+    let body = BodyBuilder::new()
+        .opt("sha", p.sha)
+        .opt("approval_password", p.approval_password)
+        .build();
+    client.post(&path, &body).await
+}
+
+// --------------------------------------------------------------------------
+// Unapprove merge request
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct MrUnapproveParams {
+    #[schemars(description = "Project ID or URL-encoded path")]
+    pub project_id: String,
+    #[schemars(description = "Merge request internal ID (IID)")]
+    pub merge_request_iid: u64,
+}
+
+pub async fn mr_unapprove(client: &GitlabClient, p: MrUnapproveParams) -> Result<(), GitlabError> {
+    let path = format!(
+        "/api/v4/projects/{}/merge_requests/{}/unapprove",
+        encode_namespace_id(&p.project_id),
+        p.merge_request_iid
+    );
+    client.post_void(&path, &serde_json::json!({})).await
+}
+
+// --------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------
 
@@ -332,7 +386,7 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::{MrGetParams, mr_get};
+    use super::{MrApproveParams, MrGetParams, MrUnapproveParams, mr_approve, mr_get, mr_unapprove};
     use crate::client::GitlabClient;
 
     fn mock_client(server: &MockServer) -> GitlabClient {
@@ -493,5 +547,107 @@ mod tests {
         assert!(
             matches!(err, crate::client::GitlabError::Api { status, .. } if status.as_u16() == 404)
         );
+    }
+
+    // ------------------------------------------------------------------
+    // mr_approve
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn mr_approve_posts_and_returns_approval_state() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v4/projects/mygroup%2Fmyrepo/merge_requests/3/approve"))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+                "id": 3,
+                "iid": 3,
+                "approvals_left": 0,
+                "approved_by": [{ "user": { "id": 1, "username": "alice" } }]
+            })))
+            .mount(&server)
+            .await;
+
+        let item = mr_approve(
+            &mock_client(&server),
+            MrApproveParams {
+                project_id: "mygroup/myrepo".into(),
+                merge_request_iid: 3,
+                sha: None,
+                approval_password: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(item["approvals_left"], 0);
+        assert_eq!(item["approved_by"][0]["user"]["username"], "alice");
+    }
+
+    #[tokio::test]
+    async fn mr_approve_propagates_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v4/projects/p/merge_requests/99/approve"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+
+        let err = mr_approve(
+            &mock_client(&server),
+            MrApproveParams {
+                project_id: "p".into(),
+                merge_request_iid: 99,
+                sha: None,
+                approval_password: None,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, crate::client::GitlabError::Api { .. }));
+    }
+
+    // ------------------------------------------------------------------
+    // mr_unapprove
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn mr_unapprove_posts_and_succeeds() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v4/projects/p/merge_requests/3/unapprove"))
+            .respond_with(ResponseTemplate::new(201))
+            .mount(&server)
+            .await;
+
+        let result = mr_unapprove(
+            &mock_client(&server),
+            MrUnapproveParams {
+                project_id: "p".into(),
+                merge_request_iid: 3,
+            },
+        )
+        .await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn mr_unapprove_propagates_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v4/projects/p/merge_requests/99/unapprove"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+
+        let err = mr_unapprove(
+            &mock_client(&server),
+            MrUnapproveParams {
+                project_id: "p".into(),
+                merge_request_iid: 99,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, crate::client::GitlabError::Api { .. }));
     }
 }

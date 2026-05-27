@@ -143,6 +143,18 @@ impl GitlabClient {
         self.handle_response(resp).await
     }
 
+    /// POST {base_url}{path} with a JSON body — returns () on success (no response body expected).
+    pub async fn post_void(&self, path: &str, body: &Value) -> Result<(), GitlabError> {
+        let url = self.url(path);
+        let resp = self.http.post(&url).json(body).send().await?;
+        let status = resp.status();
+        if !status.is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(GitlabError::Api { status, body });
+        }
+        Ok(())
+    }
+
     /// PUT {base_url}{path} with a JSON body — returns the JSON response body.
     pub async fn put(&self, path: &str, body: &Value) -> Result<Value, GitlabError> {
         let url = self.url(path);

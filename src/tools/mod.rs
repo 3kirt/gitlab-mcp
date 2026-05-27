@@ -519,6 +519,35 @@ impl GitlabMcpServer {
     }
 
     #[tool(
+        description = "Approve a GitLab merge request. Required: project_id and merge_request_iid. Optional: sha (HEAD commit SHA to guard against concurrent updates), approval_password (only needed if re-authentication is enabled). Returns the updated approval state including approvals_left and approved_by."
+    )]
+    async fn gitlab_mrs_approve(
+        &self,
+        Parameters(p): Parameters<merge_requests::MrApproveParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, merge_requests::mr_approve, p, "merge request approval")
+    }
+
+    #[tool(
+        description = "Unapprove a GitLab merge request that the current user has previously approved. Required: project_id and merge_request_iid."
+    )]
+    async fn gitlab_mrs_unapprove(
+        &self,
+        Parameters(p): Parameters<merge_requests::MrUnapproveParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let client = self.get_client()?;
+        match merge_requests::mr_unapprove(client, p).await {
+            Ok(()) => Ok(CallToolResult::success(vec![Content::text(
+                "merge request unapproved",
+            )])),
+            Err(e) => tool_error(&format!(
+                "unapproving merge request: {}",
+                e.to_tool_message()
+            )),
+        }
+    }
+
+    #[tool(
         description = "List branches for a GitLab project, sorted alphabetically. Optional filters: search (substring match) and regex (re2 regular expression). Paginate with page and per_page."
     )]
     async fn gitlab_branches_list(
