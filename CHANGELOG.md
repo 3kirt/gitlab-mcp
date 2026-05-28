@@ -4,7 +4,7 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
-## [Unreleased]
+## [0.18.0] — 2026-05-28
 
 ### Added
 - **Issue Discussions** — six new tools mirroring the existing MR
@@ -17,6 +17,13 @@ All notable changes to gitlab-mcp are documented here.
   [#8](https://github.com/3kirt/gitlab-mcp/issues/8). Issue discussions
   are non-resolvable and do not support diff-note positions or `commit_id`,
   so the surface is intentionally narrower than the MR equivalent.
+
+### Documentation
+- Document issue discussions in the README and in the testing protocol
+  (sections 87–92 + Workflow O), and bring the `test-api` skill's
+  area→section mapping back in sync with the protocol — adds rows for
+  `mr_approvals`, `epic_issues`, `groups`, `projects`, `runners`, and
+  `issue_discussions`, plus the new seed-placeholder lookups.
 
 ---
 
