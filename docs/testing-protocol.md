@@ -1,6 +1,6 @@
 # GitLab MCP Testing Protocol
 
-This document describes how to verify all Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, MR Approvals, Repository/Files, Epics, Epic Issues, Pipeline Schedules, Snippets, Search, Groups, Projects, Metadata, and Runners API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics, group search, groups, and group runners).
+This document describes how to verify all Issues, Issue Links, Issue Notes, Issue Discussions, Branches, Merge Requests, MR Discussions, MR Approvals, Repository/Files, Epics, Epic Issues, Pipeline Schedules, Snippets, Search, Groups, Projects, Metadata, and Runners API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics, group search, groups, and group runners).
 
 **Automated coverage (not retested here):** `encode_namespace_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. For runners, all seven domain functions (`runners_list`, `runners_all_list`, `runner_get`, `runner_jobs_list`, `runner_managers_list`, `project_runners_list`, `group_runners_list`) are covered by wiremock tests including path encoding, status filter forwarding, 404 propagation, and namespace path encoding for both project and group endpoints. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with child-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) plus epic-issue assign (POST returns association object) and epic-issue remove (DELETE returns deleted association) are covered by wiremock tests. For MR approvals, both `mr_approve` (POST → JSON body) and `mr_unapprove` (POST → no body via `post_void`) are covered by wiremock tests. For projects, `project_get` (GET by path or numeric ID, optional `statistics` query param) is covered by four wiremock tests. For snippets, `snippet_file_raw` path encoding (slash → `%2F` in `file_path`) is covered by two wiremock tests — one with a plain path and one with a sub-directory path. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
 
@@ -116,6 +116,20 @@ Check these on every response.
 | `notes[].body` | Non-empty string |
 | `notes[].author` | Collapsed to `{id, username, name}` in list responses |
 | `notes[].resolvable` | `true` or `false` |
+| List envelope shape | Standard pagination envelope; invariants apply to each entry in `items` |
+
+**Issue discussions:**
+
+| Property | What to verify |
+|---|---|
+| `id` | Non-empty hex string (discussion ID) |
+| `individual_note` | `true` or `false`, never `null` |
+| `notes` | Non-empty array |
+| `notes[].id` | Positive integer (note ID) |
+| `notes[].body` | Non-empty string |
+| `notes[].author` | Collapsed to `{id, username, name}` in list responses |
+| `notes[].noteable_type` | `"Issue"` |
+| `notes[].resolvable` | `false` (issue discussions are never resolvable) |
 | List envelope shape | Standard pagination envelope; invariants apply to each entry in `items` |
 
 **Issue notes:**
@@ -629,6 +643,19 @@ gitlab_mrs_update(
 ```
 Substitute the literal IID of seed-1 into the description string before
 sending. Returned `description` contains `"Closes #<iid>"`.
+
+### Step 14: Seed an Issue Discussion
+
+Create a discussion thread on seed-1 to serve as a stable seed for Sections
+87–92:
+```
+gitlab_issues_discussions_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  body="Seeded thread for issue discussion testing."
+)
+```
+Record `id` as `issue-disc-seed-1` and `notes[0].id` as `issue-disc-note-seed-1`.
 
 ---
 
@@ -3447,3 +3474,111 @@ Returns a `404` API error.
 5. `gitlab_runners_managers_list(id=<runner-id>)` — if non-empty, confirm each manager has a distinct `system_id`
 6. `gitlab_runners_jobs_list(id=<runner-id>)` — if non-empty, confirm `project.id` in each item matches a project the runner serves (from step 4)
 7. `gitlab_runners_list(status="online")` — confirm `<runner-id>` appears if and only if its `status == "online"` in the get response from step 4
+
+---
+
+## Section 87: Issue Discussions — List
+
+### 87.1 List all discussions
+```
+gitlab_issues_discussions_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>)
+```
+Returns an envelope with at least 1 item (the seeded `issue-disc-seed-1`). Each item satisfies issue discussion universal invariants.
+
+### 87.2 Paginate discussions
+```
+gitlab_issues_discussions_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>, per_page=1, page=1)
+```
+`items` contains exactly 1 discussion. Envelope reports `page == 1`, `per_page == 1`.
+
+---
+
+## Section 88: Issue Discussions — Get
+
+### 88.1 Get the seeded discussion
+```
+gitlab_issues_discussions_get(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  discussion_id=<issue-disc-seed-1>
+)
+```
+`id == issue-disc-seed-1`, `notes[0].body == "Seeded thread for issue discussion testing."`, `notes[0].id == issue-disc-note-seed-1`, `notes[0].noteable_type == "Issue"`, `notes[0].resolvable == false`.
+
+---
+
+## Section 89: Issue Discussions — Create
+
+### 89.1 Create a discussion thread
+```
+gitlab_issues_discussions_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  body="Thread for create testing."
+)
+```
+`notes[0].body == "Thread for create testing."`, `notes[0].resolvable == false`. Record `id` as `issue-disc-create-1` for use in Sections 90–92.
+
+---
+
+## Section 90: Issue Discussions — Note Create
+
+Operates on `issue-disc-create-1` from Section 89.
+
+### 90.1 Add a reply note
+```
+gitlab_issues_discussions_note_create(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  discussion_id=<issue-disc-create-1>,
+  body="Reply note for testing."
+)
+```
+Returns a note object with `body == "Reply note for testing."`, `id` is a positive integer. Record this `id` as `issue-note-reply-1`.
+
+A subsequent `gitlab_issues_discussions_get` on `issue-disc-create-1` returns `notes` with 2 entries.
+
+---
+
+## Section 91: Issue Discussions — Note Update
+
+Operates on `issue-note-reply-1` from Section 90.
+
+### 91.1 Update note body
+```
+gitlab_issues_discussions_note_update(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  discussion_id=<issue-disc-create-1>,
+  note_id=<issue-note-reply-1>,
+  body="Updated reply text."
+)
+```
+Returned `body == "Updated reply text."`.
+
+---
+
+## Section 92: Issue Discussions — Note Delete
+
+### 92.1 Delete the reply note
+```
+gitlab_issues_discussions_note_delete(
+  project_id="3kirt1/gitlab-mcp-testing",
+  issue_iid=<iid of seed-1>,
+  discussion_id=<issue-disc-create-1>,
+  note_id=<issue-note-reply-1>
+)
+```
+Returns a success text message. A subsequent `gitlab_issues_discussions_get` on `issue-disc-create-1` returns only 1 note (the original thread-starter).
+
+---
+
+## Workflow O: Issue discussion lifecycle (create → reply → edit → delete)
+
+1. `gitlab_issues_discussions_list(..., issue_iid=<iid of seed-1>)` — confirms seeded `issue-disc-seed-1` is present
+2. `gitlab_issues_discussions_create(..., issue_iid=<iid of seed-1>, body="Workflow O thread.")` — record `id` as `issue-disc-wo`
+3. `gitlab_issues_discussions_note_create(..., discussion_id=<issue-disc-wo>, body="Reply to workflow O.")` — record returned `id` as `issue-note-wo`
+4. `gitlab_issues_discussions_get(..., discussion_id=<issue-disc-wo>)` — confirm `notes` has 2 entries
+5. `gitlab_issues_discussions_note_update(..., note_id=<issue-note-wo>, body="Edited reply.")` — confirm `body == "Edited reply."`
+6. `gitlab_issues_discussions_note_delete(..., note_id=<issue-note-wo>)` — confirm success message
+7. `gitlab_issues_discussions_get(..., discussion_id=<issue-disc-wo>)` — confirm `notes` has 1 entry (original thread-starter only)

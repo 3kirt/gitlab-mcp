@@ -22,6 +22,7 @@ pub mod discussions;
 pub mod emoji_reactions;
 pub mod epics;
 pub mod groups;
+pub mod issue_discussions;
 pub mod issue_notes;
 pub mod issues;
 pub mod jobs;
@@ -458,6 +459,96 @@ impl GitlabMcpServer {
         Parameters(p): Parameters<issue_notes::IssueNoteDeleteParams>,
     ) -> Result<CallToolResult, McpError> {
         delegate_delete!(self, issue_notes::issue_note_delete, p, "issue note")
+    }
+
+    #[tool(
+        description = "List all discussion threads on a GitLab issue. Each thread contains an individual_note flag and a notes[] array. Paginate with page and per_page."
+    )]
+    async fn gitlab_issues_discussions_list(
+        &self,
+        Parameters(p): Parameters<issue_discussions::IssueDiscussionsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(
+            self,
+            issue_discussions::issue_discussions_list,
+            p,
+            "issue discussions"
+        )
+    }
+
+    #[tool(
+        description = "Get a single discussion thread on a GitLab issue by discussion ID (hex string)."
+    )]
+    async fn gitlab_issues_discussions_get(
+        &self,
+        Parameters(p): Parameters<issue_discussions::IssueDiscussionGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(
+            self,
+            issue_discussions::issue_discussion_get,
+            p,
+            "issue discussion"
+        )
+    }
+
+    #[tool(
+        description = "Start a new discussion thread on a GitLab issue. Required: project_id, issue_iid, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
+    )]
+    async fn gitlab_issues_discussions_create(
+        &self,
+        Parameters(p): Parameters<issue_discussions::IssueDiscussionCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(
+            self,
+            issue_discussions::issue_discussion_create,
+            p,
+            "issue discussion"
+        )
+    }
+
+    #[tool(
+        description = "Add a reply note to an existing discussion thread on a GitLab issue. Required: project_id, issue_iid, discussion_id, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
+    )]
+    async fn gitlab_issues_discussions_note_create(
+        &self,
+        Parameters(p): Parameters<issue_discussions::IssueDiscussionNoteCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(
+            self,
+            issue_discussions::issue_discussion_note_create,
+            p,
+            "issue discussion note"
+        )
+    }
+
+    #[tool(
+        description = "Update the body of a note in a GitLab issue discussion thread. Required: project_id, issue_iid, discussion_id, note_id, body."
+    )]
+    async fn gitlab_issues_discussions_note_update(
+        &self,
+        Parameters(p): Parameters<issue_discussions::IssueDiscussionNoteUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(
+            self,
+            issue_discussions::issue_discussion_note_update,
+            p,
+            "issue discussion note"
+        )
+    }
+
+    #[tool(
+        description = "Delete a note from a GitLab issue discussion thread. Required: project_id, issue_iid, discussion_id, note_id. This action is permanent."
+    )]
+    async fn gitlab_issues_discussions_note_delete(
+        &self,
+        Parameters(p): Parameters<issue_discussions::IssueDiscussionNoteDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(
+            self,
+            issue_discussions::issue_discussion_note_delete,
+            p,
+            "issue discussion note"
+        )
     }
 
     #[tool(

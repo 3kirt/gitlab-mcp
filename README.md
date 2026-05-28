@@ -138,7 +138,8 @@ omitted on the last page — use its presence to detect "more results exist."
 
 ### Issues
 
-Full CRUD on issues, plus notes (comments) and issue links (`relates_to`,
+Full CRUD on issues, plus notes (comments), threaded discussions (start a
+thread, reply, edit a reply, delete a reply), and issue links (`relates_to`,
 `blocks`, `is_blocked_by`). `gitlab_issues_get` enriches the GitLab payload
 with a `linked_issues` array and a `closed_by` array (MRs that close the issue
 on merge). Filters on list include state, labels, search text, scope,

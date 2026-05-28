@@ -16,17 +16,23 @@ Map `$ARGUMENTS` (case-insensitive, hyphens or underscores) to the section range
 | `issues` | 1–6 |
 | `branches` | 7–11 |
 | `mrs`, `merge_requests` | 12–17 |
+| `mr_approvals` | 17B |
 | `repository` | 18–24 |
 | `repository_files`, `files` | 25–30 |
 | `discussions`, `mr_discussions` | 31–37 |
 | `issue_notes` | 38–42 |
 | `epics` | 43–47 |
+| `epic_issues` | 47B |
 | `issue_links` | 48–51 |
 | `metadata` | 52 |
 | `pipeline_schedules` | 53–59 |
 | `search` | 60–62 |
 | `snippets` | 63–70 |
 | `emoji_reactions` | 71–76 + Workflow M |
+| `groups` | 77–78 |
+| `projects` | 79 |
+| `runners` | 80–86 + Workflow N |
+| `issue_discussions` | 87–92 + Workflow O |
 
 ## Step 2 — Read the protocol
 
@@ -46,6 +52,9 @@ Call MCP tools to resolve placeholder IDs before running tests. Only fetch what 
 | `<iid of mr-seed-1>` | `gitlab_mrs_list(project_id="3kirt1/gitlab-mcp-testing", state="all", search="Fix: correct off-by-one")` → first result's `iid` |
 | `<id of note-issue-seed-1>` | `gitlab_issues_notes_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>)` → find note whose body starts with "Seeded note" → its `id` |
 | `<id of note-seed-1>` (MR discussion note) | `gitlab_mrs_discussions_list(project_id="3kirt1/gitlab-mcp-testing", merge_request_iid=<iid of mr-seed-1>)` → find `disc-seed-1` whose first note body starts with "Seeded review comment" → `notes[0].id` |
+| `<issue-disc-seed-1>` / `<issue-disc-note-seed-1>` | `gitlab_issues_discussions_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>)` → find discussion whose `notes[0].body` starts with "Seeded thread for issue discussion testing" → its `id` (and `notes[0].id` for the note) |
+| `<runner-id>` | `gitlab_runners_list()` → first item's `id`. If empty, mark Sections 82–84 SKIP |
+| `<seed-4-global-id>` (epic-issue assign) | `gitlab_issues_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-4>)` → top-level `id` |
 | `<award-seed-issue>` | `gitlab_emoji_reactions_issues_list(project_id="3kirt1/gitlab-mcp-testing", issue_iid=<iid of seed-1>)` → find reaction with `name=="thumbsup"` → its `id` |
 | `<award-seed-mr>` | `gitlab_emoji_reactions_mrs_list(...)` on `mr-seed-1` → thumbsup reaction id |
 | `<award-seed-issue-note>` | `gitlab_emoji_reactions_issue_notes_list(...)` on `seed-1` note → thumbsup reaction id |

@@ -4,6 +4,22 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Issue Discussions** — six new tools mirroring the existing MR
+  discussions family for threaded comments on issues:
+  `gitlab_issues_discussions_list`, `gitlab_issues_discussions_get`,
+  `gitlab_issues_discussions_create`,
+  `gitlab_issues_discussions_note_create` (reply to an existing thread by
+  `discussion_id`), `gitlab_issues_discussions_note_update`, and
+  `gitlab_issues_discussions_note_delete`. Closes
+  [#8](https://github.com/3kirt/gitlab-mcp/issues/8). Issue discussions
+  are non-resolvable and do not support diff-note positions or `commit_id`,
+  so the surface is intentionally narrower than the MR equivalent.
+
+---
+
 ## [0.17.0] — 2026-05-27
 
 ### Added
