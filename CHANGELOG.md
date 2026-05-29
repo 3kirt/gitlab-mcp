@@ -4,6 +4,32 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.19.0] — 2026-05-29
+
+### Added
+- **MCP logging protocol** — the server now declares the `logging` capability
+  and implements `logging/setLevel`. Tool errors are forwarded to the MCP
+  client as structured `notifications/message` notifications (`level=error`,
+  `logger="gitlab-mcp"`, `data.message` containing the GitLab error text),
+  so failures surface in client log panels without requiring stderr inspection.
+  Minimum level defaults to `warning`; clients can lower it via
+  `logging/setLevel`.
+
+### Changed
+- **rmcp upgraded 1.5 → 1.7** — picks up better stdio error handling (parse
+  errors now reply `-32700` instead of closing the connection) and runtime
+  tool-disabling support.
+- Removed the manual `initialize` override; the SDK default now correctly
+  records peer info on handshake.
+
+### Documentation
+- README: add MCP logging feature bullet; fix dev commands to include
+  `--locked`.
+- Testing protocol: note MCP logging wire behaviour is covered by the rmcp
+  conformance suite; add Section 93 (MCP Logging) with three smoke tests.
+
+---
+
 ## [0.18.0] — 2026-05-28
 
 ### Added
