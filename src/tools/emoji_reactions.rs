@@ -5,6 +5,84 @@ use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id};
 
 // --------------------------------------------------------------------------
+// Shared CRUD helpers
+//
+// Every emoji-reaction endpoint follows the shape
+//   {parent_path}/award_emoji[/{award_id}]
+// where parent_path is the URL of the parent resource (issue, MR, snippet,
+// or a note on one of those). The Params structs differ only in which
+// parent-ID fields they carry; the bodies don't differ at all.
+// --------------------------------------------------------------------------
+
+async fn emoji_list(
+    client: &GitlabClient,
+    parent_path: &str,
+    pagination: PaginationParams,
+) -> ListResult {
+    let path = format!("{parent_path}/award_emoji");
+    let params = QueryBuilder::new()
+        .opt("page", pagination.page)
+        .opt("per_page", pagination.per_page)
+        .into_params();
+    client.list(&path, &params).await
+}
+
+async fn emoji_get(
+    client: &GitlabClient,
+    parent_path: &str,
+    award_id: u64,
+) -> Result<Value, GitlabError> {
+    client
+        .get(&format!("{parent_path}/award_emoji/{award_id}"))
+        .await
+}
+
+async fn emoji_create(
+    client: &GitlabClient,
+    parent_path: &str,
+    name: &str,
+) -> Result<Value, GitlabError> {
+    let body = BodyBuilder::new().req("name", name).build();
+    client
+        .post(&format!("{parent_path}/award_emoji"), &body)
+        .await
+}
+
+async fn emoji_delete(
+    client: &GitlabClient,
+    parent_path: &str,
+    award_id: u64,
+) -> Result<(), GitlabError> {
+    client
+        .delete(&format!("{parent_path}/award_emoji/{award_id}"))
+        .await
+}
+
+fn issue_path(project_id: &str, issue_iid: u64) -> String {
+    format!(
+        "/api/v4/projects/{}/issues/{}",
+        encode_namespace_id(project_id),
+        issue_iid
+    )
+}
+
+fn mr_path(project_id: &str, mr_iid: u64) -> String {
+    format!(
+        "/api/v4/projects/{}/merge_requests/{}",
+        encode_namespace_id(project_id),
+        mr_iid
+    )
+}
+
+fn snippet_path(project_id: &str, snippet_id: u64) -> String {
+    format!(
+        "/api/v4/projects/{}/snippets/{}",
+        encode_namespace_id(project_id),
+        snippet_id
+    )
+}
+
+// --------------------------------------------------------------------------
 // Issues
 // --------------------------------------------------------------------------
 
@@ -19,16 +97,12 @@ pub struct IssueEmojiListParams {
 }
 
 pub async fn issue_emoji_list(client: &GitlabClient, p: IssueEmojiListParams) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/issues/{}/award_emoji",
-        encode_namespace_id(&p.project_id),
-        p.issue_iid
-    );
-    let params = QueryBuilder::new()
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    client.list(&path, &params).await
+    emoji_list(
+        client,
+        &issue_path(&p.project_id, p.issue_iid),
+        p.pagination,
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -45,13 +119,7 @@ pub async fn issue_emoji_get(
     client: &GitlabClient,
     p: IssueEmojiGetParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/issues/{}/award_emoji/{}",
-        encode_namespace_id(&p.project_id),
-        p.issue_iid,
-        p.award_id
-    );
-    client.get(&path).await
+    emoji_get(client, &issue_path(&p.project_id, p.issue_iid), p.award_id).await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -68,13 +136,7 @@ pub async fn issue_emoji_create(
     client: &GitlabClient,
     p: IssueEmojiCreateParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/issues/{}/award_emoji",
-        encode_namespace_id(&p.project_id),
-        p.issue_iid
-    );
-    let body = BodyBuilder::new().req("name", &p.name).build();
-    client.post(&path, &body).await
+    emoji_create(client, &issue_path(&p.project_id, p.issue_iid), &p.name).await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -91,13 +153,7 @@ pub async fn issue_emoji_delete(
     client: &GitlabClient,
     p: IssueEmojiDeleteParams,
 ) -> Result<(), GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/issues/{}/award_emoji/{}",
-        encode_namespace_id(&p.project_id),
-        p.issue_iid,
-        p.award_id
-    );
-    client.delete(&path).await
+    emoji_delete(client, &issue_path(&p.project_id, p.issue_iid), p.award_id).await
 }
 
 // --------------------------------------------------------------------------
@@ -115,16 +171,12 @@ pub struct MrEmojiListParams {
 }
 
 pub async fn mr_emoji_list(client: &GitlabClient, p: MrEmojiListParams) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/award_emoji",
-        encode_namespace_id(&p.project_id),
-        p.merge_request_iid
-    );
-    let params = QueryBuilder::new()
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    client.list(&path, &params).await
+    emoji_list(
+        client,
+        &mr_path(&p.project_id, p.merge_request_iid),
+        p.pagination,
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -141,13 +193,12 @@ pub async fn mr_emoji_get(
     client: &GitlabClient,
     p: MrEmojiGetParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/award_emoji/{}",
-        encode_namespace_id(&p.project_id),
-        p.merge_request_iid,
-        p.award_id
-    );
-    client.get(&path).await
+    emoji_get(
+        client,
+        &mr_path(&p.project_id, p.merge_request_iid),
+        p.award_id,
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -164,13 +215,12 @@ pub async fn mr_emoji_create(
     client: &GitlabClient,
     p: MrEmojiCreateParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/award_emoji",
-        encode_namespace_id(&p.project_id),
-        p.merge_request_iid
-    );
-    let body = BodyBuilder::new().req("name", &p.name).build();
-    client.post(&path, &body).await
+    emoji_create(
+        client,
+        &mr_path(&p.project_id, p.merge_request_iid),
+        &p.name,
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -187,13 +237,12 @@ pub async fn mr_emoji_delete(
     client: &GitlabClient,
     p: MrEmojiDeleteParams,
 ) -> Result<(), GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/award_emoji/{}",
-        encode_namespace_id(&p.project_id),
-        p.merge_request_iid,
-        p.award_id
-    );
-    client.delete(&path).await
+    emoji_delete(
+        client,
+        &mr_path(&p.project_id, p.merge_request_iid),
+        p.award_id,
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
@@ -211,16 +260,12 @@ pub struct SnippetEmojiListParams {
 }
 
 pub async fn snippet_emoji_list(client: &GitlabClient, p: SnippetEmojiListParams) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/snippets/{}/award_emoji",
-        encode_namespace_id(&p.project_id),
-        p.snippet_id
-    );
-    let params = QueryBuilder::new()
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    client.list(&path, &params).await
+    emoji_list(
+        client,
+        &snippet_path(&p.project_id, p.snippet_id),
+        p.pagination,
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -237,13 +282,12 @@ pub async fn snippet_emoji_get(
     client: &GitlabClient,
     p: SnippetEmojiGetParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/snippets/{}/award_emoji/{}",
-        encode_namespace_id(&p.project_id),
-        p.snippet_id,
-        p.award_id
-    );
-    client.get(&path).await
+    emoji_get(
+        client,
+        &snippet_path(&p.project_id, p.snippet_id),
+        p.award_id,
+    )
+    .await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -260,13 +304,7 @@ pub async fn snippet_emoji_create(
     client: &GitlabClient,
     p: SnippetEmojiCreateParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/snippets/{}/award_emoji",
-        encode_namespace_id(&p.project_id),
-        p.snippet_id
-    );
-    let body = BodyBuilder::new().req("name", &p.name).build();
-    client.post(&path, &body).await
+    emoji_create(client, &snippet_path(&p.project_id, p.snippet_id), &p.name).await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -283,13 +321,12 @@ pub async fn snippet_emoji_delete(
     client: &GitlabClient,
     p: SnippetEmojiDeleteParams,
 ) -> Result<(), GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/snippets/{}/award_emoji/{}",
-        encode_namespace_id(&p.project_id),
-        p.snippet_id,
-        p.award_id
-    );
-    client.delete(&path).await
+    emoji_delete(
+        client,
+        &snippet_path(&p.project_id, p.snippet_id),
+        p.award_id,
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
@@ -312,17 +349,12 @@ pub async fn issue_note_emoji_list(
     client: &GitlabClient,
     p: IssueNoteEmojiListParams,
 ) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/issues/{}/notes/{}/award_emoji",
-        encode_namespace_id(&p.project_id),
-        p.issue_iid,
+    let parent = format!(
+        "{}/notes/{}",
+        issue_path(&p.project_id, p.issue_iid),
         p.note_id
     );
-    let params = QueryBuilder::new()
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    client.list(&path, &params).await
+    emoji_list(client, &parent, p.pagination).await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -341,14 +373,12 @@ pub async fn issue_note_emoji_get(
     client: &GitlabClient,
     p: IssueNoteEmojiGetParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/issues/{}/notes/{}/award_emoji/{}",
-        encode_namespace_id(&p.project_id),
-        p.issue_iid,
-        p.note_id,
-        p.award_id
+    let parent = format!(
+        "{}/notes/{}",
+        issue_path(&p.project_id, p.issue_iid),
+        p.note_id
     );
-    client.get(&path).await
+    emoji_get(client, &parent, p.award_id).await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -367,14 +397,12 @@ pub async fn issue_note_emoji_create(
     client: &GitlabClient,
     p: IssueNoteEmojiCreateParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/issues/{}/notes/{}/award_emoji",
-        encode_namespace_id(&p.project_id),
-        p.issue_iid,
+    let parent = format!(
+        "{}/notes/{}",
+        issue_path(&p.project_id, p.issue_iid),
         p.note_id
     );
-    let body = BodyBuilder::new().req("name", &p.name).build();
-    client.post(&path, &body).await
+    emoji_create(client, &parent, &p.name).await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -393,14 +421,12 @@ pub async fn issue_note_emoji_delete(
     client: &GitlabClient,
     p: IssueNoteEmojiDeleteParams,
 ) -> Result<(), GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/issues/{}/notes/{}/award_emoji/{}",
-        encode_namespace_id(&p.project_id),
-        p.issue_iid,
-        p.note_id,
-        p.award_id
+    let parent = format!(
+        "{}/notes/{}",
+        issue_path(&p.project_id, p.issue_iid),
+        p.note_id
     );
-    client.delete(&path).await
+    emoji_delete(client, &parent, p.award_id).await
 }
 
 // --------------------------------------------------------------------------
@@ -420,17 +446,12 @@ pub struct MrNoteEmojiListParams {
 }
 
 pub async fn mr_note_emoji_list(client: &GitlabClient, p: MrNoteEmojiListParams) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/notes/{}/award_emoji",
-        encode_namespace_id(&p.project_id),
-        p.merge_request_iid,
+    let parent = format!(
+        "{}/notes/{}",
+        mr_path(&p.project_id, p.merge_request_iid),
         p.note_id
     );
-    let params = QueryBuilder::new()
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    client.list(&path, &params).await
+    emoji_list(client, &parent, p.pagination).await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -449,14 +470,12 @@ pub async fn mr_note_emoji_get(
     client: &GitlabClient,
     p: MrNoteEmojiGetParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/notes/{}/award_emoji/{}",
-        encode_namespace_id(&p.project_id),
-        p.merge_request_iid,
-        p.note_id,
-        p.award_id
+    let parent = format!(
+        "{}/notes/{}",
+        mr_path(&p.project_id, p.merge_request_iid),
+        p.note_id
     );
-    client.get(&path).await
+    emoji_get(client, &parent, p.award_id).await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -475,14 +494,12 @@ pub async fn mr_note_emoji_create(
     client: &GitlabClient,
     p: MrNoteEmojiCreateParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/notes/{}/award_emoji",
-        encode_namespace_id(&p.project_id),
-        p.merge_request_iid,
+    let parent = format!(
+        "{}/notes/{}",
+        mr_path(&p.project_id, p.merge_request_iid),
         p.note_id
     );
-    let body = BodyBuilder::new().req("name", &p.name).build();
-    client.post(&path, &body).await
+    emoji_create(client, &parent, &p.name).await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -501,14 +518,12 @@ pub async fn mr_note_emoji_delete(
     client: &GitlabClient,
     p: MrNoteEmojiDeleteParams,
 ) -> Result<(), GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/notes/{}/award_emoji/{}",
-        encode_namespace_id(&p.project_id),
-        p.merge_request_iid,
-        p.note_id,
-        p.award_id
+    let parent = format!(
+        "{}/notes/{}",
+        mr_path(&p.project_id, p.merge_request_iid),
+        p.note_id
     );
-    client.delete(&path).await
+    emoji_delete(client, &parent, p.award_id).await
 }
 
 // --------------------------------------------------------------------------
@@ -531,17 +546,12 @@ pub async fn snippet_note_emoji_list(
     client: &GitlabClient,
     p: SnippetNoteEmojiListParams,
 ) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/snippets/{}/notes/{}/award_emoji",
-        encode_namespace_id(&p.project_id),
-        p.snippet_id,
+    let parent = format!(
+        "{}/notes/{}",
+        snippet_path(&p.project_id, p.snippet_id),
         p.note_id
     );
-    let params = QueryBuilder::new()
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    client.list(&path, &params).await
+    emoji_list(client, &parent, p.pagination).await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -560,14 +570,12 @@ pub async fn snippet_note_emoji_get(
     client: &GitlabClient,
     p: SnippetNoteEmojiGetParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/snippets/{}/notes/{}/award_emoji/{}",
-        encode_namespace_id(&p.project_id),
-        p.snippet_id,
-        p.note_id,
-        p.award_id
+    let parent = format!(
+        "{}/notes/{}",
+        snippet_path(&p.project_id, p.snippet_id),
+        p.note_id
     );
-    client.get(&path).await
+    emoji_get(client, &parent, p.award_id).await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -586,14 +594,12 @@ pub async fn snippet_note_emoji_create(
     client: &GitlabClient,
     p: SnippetNoteEmojiCreateParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/snippets/{}/notes/{}/award_emoji",
-        encode_namespace_id(&p.project_id),
-        p.snippet_id,
+    let parent = format!(
+        "{}/notes/{}",
+        snippet_path(&p.project_id, p.snippet_id),
         p.note_id
     );
-    let body = BodyBuilder::new().req("name", &p.name).build();
-    client.post(&path, &body).await
+    emoji_create(client, &parent, &p.name).await
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -612,14 +618,12 @@ pub async fn snippet_note_emoji_delete(
     client: &GitlabClient,
     p: SnippetNoteEmojiDeleteParams,
 ) -> Result<(), GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/snippets/{}/notes/{}/award_emoji/{}",
-        encode_namespace_id(&p.project_id),
-        p.snippet_id,
-        p.note_id,
-        p.award_id
+    let parent = format!(
+        "{}/notes/{}",
+        snippet_path(&p.project_id, p.snippet_id),
+        p.note_id
     );
-    client.delete(&path).await
+    emoji_delete(client, &parent, p.award_id).await
 }
 
 // --------------------------------------------------------------------------

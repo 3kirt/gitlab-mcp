@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, PaginationMeta};
-use crate::tools::{QueryBuilder, encode_namespace_id};
+use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id};
 
 // --------------------------------------------------------------------------
 // List groups
@@ -30,10 +30,8 @@ pub struct GroupsListParams {
     pub sort: Option<String>,
     #[schemars(description = "Return only top-level groups (exclude subgroups)")]
     pub top_level_only: Option<bool>,
-    #[schemars(description = "Page number (default: 1)")]
-    pub page: Option<u64>,
-    #[schemars(description = "Number of results per page (default: 20, max: 100)")]
-    pub per_page: Option<u64>,
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 pub async fn groups_list(
@@ -48,8 +46,8 @@ pub async fn groups_list(
         .opt("order_by", p.order_by)
         .opt("sort", p.sort)
         .opt("top_level_only", p.top_level_only)
-        .opt("page", p.page)
-        .opt("per_page", p.per_page)
+        .opt("page", p.pagination.page)
+        .opt("per_page", p.pagination.per_page)
         .into_params();
     client.list("/api/v4/groups", &params).await
 }
@@ -94,6 +92,7 @@ mod tests {
 
     use super::{GroupGetParams, GroupsListParams, group_get, groups_list};
     use crate::client::GitlabClient;
+    use crate::tools::PaginationParams;
 
     fn mock_client(server: &MockServer) -> GitlabClient {
         GitlabClient::new(server.uri(), "test-token").unwrap()
@@ -147,8 +146,10 @@ mod tests {
                 order_by: None,
                 sort: None,
                 top_level_only: None,
-                page: None,
-                per_page: None,
+                pagination: PaginationParams {
+                    page: None,
+                    per_page: None,
+                },
             },
         )
         .await
@@ -187,8 +188,10 @@ mod tests {
                 order_by: None,
                 sort: None,
                 top_level_only: None,
-                page: None,
-                per_page: None,
+                pagination: PaginationParams {
+                    page: None,
+                    per_page: None,
+                },
             },
         )
         .await
@@ -216,8 +219,10 @@ mod tests {
                 order_by: None,
                 sort: None,
                 top_level_only: None,
-                page: None,
-                per_page: None,
+                pagination: PaginationParams {
+                    page: None,
+                    per_page: None,
+                },
             },
         )
         .await

@@ -2,14 +2,17 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_path_segment};
 
 // --------------------------------------------------------------------------
-// List current user's snippets
+// Shared list filters
+//
+// All three list endpoints share the same created_after/before + pagination
+// filters. Only `snippets/all` adds repository_storage (admin only).
 // --------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct SnippetsListParams {
+pub struct SnippetsListFilters {
     #[schemars(description = "Return snippets created after this time (ISO 8601)")]
     pub created_after: Option<String>,
     #[schemars(description = "Return snippets created before this time (ISO 8601)")]
@@ -18,14 +21,29 @@ pub struct SnippetsListParams {
     pub pagination: PaginationParams,
 }
 
+fn snippets_query(f: SnippetsListFilters) -> Vec<(&'static str, String)> {
+    QueryBuilder::new()
+        .opt("created_after", f.created_after)
+        .opt("created_before", f.created_before)
+        .opt("page", f.pagination.page)
+        .opt("per_page", f.pagination.per_page)
+        .into_params()
+}
+
+// --------------------------------------------------------------------------
+// List current user's snippets
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct SnippetsListParams {
+    #[serde(flatten)]
+    pub filters: SnippetsListFilters,
+}
+
 pub async fn snippets_list(client: &GitlabClient, p: SnippetsListParams) -> ListResult {
-    let params = QueryBuilder::new()
-        .opt("created_after", p.created_after)
-        .opt("created_before", p.created_before)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    client.list("/api/v4/snippets", &params).await
+    client
+        .list("/api/v4/snippets", &snippets_query(p.filters))
+        .await
 }
 
 // --------------------------------------------------------------------------
@@ -34,25 +52,17 @@ pub async fn snippets_list(client: &GitlabClient, p: SnippetsListParams) -> List
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetsPublicListParams {
-    #[schemars(description = "Return snippets created after this time (ISO 8601)")]
-    pub created_after: Option<String>,
-    #[schemars(description = "Return snippets created before this time (ISO 8601)")]
-    pub created_before: Option<String>,
     #[serde(flatten)]
-    pub pagination: PaginationParams,
+    pub filters: SnippetsListFilters,
 }
 
 pub async fn snippets_public_list(
     client: &GitlabClient,
     p: SnippetsPublicListParams,
 ) -> ListResult {
-    let params = QueryBuilder::new()
-        .opt("created_after", p.created_after)
-        .opt("created_before", p.created_before)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    client.list("/api/v4/snippets/public", &params).await
+    client
+        .list("/api/v4/snippets/public", &snippets_query(p.filters))
+        .await
 }
 
 // --------------------------------------------------------------------------
@@ -61,24 +71,17 @@ pub async fn snippets_public_list(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetsAllListParams {
-    #[schemars(description = "Return snippets created after this time (ISO 8601)")]
-    pub created_after: Option<String>,
-    #[schemars(description = "Return snippets created before this time (ISO 8601)")]
-    pub created_before: Option<String>,
     #[schemars(description = "Filter by repository storage used by snippet (administrators only)")]
     pub repository_storage: Option<String>,
     #[serde(flatten)]
-    pub pagination: PaginationParams,
+    pub filters: SnippetsListFilters,
 }
 
 pub async fn snippets_all_list(client: &GitlabClient, p: SnippetsAllListParams) -> ListResult {
-    let params = QueryBuilder::new()
-        .opt("created_after", p.created_after)
-        .opt("created_before", p.created_before)
-        .opt("repository_storage", p.repository_storage)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
+    let mut params = snippets_query(p.filters);
+    if let Some(storage) = p.repository_storage {
+        params.push(("repository_storage", storage));
+    }
     client.list("/api/v4/snippets/all", &params).await
 }
 
@@ -135,7 +138,7 @@ pub async fn snippet_file_raw(
         "/api/v4/snippets/{}/files/{}/{}/raw",
         p.id,
         p.ref_name,
-        p.file_path.replace('/', "%2F"),
+        encode_path_segment(&p.file_path),
     );
     let content = client.get_text(&path, &[]).await?;
     Ok(json!({"content": content}))

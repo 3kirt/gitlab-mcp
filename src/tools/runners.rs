@@ -5,17 +5,16 @@ use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id};
 
 // --------------------------------------------------------------------------
-// List runners (current user)
+// Shared list filters
+//
+// The four list endpoints (user runners, all runners, project runners, group
+// runners) share the same status/paused/tag_list/version_prefix shape. The
+// `type` filter is only valid where instance/group/project runners are
+// distinguishable; group_runners_list drops it.
 // --------------------------------------------------------------------------
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
-pub struct RunnersListParams {
-    #[serde(rename = "type")]
-    #[schemars(
-        rename = "type",
-        description = "Filter by runner type: \"instance_type\", \"group_type\", or \"project_type\""
-    )]
-    pub runner_type: Option<String>,
+pub struct RunnerListFilters {
     #[schemars(
         description = "Filter by runner status: \"online\", \"offline\", \"stale\", or \"never_contacted\""
     )]
@@ -32,17 +31,41 @@ pub struct RunnersListParams {
     pub pagination: PaginationParams,
 }
 
+fn runner_query(
+    runner_type: Option<String>,
+    filters: RunnerListFilters,
+) -> Vec<(&'static str, String)> {
+    QueryBuilder::new()
+        .opt("type", runner_type)
+        .opt("status", filters.status)
+        .opt("paused", filters.paused)
+        .multi("tag_list[]", filters.tag_list)
+        .opt("version_prefix", filters.version_prefix)
+        .opt("page", filters.pagination.page)
+        .opt("per_page", filters.pagination.per_page)
+        .into_params()
+}
+
+// --------------------------------------------------------------------------
+// List runners (current user)
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct RunnersListParams {
+    #[serde(rename = "type")]
+    #[schemars(
+        rename = "type",
+        description = "Filter by runner type: \"instance_type\", \"group_type\", or \"project_type\""
+    )]
+    pub runner_type: Option<String>,
+    #[serde(flatten)]
+    pub filters: RunnerListFilters,
+}
+
 pub async fn runners_list(client: &GitlabClient, p: RunnersListParams) -> ListResult {
-    let params = QueryBuilder::new()
-        .opt("type", p.runner_type)
-        .opt("status", p.status)
-        .opt("paused", p.paused)
-        .multi("tag_list[]", p.tag_list)
-        .opt("version_prefix", p.version_prefix)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    client.list("/api/v4/runners", &params).await
+    client
+        .list("/api/v4/runners", &runner_query(p.runner_type, p.filters))
+        .await
 }
 
 // --------------------------------------------------------------------------
@@ -57,33 +80,17 @@ pub struct RunnersAllListParams {
         description = "Filter by runner type: \"instance_type\", \"group_type\", or \"project_type\""
     )]
     pub runner_type: Option<String>,
-    #[schemars(
-        description = "Filter by runner status: \"online\", \"offline\", \"stale\", or \"never_contacted\""
-    )]
-    pub status: Option<String>,
-    #[schemars(
-        description = "Filter by job acceptance: true returns runners that do not accept new jobs"
-    )]
-    pub paused: Option<bool>,
-    #[schemars(description = "Filter by runner tags; all listed tags must match")]
-    pub tag_list: Option<Vec<String>>,
-    #[schemars(description = "Filter runners by version prefix (e.g. \"15.0\", \"16.1.241\")")]
-    pub version_prefix: Option<String>,
     #[serde(flatten)]
-    pub pagination: PaginationParams,
+    pub filters: RunnerListFilters,
 }
 
 pub async fn runners_all_list(client: &GitlabClient, p: RunnersAllListParams) -> ListResult {
-    let params = QueryBuilder::new()
-        .opt("type", p.runner_type)
-        .opt("status", p.status)
-        .opt("paused", p.paused)
-        .multi("tag_list[]", p.tag_list)
-        .opt("version_prefix", p.version_prefix)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    client.list("/api/v4/runners/all", &params).await
+    client
+        .list(
+            "/api/v4/runners/all",
+            &runner_query(p.runner_type, p.filters),
+        )
+        .await
 }
 
 // --------------------------------------------------------------------------
@@ -173,20 +180,8 @@ pub struct ProjectRunnersListParams {
         description = "Filter by runner type: \"instance_type\", \"group_type\", or \"project_type\""
     )]
     pub runner_type: Option<String>,
-    #[schemars(
-        description = "Filter by runner status: \"online\", \"offline\", \"stale\", or \"never_contacted\""
-    )]
-    pub status: Option<String>,
-    #[schemars(
-        description = "Filter by job acceptance: true returns runners that do not accept new jobs"
-    )]
-    pub paused: Option<bool>,
-    #[schemars(description = "Filter by runner tags; all listed tags must match")]
-    pub tag_list: Option<Vec<String>>,
-    #[schemars(description = "Filter runners by version prefix (e.g. \"15.0\", \"16.1.241\")")]
-    pub version_prefix: Option<String>,
     #[serde(flatten)]
-    pub pagination: PaginationParams,
+    pub filters: RunnerListFilters,
 }
 
 pub async fn project_runners_list(
@@ -197,16 +192,9 @@ pub async fn project_runners_list(
         "/api/v4/projects/{}/runners",
         encode_namespace_id(&p.project_id)
     );
-    let params = QueryBuilder::new()
-        .opt("type", p.runner_type)
-        .opt("status", p.status)
-        .opt("paused", p.paused)
-        .multi("tag_list[]", p.tag_list)
-        .opt("version_prefix", p.version_prefix)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    client.list(&path, &params).await
+    client
+        .list(&path, &runner_query(p.runner_type, p.filters))
+        .await
 }
 
 // --------------------------------------------------------------------------
@@ -217,20 +205,8 @@ pub async fn project_runners_list(
 pub struct GroupRunnersListParams {
     #[schemars(description = "Group ID or URL-encoded path (e.g. 5 or \"mygroup\")")]
     pub group_id: String,
-    #[schemars(
-        description = "Filter by runner status: \"online\", \"offline\", \"stale\", or \"never_contacted\""
-    )]
-    pub status: Option<String>,
-    #[schemars(
-        description = "Filter by job acceptance: true returns runners that do not accept new jobs"
-    )]
-    pub paused: Option<bool>,
-    #[schemars(description = "Filter by runner tags; all listed tags must match")]
-    pub tag_list: Option<Vec<String>>,
-    #[schemars(description = "Filter runners by version prefix (e.g. \"15.0\", \"16.1.241\")")]
-    pub version_prefix: Option<String>,
     #[serde(flatten)]
-    pub pagination: PaginationParams,
+    pub filters: RunnerListFilters,
 }
 
 pub async fn group_runners_list(client: &GitlabClient, p: GroupRunnersListParams) -> ListResult {
@@ -238,15 +214,8 @@ pub async fn group_runners_list(client: &GitlabClient, p: GroupRunnersListParams
         "/api/v4/groups/{}/runners",
         encode_namespace_id(&p.group_id)
     );
-    let params = QueryBuilder::new()
-        .opt("status", p.status)
-        .opt("paused", p.paused)
-        .multi("tag_list[]", p.tag_list)
-        .opt("version_prefix", p.version_prefix)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    client.list(&path, &params).await
+    // Group runners endpoint doesn't accept a `type` filter — pass None.
+    client.list(&path, &runner_query(None, p.filters)).await
 }
 
 // --------------------------------------------------------------------------
@@ -266,10 +235,16 @@ mod tests {
         GitlabClient::new(server.uri(), "test-token").unwrap()
     }
 
-    fn no_pagination() -> PaginationParams {
-        PaginationParams {
-            page: None,
-            per_page: None,
+    fn no_filters() -> RunnerListFilters {
+        RunnerListFilters {
+            status: None,
+            paused: None,
+            tag_list: None,
+            version_prefix: None,
+            pagination: PaginationParams {
+                page: None,
+                per_page: None,
+            },
         }
     }
 
@@ -289,11 +264,7 @@ mod tests {
             &mock_client(&server),
             RunnersListParams {
                 runner_type: None,
-                status: None,
-                paused: None,
-                tag_list: None,
-                version_prefix: None,
-                pagination: no_pagination(),
+                filters: no_filters(),
             },
         )
         .await
@@ -314,11 +285,7 @@ mod tests {
             &mock_client(&server),
             RunnersAllListParams {
                 runner_type: None,
-                status: None,
-                paused: None,
-                tag_list: None,
-                version_prefix: None,
-                pagination: no_pagination(),
+                filters: no_filters(),
             },
         )
         .await
@@ -386,7 +353,10 @@ mod tests {
                 system_id: None,
                 status: Some("running".into()),
                 sort: None,
-                pagination: no_pagination(),
+                pagination: PaginationParams {
+                    page: None,
+                    per_page: None,
+                },
             },
         )
         .await
@@ -410,7 +380,10 @@ mod tests {
             &mock_client(&server),
             RunnerManagersListParams {
                 id: 42,
-                pagination: no_pagination(),
+                pagination: PaginationParams {
+                    page: None,
+                    per_page: None,
+                },
             },
         )
         .await
@@ -432,11 +405,7 @@ mod tests {
             ProjectRunnersListParams {
                 project_id: "mygroup/myrepo".into(),
                 runner_type: None,
-                status: None,
-                paused: None,
-                tag_list: None,
-                version_prefix: None,
-                pagination: no_pagination(),
+                filters: no_filters(),
             },
         )
         .await
@@ -460,11 +429,7 @@ mod tests {
             &mock_client(&server),
             GroupRunnersListParams {
                 group_id: "5".into(),
-                status: None,
-                paused: None,
-                tag_list: None,
-                version_prefix: None,
-                pagination: no_pagination(),
+                filters: no_filters(),
             },
         )
         .await
@@ -485,11 +450,7 @@ mod tests {
             &mock_client(&server),
             GroupRunnersListParams {
                 group_id: "mygroup/sub".into(),
-                status: None,
-                paused: None,
-                tag_list: None,
-                version_prefix: None,
-                pagination: no_pagination(),
+                filters: no_filters(),
             },
         )
         .await

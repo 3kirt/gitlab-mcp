@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
@@ -218,7 +218,7 @@ pub async fn pipeline_schedule_take_ownership(
         encode_namespace_id(&p.project_id),
         p.pipeline_schedule_id
     );
-    client.post(&path, &BodyBuilder::new().build()).await
+    client.post(&path, &json!({})).await
 }
 
 // --------------------------------------------------------------------------
@@ -242,7 +242,7 @@ pub async fn pipeline_schedule_play(
         encode_namespace_id(&p.project_id),
         p.pipeline_schedule_id
     );
-    client.post(&path, &BodyBuilder::new().build()).await
+    client.post(&path, &json!({})).await
 }
 
 // --------------------------------------------------------------------------

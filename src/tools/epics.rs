@@ -10,7 +10,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, PaginationMeta};
-use crate::tools::{BodyBuilder, QueryBuilder, encode_namespace_id, unwrap_404_as_empty_array};
+use crate::tools::{
+    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, unwrap_404_as_empty_array,
+};
 
 // --------------------------------------------------------------------------
 // Module helpers
@@ -77,10 +79,8 @@ pub struct EpicsListParams {
     pub order_by: Option<String>,
     #[schemars(description = "Sort direction: \"asc\" or \"desc\"")]
     pub sort: Option<String>,
-    #[schemars(description = "Page number (default: 1)")]
-    pub page: Option<u64>,
-    #[schemars(description = "Number of results per page (default: 20, max: 100)")]
-    pub per_page: Option<u64>,
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
 }
 
 pub async fn epics_list(
@@ -97,8 +97,8 @@ pub async fn epics_list(
         .multi("iids[]", p.iids)
         .opt("order_by", p.order_by)
         .opt("sort", p.sort)
-        .opt("page", p.page)
-        .opt("per_page", p.per_page)
+        .opt("page", p.pagination.page)
+        .opt("per_page", p.pagination.per_page)
         .into_params();
     client
         .list(&format!("/api/v4/groups/{gid}/epics"), &params)
@@ -340,6 +340,7 @@ mod tests {
         epic_get, epic_issue_assign, epic_issue_remove, epic_update, epics_list,
     };
     use crate::client::GitlabClient;
+    use crate::tools::PaginationParams;
 
     fn mock_client(server: &MockServer) -> GitlabClient {
         GitlabClient::new(server.uri(), "test-token").unwrap()
@@ -393,8 +394,10 @@ mod tests {
                 iids: None,
                 order_by: None,
                 sort: None,
-                page: None,
-                per_page: None,
+                pagination: PaginationParams {
+                    page: None,
+                    per_page: None,
+                },
             },
         )
         .await
@@ -433,8 +436,10 @@ mod tests {
                 iids: None,
                 order_by: None,
                 sort: None,
-                page: None,
-                per_page: None,
+                pagination: PaginationParams {
+                    page: None,
+                    per_page: None,
+                },
             },
         )
         .await
@@ -462,8 +467,10 @@ mod tests {
                 iids: None,
                 order_by: None,
                 sort: None,
-                page: None,
-                per_page: None,
+                pagination: PaginationParams {
+                    page: None,
+                    per_page: None,
+                },
             },
         )
         .await
