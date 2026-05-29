@@ -7,6 +7,7 @@ Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Crea
 - **Full CRUD** — create, read, update, and delete GitLab resources
 - **Broad coverage of common GitLab workflows** — issues, merge requests, branches, commits, repository files, pipelines, jobs, runners, epics, groups, snippets, emoji reactions, search, and more
 - **Token-efficient responses** — list results are automatically slimmed (descriptions, pipelines, and other bulk fields stripped); use single-get tools when full detail is needed
+- **MCP logging** — tool errors are forwarded to the client as structured `notifications/message` log entries; configure the minimum level with `logging/setLevel` (default: `warning`)
 
 ---
 
@@ -288,11 +289,11 @@ Returns GitLab instance metadata: version, revision, enterprise flag, and KAS
 ## Development
 
 ```sh
-cargo build                    # debug build
-cargo build --release          # release build
-cargo test --all               # run tests
-cargo clippy -- -D warnings    # lint
-cargo fmt --check              # format check
+cargo build                          # debug build
+cargo build --release                # release build
+cargo test --all --locked            # run tests
+cargo clippy --locked -- -D warnings # lint
+cargo fmt --check                    # format check
 ```
 
 ---

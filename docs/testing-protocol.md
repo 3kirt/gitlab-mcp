@@ -2,7 +2,7 @@
 
 This document describes how to verify all Issues, Issue Links, Issue Notes, Issue Discussions, Branches, Merge Requests, MR Discussions, MR Approvals, Repository/Files, Epics, Epic Issues, Pipeline Schedules, Snippets, Search, Groups, Projects, Metadata, and Runners API functionality against the test project `3kirt1/gitlab-mcp-testing` (numeric ID `82279422`) and its parent group `3kirt1` (for epics, group search, groups, and group runners).
 
-**Automated coverage (not retested here):** `encode_namespace_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. For runners, all seven domain functions (`runners_list`, `runners_all_list`, `runner_get`, `runner_jobs_list`, `runner_managers_list`, `project_runners_list`, `group_runners_list`) are covered by wiremock tests including path encoding, status filter forwarding, 404 propagation, and namespace path encoding for both project and group endpoints. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with child-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) plus epic-issue assign (POST returns association object) and epic-issue remove (DELETE returns deleted association) are covered by wiremock tests. For MR approvals, both `mr_approve` (POST → JSON body) and `mr_unapprove` (POST → no body via `post_void`) are covered by wiremock tests. For projects, `project_get` (GET by path or numeric ID, optional `statistics` query param) is covered by four wiremock tests. For snippets, `snippet_file_raw` path encoding (slash → `%2F` in `file_path`) is covered by two wiremock tests — one with a plain path and one with a sub-directory path. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
+**Automated coverage (not retested here):** `encode_namespace_id`, `encode_path_segment`, `QueryBuilder`, `BodyBuilder`, `enforce_https`, and `GitlabError::to_tool_message()` truncation are covered by unit tests. For runners, all seven domain functions (`runners_list`, `runners_all_list`, `runner_get`, `runner_jobs_list`, `runner_managers_list`, `project_runners_list`, `group_runners_list`) are covered by wiremock tests including path encoding, status filter forwarding, 404 propagation, and namespace path encoding for both project and group endpoints. Error propagation — non-2xx responses from GitLab surfacing as the correct error message — is covered by wiremock tests against `GitlabClient`, including `delete_json` (DELETE endpoints that return a response body). For epics, all five REST-based domain functions (list with pagination, get with child-issues embed, create with parent resolution, update with state/dates/parent, delete with 404/403 propagation) plus epic-issue assign (POST returns association object) and epic-issue remove (DELETE returns deleted association) are covered by wiremock tests. For MR approvals, both `mr_approve` (POST → JSON body) and `mr_unapprove` (POST → no body via `post_void`) are covered by wiremock tests. For projects, `project_get` (GET by path or numeric ID, optional `statistics` query param) is covered by four wiremock tests. For snippets, `snippet_file_raw` path encoding (slash → `%2F` in `file_path`) is covered by two wiremock tests — one with a plain path and one with a sub-directory path. **MCP logging** (`logging/setLevel` + `notifications/message`) is SDK-level protocol infrastructure; its wire behaviour is tested by the rmcp conformance suite. Section 93 below covers the live smoke test for clients that surface log notifications. The manual sections below focus exclusively on GitLab's own behavior: field presence, filter correctness, state transitions, hierarchy relationships, and cross-resource consistency.
 
 ---
 
@@ -3582,3 +3582,35 @@ Returns a success text message. A subsequent `gitlab_issues_discussions_get` on 
 5. `gitlab_issues_discussions_note_update(..., note_id=<issue-note-wo>, body="Edited reply.")` — confirm `body == "Edited reply."`
 6. `gitlab_issues_discussions_note_delete(..., note_id=<issue-note-wo>)` — confirm success message
 7. `gitlab_issues_discussions_get(..., discussion_id=<issue-disc-wo>)` — confirm `notes` has 1 entry (original thread-starter only)
+
+---
+
+## Section 93: MCP Logging
+
+> This section verifies the MCP logging protocol integration. It is client-dependent — only clients that surface `notifications/message` (e.g. MCP Inspector, Claude Desktop's log panel) allow direct observation. If your client does not display log notifications, skip 93.2–93.3 and rely on the rmcp conformance suite for protocol correctness.
+
+### 93.1 Logging capability declared
+
+Inspect the `initialize` response (e.g. via MCP Inspector). Confirm the server's `capabilities` object contains `"logging": {}`. This is emitted by `get_info()` via `ServerCapabilities::builder().enable_logging()`.
+
+### 93.2 Error produces a log notification
+
+Call a tool with a non-existent resource to force a GitLab API error:
+```
+gitlab_issues_get(project_id="3kirt1/gitlab-mcp-testing", issue_iid=999999)
+```
+In a client that shows log notifications, confirm:
+- A `notifications/message` notification arrives with `level == "error"`.
+- `logger == "gitlab-mcp"`.
+- `data.message` contains the error text (e.g. `"404"`).
+- The tool also returns the normal `tool_error` text response — both fire together.
+
+### 93.3 Level filtering is respected
+
+Send `logging/setLevel` with `level="error"` (the default is already `warning`, so this only narrows it). Call a tool that succeeds:
+```
+gitlab_metadata_get()
+```
+No log notification is emitted for successful calls regardless of level.
+
+Then send `logging/setLevel` with `level="debug"`. Trigger an error again (e.g. `gitlab_issues_get` with `issue_iid=999999`). Confirm the `error`-level notification still arrives — raising sensitivity does not suppress higher-severity messages.
