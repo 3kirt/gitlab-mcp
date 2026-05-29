@@ -1,18 +1,18 @@
 use reqwest::StatusCode;
 use rmcp::{
-    ErrorData as McpError, RoleServer, ServerHandler,
+    ErrorData as McpError, Peer, RoleServer, ServerHandler,
     handler::server::{
         router::{prompt::PromptRouter, tool::ToolRouter},
         wrapper::Parameters,
     },
     model::*,
     prompt_handler, prompt_router,
-    service::RequestContext,
+    service::{NotificationContext, RequestContext},
     tool, tool_handler, tool_router,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::client::{GitlabClient, GitlabError, PaginationMeta};
 
@@ -200,7 +200,11 @@ macro_rules! delegate_json {
         let client = $self.get_client()?;
         match $domain_fn(client, $p).await {
             Ok(v) => json_result(v),
-            Err(e) => tool_error(&format!("{} {}: {}", $verb, $noun, e.to_tool_message())),
+            Err(e) => {
+                let msg = format!("{} {}: {}", $verb, $noun, e.to_tool_message());
+                $self.send_log(LoggingLevel::Error, &msg).await;
+                tool_error(&msg)
+            }
         }
     }};
 }
@@ -210,7 +214,11 @@ macro_rules! delegate_list {
         let client = $self.get_client()?;
         match $domain_fn(client, $p).await {
             Ok((v, meta)) => json_list_result(v, meta),
-            Err(e) => tool_error(&format!("listing {}: {}", $noun, e.to_tool_message())),
+            Err(e) => {
+                let msg = format!("listing {}: {}", $noun, e.to_tool_message());
+                $self.send_log(LoggingLevel::Error, &msg).await;
+                tool_error(&msg)
+            }
         }
     }};
 }
@@ -241,7 +249,11 @@ macro_rules! delegate_delete {
                 "{} deleted",
                 $noun
             ))])),
-            Err(e) => tool_error(&format!("deleting {}: {}", $noun, e.to_tool_message())),
+            Err(e) => {
+                let msg = format!("deleting {}: {}", $noun, e.to_tool_message());
+                $self.send_log(LoggingLevel::Error, &msg).await;
+                tool_error(&msg)
+            }
         }
     }};
 }
@@ -250,6 +262,19 @@ macro_rules! delegate_delete {
 // Server struct
 // --------------------------------------------------------------------------
 
+fn level_severity(level: LoggingLevel) -> u8 {
+    match level {
+        LoggingLevel::Debug => 0,
+        LoggingLevel::Info => 1,
+        LoggingLevel::Notice => 2,
+        LoggingLevel::Warning => 3,
+        LoggingLevel::Error => 4,
+        LoggingLevel::Critical => 5,
+        LoggingLevel::Alert => 6,
+        LoggingLevel::Emergency => 7,
+    }
+}
+
 #[derive(Clone)]
 pub struct GitlabMcpServer {
     client: Arc<OnceLock<GitlabClient>>,
@@ -257,6 +282,8 @@ pub struct GitlabMcpServer {
     tool_router: ToolRouter<GitlabMcpServer>,
     #[allow(dead_code)]
     prompt_router: PromptRouter<GitlabMcpServer>,
+    peer: Arc<OnceLock<Peer<RoleServer>>>,
+    log_level: Arc<Mutex<LoggingLevel>>,
 }
 
 impl GitlabMcpServer {
@@ -267,7 +294,24 @@ impl GitlabMcpServer {
             client: Arc::new(cell),
             tool_router: Self::tool_router(),
             prompt_router: Self::prompt_router(),
+            peer: Arc::new(OnceLock::new()),
+            log_level: Arc::new(Mutex::new(LoggingLevel::Warning)),
         })
+    }
+
+    async fn send_log(&self, level: LoggingLevel, message: &str) {
+        let current = *self.log_level.lock().unwrap();
+        if level_severity(level) >= level_severity(current)
+            && let Some(peer) = self.peer.get()
+        {
+            let _ = peer
+                .notify_logging_message(LoggingMessageNotificationParam {
+                    level,
+                    logger: Some("gitlab-mcp".to_string()),
+                    data: serde_json::json!({ "message": message }),
+                })
+                .await;
+        }
     }
 
     fn get_client(&self) -> Result<&GitlabClient, McpError> {
@@ -2119,16 +2163,27 @@ impl GitlabMcpServer {}
 #[prompt_handler]
 impl ServerHandler for GitlabMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("gitlab-mcp", env!("CARGO_PKG_VERSION")))
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_logging()
+                .build(),
+        )
+        .with_server_info(Implementation::new("gitlab-mcp", env!("CARGO_PKG_VERSION")))
     }
 
-    async fn initialize(
+    async fn on_initialized(&self, context: NotificationContext<RoleServer>) {
+        let _ = self.peer.set(context.peer);
+    }
+
+    async fn set_level(
         &self,
-        _request: InitializeRequestParams,
-        _context: RequestContext<RoleServer>,
-    ) -> Result<InitializeResult, McpError> {
-        Ok(self.get_info())
+        request: SetLevelRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<(), McpError> {
+        *self.log_level.lock().unwrap() = request.level;
+        let _ = self.peer.set(context.peer);
+        Ok(())
     }
 }
 
