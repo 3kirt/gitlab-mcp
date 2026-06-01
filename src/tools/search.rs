@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use crate::client::{GitlabClient, ListResult};
-use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id};
+use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id, paginate};
 
 // --------------------------------------------------------------------------
 // Shared search filters
@@ -57,9 +57,14 @@ pub struct GlobalSearchParams {
 }
 
 pub async fn global_search(client: &GitlabClient, p: GlobalSearchParams) -> ListResult {
-    client
-        .list("/api/v4/search", &search_params(p.filters))
-        .await
+    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
+    paginate(
+        client,
+        "/api/v4/search",
+        &search_params(p.filters),
+        fetch_all,
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
@@ -76,7 +81,8 @@ pub struct GroupSearchParams {
 
 pub async fn group_search(client: &GitlabClient, p: GroupSearchParams) -> ListResult {
     let path = format!("/api/v4/groups/{}/search", encode_namespace_id(&p.group_id));
-    client.list(&path, &search_params(p.filters)).await
+    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
+    paginate(client, &path, &search_params(p.filters), fetch_all).await
 }
 
 // --------------------------------------------------------------------------
@@ -96,5 +102,6 @@ pub async fn project_search(client: &GitlabClient, p: ProjectSearchParams) -> Li
         "/api/v4/projects/{}/search",
         encode_namespace_id(&p.project_id)
     );
-    client.list(&path, &search_params(p.filters)).await
+    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
+    paginate(client, &path, &search_params(p.filters), fetch_all).await
 }

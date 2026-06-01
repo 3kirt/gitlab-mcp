@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::client::{GitlabClient, GitlabError, PaginationMeta};
+use crate::client::{GitlabClient, GitlabError, ListResult, PaginationMeta};
 
 pub mod branches;
 pub mod commits;
@@ -49,6 +49,10 @@ pub(crate) struct PaginationParams {
     pub page: Option<u64>,
     #[schemars(description = "Number of results per page (default: 20, max: 100)")]
     pub per_page: Option<u64>,
+    #[schemars(
+        description = "Fetch every page and merge the results into one array, ignoring `page`/`per_page`. Use sparingly: large endpoints can require many sequential requests."
+    )]
+    pub fetch_all: Option<bool>,
 }
 
 pub fn json_result(v: Value) -> Result<CallToolResult, McpError> {
@@ -77,6 +81,81 @@ pub fn json_list_result(v: Value, meta: PaginationMeta) -> Result<CallToolResult
 
 pub fn tool_error(msg: &str) -> Result<CallToolResult, McpError> {
     Ok(CallToolResult::error(vec![Content::text(msg)]))
+}
+
+/// Page size used when walking every page for a `fetch_all` request.
+/// GitLab caps `per_page` at 100.
+const FETCH_ALL_PER_PAGE: u64 = 100;
+
+/// Issue a list request, optionally walking every page.
+///
+/// With `fetch_all == false` this is a thin pass-through to
+/// [`GitlabClient::list`]: one page, with the real `X-*` pagination headers.
+///
+/// With `fetch_all == true` the caller's `page`/`per_page` are dropped and the
+/// helper walks pages at [`FETCH_ALL_PER_PAGE`] each, concatenating the JSON
+/// arrays into one. Termination is belt-and-suspenders — it stops on a short
+/// page or a missing `X-Next-Page`, since GitLab omits total/next headers on
+/// some large endpoints. A [`crate::client::MAX_PAGES`] guard bounds runaway
+/// loops. The returned `PaginationMeta` describes the merged result as a single
+/// complete page (`total` = items collected).
+pub async fn paginate(
+    client: &GitlabClient,
+    path: &str,
+    params: &[(&str, String)],
+    fetch_all: bool,
+) -> ListResult {
+    if !fetch_all {
+        return client.list(path, params).await;
+    }
+
+    // Strip any caller-supplied paging; we drive it ourselves.
+    let base: Vec<(&str, String)> = params
+        .iter()
+        .filter(|(k, _)| *k != "page" && *k != "per_page")
+        .cloned()
+        .collect();
+
+    let mut all: Vec<Value> = Vec::new();
+    let mut page: u64 = 1;
+
+    loop {
+        if page > crate::client::MAX_PAGES {
+            return Err(GitlabError::Other(format!(
+                "fetch_all exceeded the {}-page limit; narrow the query or page manually",
+                crate::client::MAX_PAGES
+            )));
+        }
+
+        let mut page_params = base.clone();
+        page_params.push(("per_page", FETCH_ALL_PER_PAGE.to_string()));
+        page_params.push(("page", page.to_string()));
+
+        let (body, meta) = client.list(path, &page_params).await?;
+        let batch = match body {
+            Value::Array(items) => items,
+            // Non-array list body: surface it verbatim rather than guessing.
+            other => return Ok((other, meta)),
+        };
+        let n = batch.len() as u64;
+        all.extend(batch);
+
+        let next_page = meta.next_page;
+        if n < FETCH_ALL_PER_PAGE || next_page.is_none() {
+            break;
+        }
+        page = next_page.unwrap();
+    }
+
+    let count = all.len() as u64;
+    let meta = PaginationMeta {
+        page: Some(1),
+        per_page: Some(count),
+        total: Some(count),
+        total_pages: Some(1),
+        next_page: None,
+    };
+    Ok((Value::Array(all), meta))
 }
 
 // --------------------------------------------------------------------------
@@ -2443,5 +2522,182 @@ mod tests {
         assert_eq!(item["title"], json!("x"));
         assert!(item.get("description").is_none());
         assert!(item.get("_links").is_none());
+    }
+
+    // paginate (fetch_all)
+
+    mod paginate_tests {
+        use super::*;
+        use wiremock::matchers::{method, path, query_param};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        fn mock_client(server: &MockServer) -> GitlabClient {
+            GitlabClient::new(server.uri(), "test-token").unwrap()
+        }
+
+        /// JSON array of `n` minimal objects.
+        fn page_body(n: u64) -> Value {
+            Value::Array((0..n).map(|i| json!({ "id": i })).collect())
+        }
+
+        #[tokio::test]
+        async fn fetch_all_false_is_single_page_with_real_headers() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/api/v4/projects/1/issues"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("x-page", "2")
+                        .insert_header("x-per-page", "20")
+                        .insert_header("x-total", "49")
+                        .insert_header("x-next-page", "3")
+                        .set_body_json(page_body(20)),
+                )
+                .mount(&server)
+                .await;
+
+            let (body, meta) = paginate(
+                &mock_client(&server),
+                "/api/v4/projects/1/issues",
+                &[],
+                false,
+            )
+            .await
+            .unwrap();
+            assert_eq!(body.as_array().unwrap().len(), 20);
+            // Real headers pass through untouched.
+            assert_eq!(meta.page, Some(2));
+            assert_eq!(meta.total, Some(49));
+            assert_eq!(meta.next_page, Some(3));
+        }
+
+        #[tokio::test]
+        async fn fetch_all_merges_pages_until_short_page() {
+            let server = MockServer::start().await;
+            // Page 1: full 100 items, signals a next page.
+            Mock::given(method("GET"))
+                .and(path("/api/v4/projects/1/issues"))
+                .and(query_param("page", "1"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("x-next-page", "2")
+                        .set_body_json(page_body(100)),
+                )
+                .mount(&server)
+                .await;
+            // Page 2: short page (30) ends the walk.
+            Mock::given(method("GET"))
+                .and(path("/api/v4/projects/1/issues"))
+                .and(query_param("page", "2"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(page_body(30)))
+                .mount(&server)
+                .await;
+
+            let (body, meta) = paginate(
+                &mock_client(&server),
+                "/api/v4/projects/1/issues",
+                &[],
+                true,
+            )
+            .await
+            .unwrap();
+            assert_eq!(body.as_array().unwrap().len(), 130);
+            // Merged result is presented as one complete page.
+            assert_eq!(meta.total, Some(130));
+            assert_eq!(meta.total_pages, Some(1));
+            assert_eq!(meta.next_page, None);
+        }
+
+        #[tokio::test]
+        async fn fetch_all_single_short_page_stops_immediately() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/api/v4/projects/1/issues"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(page_body(5)))
+                .mount(&server)
+                .await;
+
+            let (body, _) = paginate(
+                &mock_client(&server),
+                "/api/v4/projects/1/issues",
+                &[],
+                true,
+            )
+            .await
+            .unwrap();
+            assert_eq!(body.as_array().unwrap().len(), 5);
+        }
+
+        #[tokio::test]
+        async fn fetch_all_stops_on_missing_next_header_despite_full_page() {
+            let server = MockServer::start().await;
+            // Full 100-item page but no x-next-page — GitLab omits it on some
+            // large endpoints. The belt-and-suspenders check must terminate.
+            Mock::given(method("GET"))
+                .and(path("/api/v4/projects/1/issues"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(page_body(100)))
+                .mount(&server)
+                .await;
+
+            let (body, _) = paginate(
+                &mock_client(&server),
+                "/api/v4/projects/1/issues",
+                &[],
+                true,
+            )
+            .await
+            .unwrap();
+            assert_eq!(body.as_array().unwrap().len(), 100);
+        }
+
+        #[tokio::test]
+        async fn fetch_all_drops_caller_paging() {
+            let server = MockServer::start().await;
+            // fetch_all must override caller page/per_page: it always starts at
+            // page 1 with per_page=100, regardless of what was passed in.
+            Mock::given(method("GET"))
+                .and(path("/api/v4/projects/1/issues"))
+                .and(query_param("page", "1"))
+                .and(query_param("per_page", "100"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(page_body(3)))
+                .mount(&server)
+                .await;
+
+            let params = [("page", "7".to_string()), ("per_page", "20".to_string())];
+            let (body, _) = paginate(
+                &mock_client(&server),
+                "/api/v4/projects/1/issues",
+                &params,
+                true,
+            )
+            .await
+            .unwrap();
+            assert_eq!(body.as_array().unwrap().len(), 3);
+        }
+
+        #[tokio::test]
+        async fn fetch_all_enforces_page_limit() {
+            let server = MockServer::start().await;
+            // Always a full page that signals more — never terminates on its own.
+            Mock::given(method("GET"))
+                .and(path("/api/v4/projects/1/issues"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("x-next-page", "999")
+                        .set_body_json(page_body(100)),
+                )
+                .mount(&server)
+                .await;
+
+            let err = paginate(
+                &mock_client(&server),
+                "/api/v4/projects/1/issues",
+                &[],
+                true,
+            )
+            .await
+            .unwrap_err();
+            assert!(matches!(err, GitlabError::Other(msg) if msg.contains("page limit")));
+        }
     }
 }

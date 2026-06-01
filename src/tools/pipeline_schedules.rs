@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, encode_path_segment,
+    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, encode_path_segment, paginate,
 };
 
 // --------------------------------------------------------------------------
@@ -33,7 +33,13 @@ pub async fn pipeline_schedules_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    paginate(
+        client,
+        &path,
+        &params,
+        p.pagination.fetch_all.unwrap_or(false),
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
@@ -110,7 +116,13 @@ pub async fn pipeline_schedule_pipelines_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    paginate(
+        client,
+        &path,
+        &params,
+        p.pagination.fetch_all.unwrap_or(false),
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------

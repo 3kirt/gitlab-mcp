@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, paginate};
 
 // --------------------------------------------------------------------------
 // List issue notes
@@ -36,7 +36,13 @@ pub async fn issue_notes_list(client: &GitlabClient, p: IssueNotesListParams) ->
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    paginate(
+        client,
+        &path,
+        &params,
+        p.pagination.fetch_all.unwrap_or(false),
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------

@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id};
+use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id, paginate};
 
 // --------------------------------------------------------------------------
 // Shared list filters
@@ -63,9 +63,14 @@ pub struct RunnersListParams {
 }
 
 pub async fn runners_list(client: &GitlabClient, p: RunnersListParams) -> ListResult {
-    client
-        .list("/api/v4/runners", &runner_query(p.runner_type, p.filters))
-        .await
+    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
+    paginate(
+        client,
+        "/api/v4/runners",
+        &runner_query(p.runner_type, p.filters),
+        fetch_all,
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
@@ -85,12 +90,14 @@ pub struct RunnersAllListParams {
 }
 
 pub async fn runners_all_list(client: &GitlabClient, p: RunnersAllListParams) -> ListResult {
-    client
-        .list(
-            "/api/v4/runners/all",
-            &runner_query(p.runner_type, p.filters),
-        )
-        .await
+    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
+    paginate(
+        client,
+        "/api/v4/runners/all",
+        &runner_query(p.runner_type, p.filters),
+        fetch_all,
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
@@ -137,7 +144,13 @@ pub async fn runner_jobs_list(client: &GitlabClient, p: RunnerJobsListParams) ->
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    paginate(
+        client,
+        &path,
+        &params,
+        p.pagination.fetch_all.unwrap_or(false),
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
@@ -161,7 +174,13 @@ pub async fn runner_managers_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    paginate(
+        client,
+        &path,
+        &params,
+        p.pagination.fetch_all.unwrap_or(false),
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
@@ -192,9 +211,14 @@ pub async fn project_runners_list(
         "/api/v4/projects/{}/runners",
         encode_namespace_id(&p.project_id)
     );
-    client
-        .list(&path, &runner_query(p.runner_type, p.filters))
-        .await
+    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
+    paginate(
+        client,
+        &path,
+        &runner_query(p.runner_type, p.filters),
+        fetch_all,
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
@@ -215,7 +239,8 @@ pub async fn group_runners_list(client: &GitlabClient, p: GroupRunnersListParams
         encode_namespace_id(&p.group_id)
     );
     // Group runners endpoint doesn't accept a `type` filter — pass None.
-    client.list(&path, &runner_query(None, p.filters)).await
+    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
+    paginate(client, &path, &runner_query(None, p.filters), fetch_all).await
 }
 
 // --------------------------------------------------------------------------
@@ -244,6 +269,7 @@ mod tests {
             pagination: PaginationParams {
                 page: None,
                 per_page: None,
+                fetch_all: None,
             },
         }
     }
@@ -356,6 +382,7 @@ mod tests {
                 pagination: PaginationParams {
                     page: None,
                     per_page: None,
+                    fetch_all: None,
                 },
             },
         )
@@ -383,6 +410,7 @@ mod tests {
                 pagination: PaginationParams {
                     page: None,
                     per_page: None,
+                    fetch_all: None,
                 },
             },
         )

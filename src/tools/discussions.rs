@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, paginate};
 
 // --------------------------------------------------------------------------
 // List MR discussions
@@ -28,7 +28,13 @@ pub async fn mr_discussions_list(client: &GitlabClient, p: MrDiscussionsListPara
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    paginate(
+        client,
+        &path,
+        &params,
+        p.pagination.fetch_all.unwrap_or(false),
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------

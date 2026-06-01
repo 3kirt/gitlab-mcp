@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, paginate};
 
 // --------------------------------------------------------------------------
 // Shared CRUD helpers
@@ -24,7 +24,13 @@ async fn emoji_list(
         .opt("page", pagination.page)
         .opt("per_page", pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    paginate(
+        client,
+        &path,
+        &params,
+        pagination.fetch_all.unwrap_or(false),
+    )
+    .await
 }
 
 async fn emoji_get(
@@ -724,6 +730,7 @@ mod tests {
                 pagination: PaginationParams {
                     page: None,
                     per_page: None,
+                    fetch_all: None,
                 },
             },
         )

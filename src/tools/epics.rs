@@ -11,7 +11,8 @@ use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, PaginationMeta};
 use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, unwrap_404_as_empty_array,
+    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, paginate,
+    unwrap_404_as_empty_array,
 };
 
 // --------------------------------------------------------------------------
@@ -100,9 +101,13 @@ pub async fn epics_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client
-        .list(&format!("/api/v4/groups/{gid}/epics"), &params)
-        .await
+    paginate(
+        client,
+        &format!("/api/v4/groups/{gid}/epics"),
+        &params,
+        p.pagination.fetch_all.unwrap_or(false),
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
@@ -397,6 +402,7 @@ mod tests {
                 pagination: PaginationParams {
                     page: None,
                     per_page: None,
+                    fetch_all: None,
                 },
             },
         )
@@ -439,6 +445,7 @@ mod tests {
                 pagination: PaginationParams {
                     page: None,
                     per_page: None,
+                    fetch_all: None,
                 },
             },
         )
@@ -470,6 +477,7 @@ mod tests {
                 pagination: PaginationParams {
                     page: None,
                     per_page: None,
+                    fetch_all: None,
                 },
             },
         )

@@ -3,7 +3,8 @@ use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, unwrap_404_as_empty_array,
+    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, paginate,
+    unwrap_404_as_empty_array,
 };
 
 // --------------------------------------------------------------------------
@@ -73,7 +74,13 @@ pub async fn issues_list(client: &GitlabClient, p: IssuesListParams) -> ListResu
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list(&path, &params).await
+    paginate(
+        client,
+        &path,
+        &params,
+        p.pagination.fetch_all.unwrap_or(false),
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------

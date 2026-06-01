@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, PaginationMeta};
-use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id};
+use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id, paginate};
 
 // --------------------------------------------------------------------------
 // List groups
@@ -49,7 +49,13 @@ pub async fn groups_list(
         .opt("page", p.pagination.page)
         .opt("per_page", p.pagination.per_page)
         .into_params();
-    client.list("/api/v4/groups", &params).await
+    paginate(
+        client,
+        "/api/v4/groups",
+        &params,
+        p.pagination.fetch_all.unwrap_or(false),
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
@@ -149,6 +155,7 @@ mod tests {
                 pagination: PaginationParams {
                     page: None,
                     per_page: None,
+                    fetch_all: None,
                 },
             },
         )
@@ -191,6 +198,7 @@ mod tests {
                 pagination: PaginationParams {
                     page: None,
                     per_page: None,
+                    fetch_all: None,
                 },
             },
         )
@@ -222,6 +230,7 @@ mod tests {
                 pagination: PaginationParams {
                     page: None,
                     per_page: None,
+                    fetch_all: None,
                 },
             },
         )

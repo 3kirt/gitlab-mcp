@@ -29,6 +29,11 @@ pub type ListResult = Result<(Value, PaginationMeta), GitlabError>;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Upper bound on pages fetched in a single `fetch_all` request, guarding
+/// against runaway loops when an endpoint never signals the last page.
+/// At 100 items/page this caps a merged response at 20,000 items.
+pub(crate) const MAX_PAGES: u64 = 200;
+
 #[derive(Debug, Error)]
 pub enum GitlabError {
     #[error("GitLab API error {status}: {body}")]

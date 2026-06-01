@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_path_segment};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_path_segment, paginate};
 
 // --------------------------------------------------------------------------
 // Shared list filters
@@ -41,9 +41,14 @@ pub struct SnippetsListParams {
 }
 
 pub async fn snippets_list(client: &GitlabClient, p: SnippetsListParams) -> ListResult {
-    client
-        .list("/api/v4/snippets", &snippets_query(p.filters))
-        .await
+    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
+    paginate(
+        client,
+        "/api/v4/snippets",
+        &snippets_query(p.filters),
+        fetch_all,
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
@@ -60,9 +65,14 @@ pub async fn snippets_public_list(
     client: &GitlabClient,
     p: SnippetsPublicListParams,
 ) -> ListResult {
-    client
-        .list("/api/v4/snippets/public", &snippets_query(p.filters))
-        .await
+    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
+    paginate(
+        client,
+        "/api/v4/snippets/public",
+        &snippets_query(p.filters),
+        fetch_all,
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
@@ -78,11 +88,12 @@ pub struct SnippetsAllListParams {
 }
 
 pub async fn snippets_all_list(client: &GitlabClient, p: SnippetsAllListParams) -> ListResult {
+    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
     let mut params = snippets_query(p.filters);
     if let Some(storage) = p.repository_storage {
         params.push(("repository_storage", storage));
     }
-    client.list("/api/v4/snippets/all", &params).await
+    paginate(client, "/api/v4/snippets/all", &params, fetch_all).await
 }
 
 // --------------------------------------------------------------------------
