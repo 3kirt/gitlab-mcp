@@ -39,6 +39,45 @@ mod slim;
 pub mod snippets;
 
 // --------------------------------------------------------------------------
+// Progress notifications
+// --------------------------------------------------------------------------
+
+/// The client's `progressToken` plus a handle to notify it back.
+///
+/// Stashed in a task-local so [`paginate`] can emit per-page progress without
+/// threading request context through every domain function.
+#[derive(Clone)]
+struct ProgressCtx {
+    peer: Peer<RoleServer>,
+    token: ProgressToken,
+}
+
+tokio::task_local! {
+    /// Set by the `call_tool` override for the duration of one tool call.
+    /// `None` when the client didn't request progress on this call.
+    static PROGRESS_CTX: Option<ProgressCtx>;
+}
+
+/// Emit a `notifications/progress` update for the in-flight tool call, if the
+/// client supplied a `progressToken`. A no-op otherwise (including in unit
+/// tests, where the task-local is never set). `progress`/`total` share the
+/// same unit — absolute item count — per the MCP spec.
+async fn emit_page_progress(progress: u64, total: Option<u64>) {
+    let ctx = PROGRESS_CTX.try_with(|c| c.clone()).ok().flatten();
+    if let Some(ctx) = ctx {
+        let _ = ctx
+            .peer
+            .notify_progress(ProgressNotificationParam {
+                progress_token: ctx.token,
+                progress: progress as f64,
+                total: total.map(|t| t as f64),
+                message: Some(format!("{progress} items")),
+            })
+            .await;
+    }
+}
+
+// --------------------------------------------------------------------------
 // Shared helpers
 // --------------------------------------------------------------------------
 
@@ -138,9 +177,13 @@ pub async fn paginate(
             other => return Ok((other, meta)),
         };
         let n = batch.len() as u64;
+        let next_page = meta.next_page;
         all.extend(batch);
 
-        let next_page = meta.next_page;
+        // Emit after extending so `progress` reflects items collected so far;
+        // `total` is the X-Total header when GitLab supplied it, else unknown.
+        emit_page_progress(all.len() as u64, meta.total).await;
+
         if n < FETCH_ALL_PER_PAGE || next_page.is_none() {
             break;
         }
@@ -357,7 +400,8 @@ fn level_severity(level: LoggingLevel) -> u8 {
 #[derive(Clone)]
 pub struct GitlabMcpServer {
     client: Arc<OnceLock<GitlabClient>>,
-    #[allow(dead_code)]
+    // Used by the `call_tool` override below; reused per call rather than
+    // rebuilt via `Self::tool_router()` each time.
     tool_router: ToolRouter<GitlabMcpServer>,
     #[allow(dead_code)]
     prompt_router: PromptRouter<GitlabMcpServer>,
@@ -2255,6 +2299,27 @@ impl ServerHandler for GitlabMcpServer {
         let _ = self.peer.set(context.peer);
     }
 
+    /// Override the macro-generated dispatch so every tool call runs inside a
+    /// `PROGRESS_CTX` scope. When the client sent a `progressToken`, `paginate`
+    /// can then emit per-page `notifications/progress` during a fetch_all walk.
+    /// Without a token the scope holds `None` and emission is a no-op.
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        let progress_ctx = context.meta.get_progress_token().map(|token| ProgressCtx {
+            peer: context.peer.clone(),
+            token,
+        });
+        PROGRESS_CTX
+            .scope(progress_ctx, async move {
+                let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+                self.tool_router.call(tcc).await
+            })
+            .await
+    }
+
     async fn set_level(
         &self,
         request: SetLevelRequestParams,
@@ -2698,6 +2763,28 @@ mod tests {
             .await
             .unwrap_err();
             assert!(matches!(err, GitlabError::Other(msg) if msg.contains("page limit")));
+        }
+
+        #[tokio::test]
+        async fn fetch_all_inside_progress_scope_with_no_token_still_works() {
+            // Exercises the `PROGRESS_CTX` set-to-`None` branch (a tool call
+            // without a progressToken): emit_page_progress must be a no-op and
+            // the merge must complete normally.
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/api/v4/projects/1/issues"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(page_body(7)))
+                .mount(&server)
+                .await;
+
+            let client = mock_client(&server);
+            let (body, _) = PROGRESS_CTX
+                .scope(None, async {
+                    paginate(&client, "/api/v4/projects/1/issues", &[], true).await
+                })
+                .await
+                .unwrap();
+            assert_eq!(body.as_array().unwrap().len(), 7);
         }
     }
 }
