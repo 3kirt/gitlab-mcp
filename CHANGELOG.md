@@ -4,6 +4,22 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.20.0] — 2026-06-01
+
+### Added
+- **`fetch_all` auto-pagination** — every list tool now accepts an optional
+  `fetch_all` flag. When set, the server walks every page (at 100 items each),
+  merges the results into one array, and returns them as a single complete
+  page, ignoring `page`/`per_page`. A page-count guard bounds runaway loops,
+  and termination tolerates GitLab omitting `X-Total`/`X-Next-Page` on large
+  endpoints.
+- **Per-page progress notifications** — during a `fetch_all` walk the server
+  emits a `notifications/progress` update after each page when the client
+  supplied a `progressToken`, with `progress`/`total` as absolute item counts
+  (`total` reported when GitLab provides `X-Total`, otherwise omitted).
+
+---
+
 ## [0.19.0] — 2026-05-29
 
 ### Added
