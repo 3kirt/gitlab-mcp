@@ -4,6 +4,22 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.21.0] — 2026-06-04
+
+### Changed
+- **Comment-tool descriptions rewritten for discoverability** — the issue, merge
+  request, and commit discussion tools now lead with "comment/note" intent
+  rather than GitLab's internal "discussion thread" wording, and cross-reference
+  their equivalents. This makes the existing `gitlab_mrs_discussions_*` tools
+  discoverable as the way to comment on a merge request (resolves #9: posting an
+  MR comment never required a separate `gitlab_mrs_notes_*` family).
+
+### Documentation
+- Added a "Writing tool descriptions" section to `CLAUDE.md` codifying the
+  intent-led, synonym-bridging description principles for future tools.
+
+---
+
 ## [0.20.0] — 2026-06-01
 
 ### Added
