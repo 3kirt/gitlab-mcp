@@ -66,6 +66,15 @@ MCP client → rmcp transport (stdio)
 2. Add `pub mod <domain>;` to `src/tools/mod.rs`.
 3. Add `#[tool(...)]` shim methods to the `#[tool_router]` impl block, each calling the appropriate delegation macro.
 
+### Writing tool descriptions (LLM discoverability)
+
+The `#[tool(description = ...)]` text is the only thing an LLM matches against when choosing a tool, so write it for the *searcher's* intent and vocabulary, not GitLab's internal API nomenclature:
+
+- **Lead with the verb + noun a user would say** ("Comment on a merge request", "List branches") before explaining the mechanism.
+- **Bridge synonyms** where GitLab's term diverges from common usage — GitLab's "note" and "discussion thread" are what users call a "comment". Include both, e.g. "Comment on a GitLab merge request (creates a note / starts a discussion thread)". This is why the MR *discussions* tools — not a separate `gitlab_mrs_notes_*` family — are the way to comment on an MR (see issue #9: the capability existed but wasn't discoverable).
+- **Cross-reference near-equivalent tools** so a model searching for the wrong name still lands somewhere useful (e.g. `gitlab_issues_discussions_list` points at `gitlab_issues_notes_list` for the flat view).
+- **State the common-case shortcut** when a tool has advanced params — e.g. "pass only `body` for a plain comment; add `position_*` for an inline diff comment".
+
 ### Namespace ID encoding
 
 Project- and group-scoped endpoints both accept either a numeric ID (`"42"`) or a namespace path (`"mygroup/myrepo"`). `encode_namespace_id()` in `src/tools/mod.rs` (pub crate) URL-encodes the slash when a path is provided and is shared by all domain modules (projects in `issues.rs`/`merge_requests.rs`/etc., groups in `epics.rs`).

@@ -629,7 +629,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List all discussion threads on a GitLab issue. Each thread contains an individual_note flag and a notes[] array. Paginate with page and per_page."
+        description = "List comments and discussion threads on a GitLab issue (thread-grouped view). Each thread has an individual_note flag and a notes[] array. For a flat list of the same comments, use gitlab_issues_notes_list. Paginate with page and per_page."
     )]
     async fn gitlab_issues_discussions_list(
         &self,
@@ -644,7 +644,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single discussion thread on a GitLab issue by discussion ID (hex string)."
+        description = "Get a single comment thread (discussion) on a GitLab issue by discussion ID (hex string)."
     )]
     async fn gitlab_issues_discussions_get(
         &self,
@@ -659,7 +659,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Start a new discussion thread on a GitLab issue. Required: project_id, issue_iid, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
+        description = "Start a comment thread (discussion) on a GitLab issue. To post a plain comment, gitlab_issues_notes_create is the simpler equivalent. Required: project_id, issue_iid, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
     )]
     async fn gitlab_issues_discussions_create(
         &self,
@@ -674,7 +674,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Add a reply note to an existing discussion thread on a GitLab issue. Required: project_id, issue_iid, discussion_id, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
+        description = "Reply to an existing comment thread (discussion) on a GitLab issue. Required: project_id, issue_iid, discussion_id, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
     )]
     async fn gitlab_issues_discussions_note_create(
         &self,
@@ -689,7 +689,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update the body of a note in a GitLab issue discussion thread. Required: project_id, issue_iid, discussion_id, note_id, body."
+        description = "Edit the body of a comment (note) in a GitLab issue discussion thread. Required: project_id, issue_iid, discussion_id, note_id, body."
     )]
     async fn gitlab_issues_discussions_note_update(
         &self,
@@ -704,7 +704,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete a note from a GitLab issue discussion thread. Required: project_id, issue_iid, discussion_id, note_id. This action is permanent."
+        description = "Delete a comment (note) from a GitLab issue discussion thread. Required: project_id, issue_iid, discussion_id, note_id. This action is permanent."
     )]
     async fn gitlab_issues_discussions_note_delete(
         &self,
@@ -961,7 +961,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List all discussion threads on a commit. Paginate with page and per_page."
+        description = "List comment threads (discussions) on a commit. Paginate with page and per_page."
     )]
     async fn gitlab_commits_discussions_list(
         &self,
@@ -1560,7 +1560,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List all discussion threads on a GitLab merge request. Each thread contains an individual_note flag and a notes[] array. Paginate with page and per_page."
+        description = "List comments and discussion threads on a GitLab merge request (an MR's notes/comments live here). Each thread has an individual_note flag and a notes[] array; plain top-level comments appear as single-note threads. Paginate with page and per_page."
     )]
     async fn gitlab_mrs_discussions_list(
         &self,
@@ -1570,7 +1570,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single discussion thread on a GitLab merge request by discussion ID (hex string)."
+        description = "Get a single comment thread (discussion) on a GitLab merge request by discussion ID (hex string)."
     )]
     async fn gitlab_mrs_discussions_get(
         &self,
@@ -1580,7 +1580,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Start a new discussion thread on a GitLab merge request. Required: project_id, merge_request_iid, body. Optional: commit_id (pin to commit SHA). Advanced diff-note position: position_base_sha, position_head_sha, position_start_sha, position_type (\"text\"/\"image\"/\"file\"), position_new_path, position_old_path, position_new_line, position_old_line."
+        description = "Comment on a GitLab merge request (creates a note / starts a discussion thread). To post a plain top-level comment, pass only body — this is the MR equivalent of gitlab_issues_notes_create. To pin an inline comment to a specific diff line, also pass the position_* fields. Required: project_id, merge_request_iid, body. Optional: commit_id (pin to commit SHA); inline diff-note position: position_base_sha, position_head_sha, position_start_sha, position_type (\"text\"/\"image\"/\"file\"), position_new_path, position_old_path, position_new_line, position_old_line."
     )]
     async fn gitlab_mrs_discussions_create(
         &self,
@@ -1600,7 +1600,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Add a reply note to an existing discussion thread on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
+        description = "Reply to an existing comment thread (discussion) on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
     )]
     async fn gitlab_mrs_discussions_note_create(
         &self,
@@ -1615,7 +1615,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update a note in a GitLab merge request discussion thread. Required: project_id, merge_request_iid, discussion_id, note_id. Provide exactly one of: body (new text) or resolved (true/false)."
+        description = "Edit or resolve a comment (note) on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, note_id. Provide exactly one of: body (new comment text) or resolved (true/false)."
     )]
     async fn gitlab_mrs_discussions_note_update(
         &self,
@@ -1630,7 +1630,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete a note from a GitLab merge request discussion thread. Required: project_id, merge_request_iid, discussion_id, note_id. This action is permanent."
+        description = "Delete a comment (note) from a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, note_id. This action is permanent."
     )]
     async fn gitlab_mrs_discussions_note_delete(
         &self,
