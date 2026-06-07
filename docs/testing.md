@@ -77,12 +77,12 @@ module's `mod tests`.
 
 ## Layer 2 — Live integration tests
 
-A deterministic, scriptable replacement for the parts of the manual protocol
-(`docs/testing-protocol.md`) that need a real server. Covers the **Issues**
-(protocol §1–6, plus issue notes and issue discussions), **Merge Requests**,
-**MR Discussions**, **Branches**, and **Repository Files** domains so far. The
-suite lives under [`src/tools/live/`](../src/tools/live/), one module per API
-area plus a shared `harness`.
+A deterministic suite that verifies the tools against a real GitLab instance —
+the one risk the unit tests structurally cannot cover. Covers the **Issues**
+(plus issue notes and issue discussions), **Merge Requests**, **MR Discussions**,
+**Branches**, and **Repository Files** domains so far. The suite lives under
+[`src/tools/live/`](../src/tools/live/), one module per API area plus a shared
+`harness`.
 
 The MR tests also exercise the seed pattern for resources that need git state:
 `file_create` with `start_branch` creates a source branch *and* a
@@ -119,13 +119,13 @@ ready.
   `json_result` / `json_list_result` apply at the rmcp boundary — so assertions
   run against exactly what an MCP client receives (e.g. `description` stripped
   from list items but present on single-get).
-- **Self-seeding and self-cleaning.** Each test creates the issues it needs with
-  a unique `run_tag()` and deletes them in teardown. No reliance on pre-seeded
-  state; runs are idempotent and repeatable. (This is the key improvement over
-  the manual "Seed Data" protocol.)
-- **Invariants-as-code.** `assert_issue_get_invariants` /
-  `assert_issue_list_item_invariants` encode the protocol's "Universal
-  Invariants" tables as reusable assertions instead of prose a human/LLM eyeballs.
+- **Self-seeding and self-cleaning.** Each test creates the resources it needs
+  with a unique `run_tag()` and deletes them in teardown. No reliance on
+  pre-seeded state; runs are idempotent and repeatable.
+- **Invariants-as-code.** Helpers like `assert_issue_get_invariants` /
+  `assert_issue_list_item_invariants` encode each resource type's expected shape
+  (the "universal invariants": identifying fields present, stripped keys absent,
+  users collapsed, …) as reusable assertions instead of prose a human eyeballs.
 - **Skips without credentials.** `skip_unless_live!` returns early (printing a
   notice) when `GITLAB_URL`/`GITLAB_TOKEN` are absent, so the feature is safe to
   enable in CI without secrets — supply credentials in a dedicated job to
@@ -147,17 +147,17 @@ GITLAB_TEST_PROJECT=3kirt1/gitlab-mcp-testing \
 - The credentials must belong to an account with write access to the test
   project — tests create and delete real issues there.
 
-## Relationship to `docs/testing-protocol.md`
+## Coverage
 
-`docs/testing-protocol.md` is the original **manual / LLM-driven** end-to-end
-protocol: a human or an agent (via the `test-api` skill) walks each tool against
-the live test project and checks results against the invariant tables. It remains
-the source of truth for *what* to verify and for domains not yet automated.
+The live suite is being grown domain-by-domain. Covered today: Issues (including
+issue notes and issue discussions), Merge Requests, MR Discussions, Branches, and
+Repository Files. Not yet automated: issue links (only the `issue_get` embed is
+covered), pipeline schedules, emoji reactions, snippets, and the read-only
+families (commits, repository tree/compare, search, runners, jobs, pipelines).
 
-`src/tools/live/` is the **scriptable automation** of that protocol —
-deterministic, assertable, CI-runnable, no LLM in the loop. The intent is to
-migrate the protocol domain-by-domain into live tests, with the manual protocol
-covering the long tail until then.
+**Epics** are Premium/Ultimate-only. The standing test token is on a Free-tier
+gitlab.com account, so epic operations return `403`/`404` there; epics can only be
+exercised live once a Premium test instance is available.
 
 ## Command reference
 
@@ -170,7 +170,8 @@ cargo clippy --features live-tests --tests --locked -- -D warnings
 ## Adding a new domain to the live layer
 
 1. Add a `src/tools/live/<area>.rs` module (declared in `src/tools/live/mod.rs`)
-   mirroring the relevant `docs/testing-protocol.md` sections.
+   covering that API area's operations (list/get/create/update/delete and any
+   embeds or domain-specific actions).
 2. `use super::harness::*` for the shared bits (`live_env`, `skip_unless_live!`,
    `run_tag`, `pg`, the cross-domain invariants) and add an area-specific
    invariants helper for the domain's response shape.

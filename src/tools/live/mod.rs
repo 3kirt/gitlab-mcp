@@ -1,5 +1,5 @@
-//! Live integration tests — a deterministic, scriptable replacement for the
-//! LLM-driven `docs/testing-protocol.md`.
+//! Live integration tests — a deterministic suite that verifies the tools
+//! against a real GitLab instance.
 //!
 //! These run against a *real* GitLab instance and verify the one thing wiremock
 //! unit tests cannot: fidelity to the actual API (param names, body shapes,
