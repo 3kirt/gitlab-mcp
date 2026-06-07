@@ -7,16 +7,19 @@ use serde_json::Value;
 use crate::tools::{emoji_reactions, issue_notes, slim};
 
 use super::harness::{
-    LiveEnv, assert_no_stripped_keys, assert_nonempty_str, assert_user_collapsed, delete_branch,
-    delete_issue, delete_mr, pg, run_tag, seed_issue, seed_mr, skip_unless_live,
+    LiveEnv, assert_no_stripped_keys, assert_user_collapsed, delete_branch, delete_issue,
+    delete_mr, pg, run_tag, seed_issue, seed_mr, skip_unless_live,
 };
 
 /// Invariants for an award-emoji object (single-get / create / list item).
-fn assert_award_invariants(award: &Value, expected_name: &str) {
-    assert!(award.get("id").and_then(Value::as_u64).is_some(), "award id");
+fn assert_award_invariants(award: &Value, expected_name: &str, expected_awardable_type: &str) {
+    assert!(
+        award.get("id").and_then(Value::as_u64).is_some(),
+        "award id"
+    );
     assert_eq!(award["name"], expected_name);
     assert_user_collapsed(&award["user"]);
-    assert_nonempty_str(award, "awardable_type");
+    assert_eq!(award["awardable_type"], expected_awardable_type);
     assert!(
         award.get("awardable_id").and_then(Value::as_u64).is_some(),
         "awardable_id"
@@ -47,8 +50,7 @@ async fn issue_and_note_emoji_crud() {
         .await
         .expect("create issue emoji"),
     );
-    assert_award_invariants(&created, "thumbsup");
-    assert_eq!(created["awardable_type"], "Issue");
+    assert_award_invariants(&created, "thumbsup", "Issue");
     let award_id = created["id"].as_u64().unwrap();
 
     let got = slim::slim_get(
@@ -112,8 +114,10 @@ async fn issue_and_note_emoji_crud() {
         .await
         .expect("create note emoji"),
     );
-    assert_award_invariants(&created, "heart");
-    assert_eq!(created["awardable_type"], "Note");
+    assert_award_invariants(&created, "heart", "Note");
+    // The awardable_id of a note reaction is the note's own id — check it points
+    // at the right parent, not just that it's present.
+    assert_eq!(created["awardable_id"].as_u64(), Some(note_id));
     let note_award_id = created["id"].as_u64().unwrap();
 
     let got = slim::slim_get(
@@ -208,8 +212,7 @@ async fn mr_emoji_crud() {
         .await
         .expect("create mr emoji"),
     );
-    assert_award_invariants(&created, "rocket");
-    assert_eq!(created["awardable_type"], "MergeRequest");
+    assert_award_invariants(&created, "rocket", "MergeRequest");
     let award_id = created["id"].as_u64().unwrap();
 
     let got = slim::slim_get(

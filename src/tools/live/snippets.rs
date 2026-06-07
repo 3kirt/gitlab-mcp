@@ -5,14 +5,17 @@
 use serde_json::Value;
 
 use crate::client::GitlabError;
-use crate::tools::{slim, snippets};
+use crate::tools::{PaginationParams, slim, snippets};
 
 use super::harness::{
-    LiveEnv, assert_no_stripped_keys, assert_nonempty_str, pg, run_tag, skip_unless_live,
+    LiveEnv, assert_no_stripped_keys, assert_nonempty_str, run_tag, skip_unless_live,
 };
 
 fn assert_snippet_invariants(snip: &Value) {
-    assert!(snip.get("id").and_then(Value::as_u64).is_some(), "snippet id");
+    assert!(
+        snip.get("id").and_then(Value::as_u64).is_some(),
+        "snippet id"
+    );
     assert_nonempty_str(snip, "title");
     assert_nonempty_str(snip, "web_url");
     assert_no_stripped_keys(snip);
@@ -74,8 +77,11 @@ async fn snippet_crud_raw_and_list() {
     // Raw content of the (single-file) snippet round-trips exactly.
     assert_eq!(snippet_raw_content(&env, id).await, "v1 content\n");
 
-    // Raw content of the specific file in the snippet repo (default ref "main").
-    let file = snippets::snippet_file_raw(
+    // Raw content of the specific file in the snippet repo. Snippet repos default
+    // to "main" on modern GitLab; on an instance that still defaults to "master"
+    // the ref 404s — treat that as a skip rather than a failure, since it's an
+    // instance default, not a tool defect.
+    match snippets::snippet_file_raw(
         &env.client,
         snippets::SnippetFileRawParams {
             id,
@@ -84,17 +90,28 @@ async fn snippet_crud_raw_and_list() {
         },
     )
     .await
-    .expect("snippet_file_raw");
-    assert_eq!(file["content"], "v1 content\n");
+    {
+        Ok(file) => assert_eq!(file["content"], "v1 content\n"),
+        Err(GitlabError::Api { status, .. }) if status.as_u16() == 404 => {
+            eprintln!("SKIP snippet_file_raw: snippet default branch is not 'main'")
+        }
+        Err(e) => panic!("snippet_file_raw: {e:?}"),
+    }
 
-    // The current user's snippet list includes ours.
+    // The current user's snippet list includes ours. Walk every page
+    // (fetch_all) so a backlog of other personal snippets can't push ours off
+    // the first page and confound the membership check.
     let (body, _) = snippets::snippets_list(
         &env.client,
         snippets::SnippetsListParams {
             filters: snippets::SnippetsListFilters {
                 created_after: None,
                 created_before: None,
-                pagination: pg(None, None),
+                pagination: PaginationParams {
+                    page: None,
+                    per_page: None,
+                    fetch_all: Some(true),
+                },
             },
         },
     )

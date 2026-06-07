@@ -55,7 +55,10 @@ fn assert_file_get_invariants(item: &Value, file_path: &str) {
     assert_nonempty_str(item, "file_name");
     assert_nonempty_str(item, "blob_id");
     assert_nonempty_str(item, "commit_id");
-    assert_eq!(item["encoding"], "base64", "file_get delivers Base64 content");
+    assert_eq!(
+        item["encoding"], "base64",
+        "file_get delivers Base64 content"
+    );
     assert_nonempty_str(item, "content");
     assert_no_stripped_keys(item);
 }
@@ -141,7 +144,10 @@ async fn files_crud_raw_blame_lifecycle() {
     assert!(!entries.is_empty(), "blame has at least one entry");
     let commit_id = entries[0]["commit"]["id"].as_str().unwrap_or("");
     assert!(!commit_id.is_empty(), "blame entry has commit.id");
-    assert!(entries[0]["lines"].is_array(), "blame entry has a lines array");
+    assert!(
+        entries[0]["lines"].is_array(),
+        "blame entry has a lines array"
+    );
 
     // Delete — then a get must 404.
     repository_files::file_delete(

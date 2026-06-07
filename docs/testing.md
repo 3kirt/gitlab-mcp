@@ -27,7 +27,7 @@ would have happily accepted `"blocks"` — because the mock was our assumption.
 
 ## Layer 1 — Unit tests
 
-158 tests today, run by default with `cargo test`. Two flavors:
+155 tests today, run by default with `cargo test`. Two flavors:
 
 **Pure-logic tests** — no HTTP. Cover the transform/builder helpers directly:
 `src/tools/slim.rs` (field stripping, user collapsing), `src/config.rs` (config

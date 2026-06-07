@@ -8,8 +8,8 @@ use crate::client::GitlabError;
 use crate::tools::{issue_discussions, issue_notes, issues, slim};
 
 use super::harness::{
-    LiveEnv, assert_no_stripped_keys, assert_nonempty_str, assert_note_invariants,
-    delete_issue, discussion_note_count, pg, run_tag, skip_unless_live,
+    LiveEnv, assert_no_stripped_keys, assert_nonempty_str, assert_note_invariants, delete_issue,
+    discussion_note_count, pg, run_tag, skip_unless_live,
 };
 
 // --------------------------------------------------------------------------
@@ -65,7 +65,9 @@ async fn get_issue_slimmed(env: &LiveEnv, iid: u64) -> Value {
 /// Run a list request through the server's path: domain function + `slim_list`.
 /// Returns the slimmed items array; pagination meta is asserted separately.
 async fn list_issues_slimmed(env: &LiveEnv, p: issues::IssuesListParams) -> (Value, u64) {
-    let (body, meta) = issues::issues_list(&env.client, p).await.expect("issues_list");
+    let (body, meta) = issues::issues_list(&env.client, p)
+        .await
+        .expect("issues_list");
     (slim::slim_list(body), meta.per_page.unwrap_or(0))
 }
 
@@ -275,9 +277,15 @@ async fn issues_list_filters_search_sort_pagination() {
     p.search = Some(tag.clone());
     p.state = Some("all".into());
     let (found, _) = list_issues_slimmed(&env, p).await;
-    assert_eq!(found.as_array().unwrap().len(), 3, "search by tag finds all");
+    assert_eq!(
+        found.as_array().unwrap().len(),
+        3,
+        "search by tag finds all"
+    );
 
-    // §1.7 Sort ascending by created_at — IIDs must be monotonically increasing.
+    // §1.7 Sort ascending by created_at — must come back in the order we seeded
+    // them (comparing against the known creation order, not a self-sort, so a
+    // wrong-but-sorted ordering can't pass).
     let mut p = list_params(&env.project);
     p.labels = Some(label.clone());
     p.state = Some("all".into());
@@ -290,9 +298,10 @@ async fn issues_list_filters_search_sort_pagination() {
         .iter()
         .map(|i| i["iid"].as_u64().unwrap())
         .collect();
-    let mut expect = sorted_iids.clone();
-    expect.sort_unstable();
-    assert_eq!(sorted_iids, expect, "ascending created_at => ascending iid");
+    assert_eq!(
+        sorted_iids, iids,
+        "asc created_at returns issues in creation order"
+    );
 
     // §6 Pagination — per_page=1 returns a single item and echoes per_page.
     let mut p = list_params(&env.project);

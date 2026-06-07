@@ -67,7 +67,10 @@ fn assert_branch_invariants(item: &Value) {
     let commit_id = item["commit"]["id"].as_str().unwrap_or("");
     assert!(!commit_id.is_empty(), "commit.id must be a non-empty SHA");
     assert!(item["merged"].is_boolean(), "merged must be a boolean");
-    assert!(item["protected"].is_boolean(), "protected must be a boolean");
+    assert!(
+        item["protected"].is_boolean(),
+        "protected must be a boolean"
+    );
     assert_no_stripped_keys(item);
 }
 

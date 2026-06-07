@@ -89,9 +89,11 @@ credentials and confirm they actually executed.
    ```
 
 3. Confirm from the output that the tests **ran**, not skipped: the summary must
-   show a non-trivial count passing (e.g. `12 passed`) and **no** `SKIP: set
-   GITLAB_URL + GITLAB_TOKEN` notices. If any live test fails — or the run skipped
-   — stop and report; do not proceed to tagging.
+   show the full live-suite count passing (17 as of this writing — count the
+   `mod` lines in `src/tools/live/mod.rs` if unsure, several modules hold more
+   than one test) and **no** `SKIP: set GITLAB_URL + GITLAB_TOKEN` notices. If any
+   live test fails — or the run skipped — stop and report; do not proceed to
+   tagging.
 
 ### 7. Update CHANGELOG.md
 

@@ -139,7 +139,10 @@ async fn mr_discussions_crud_and_resolve() {
     let resolved = resolve(&env, mr_iid, &discussion_id, true).await;
     assert_eq!(resolved["notes"][0]["resolved"], true, "thread resolved");
     let unresolved = resolve(&env, mr_iid, &discussion_id, false).await;
-    assert_eq!(unresolved["notes"][0]["resolved"], false, "thread unresolved");
+    assert_eq!(
+        unresolved["notes"][0]["resolved"], false,
+        "thread unresolved"
+    );
 
     // Edit the reply note within the thread.
     let edited = slim::slim_get(

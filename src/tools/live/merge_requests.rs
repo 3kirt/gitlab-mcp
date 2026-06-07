@@ -8,11 +8,11 @@
 use serde_json::Value;
 
 use crate::client::GitlabError;
-use crate::tools::{merge_requests, slim};
+use crate::tools::{issues, merge_requests, slim};
 
 use super::harness::{
     LiveEnv, assert_no_stripped_keys, assert_nonempty_str, assert_user_collapsed, delete_branch,
-    pg, run_tag, seed_branch_with_file, skip_unless_live,
+    delete_issue, pg, run_tag, seed_branch_with_file, seed_issue, skip_unless_live,
 };
 
 // --------------------------------------------------------------------------
@@ -111,7 +111,9 @@ fn mrs_list_params(project: &str) -> merge_requests::MrsListParams {
 /// Allowed`. So we poll `detailed_merge_status` (falling back to the legacy
 /// `merge_status`) *and* retry the merge itself on a 405, within one budget.
 async fn merge_when_ready(env: &LiveEnv, iid: u64) -> Value {
-    for _ in 0..30 {
+    // ~60s budget: GitLab's async mergeability check can lag on a loaded
+    // instance, and this test gates releases, so err toward patience.
+    for _ in 0..60 {
         let mr = merge_requests::mr_get(
             &env.client,
             merge_requests::MrGetParams {
@@ -267,7 +269,10 @@ async fn mrs_create_get_update_delete_lifecycle() {
         .await
         .expect("clear draft");
     assert!(
-        !undrafted["title"].as_str().unwrap_or("").starts_with("Draft:"),
+        !undrafted["title"]
+            .as_str()
+            .unwrap_or("")
+            .starts_with("Draft:"),
         "draft=false must strip the Draft: prefix"
     );
     assert_eq!(undrafted["draft"], false);
@@ -348,7 +353,8 @@ async fn mrs_list_filters_slimming_sort_pagination() {
     let (one, _) = list_mrs_slimmed(&env, p).await;
     assert_eq!(one.as_array().unwrap().len(), 1, "source_branch filter");
 
-    // Sort ascending by created_at — IIDs monotonically increasing.
+    // Sort ascending by created_at — must come back in the order we seeded them
+    // (compared against the known creation order, not a self-sort).
     let mut p = mrs_list_params(&env.project);
     p.labels = Some(label.clone());
     p.state = Some("all".into());
@@ -361,9 +367,10 @@ async fn mrs_list_filters_slimming_sort_pagination() {
         .iter()
         .map(|i| i["iid"].as_u64().unwrap())
         .collect();
-    let mut expect = sorted_iids.clone();
-    expect.sort_unstable();
-    assert_eq!(sorted_iids, expect, "ascending created_at => ascending iid");
+    assert_eq!(
+        sorted_iids, iids,
+        "asc created_at returns MRs in creation order"
+    );
 
     // Pagination — per_page=1 returns a single item and echoes per_page.
     let mut p = mrs_list_params(&env.project);
@@ -412,8 +419,78 @@ async fn mr_merge_into_throwaway_base() {
     assert_mr_get_invariants(&got);
     assert_eq!(got["state"], "merged");
 
-    // Cleanup: deleting the base branch discards the merged commit; main is
-    // untouched. The feature branch was removed on merge, but delete defensively.
+    // Cleanup: delete the merged MR record, then the branches (which discards
+    // the merged commit). main is untouched. The feature branch was removed on
+    // merge, but delete defensively.
+    delete_mr(&env, iid).await;
     delete_branch(&env, &feat).await;
     delete_branch(&env, &base).await;
+}
+
+// --------------------------------------------------------------------------
+// Closing-reference embeds — real content for closes_issues / closed_by
+//
+// An MR whose description carries a closing keyword populates the MR's
+// `closes_issues` and the issue's `closed_by` *without* being merged, so this
+// gives the embeds real (non-empty) coverage that the shape checks in
+// assert_mr_get_invariants / assert_issue_get_invariants cannot.
+// --------------------------------------------------------------------------
+
+#[tokio::test]
+async fn mr_closes_issue_embeds() {
+    let env = skip_unless_live!();
+    let tag = run_tag();
+    let issue_iid = seed_issue(&env, &format!("{tag} to close")).await;
+    let branch = format!("{tag}-closes-feat");
+    seed_branch_with_file(&env, &branch, "main").await;
+
+    // MR targeting the default branch whose description closes the issue.
+    let mut create = mr_create_params(&env, &branch, "main", &format!("{tag} closes"));
+    create.description = Some(format!("Closes #{issue_iid}"));
+    let (mr_iid, _) = create_mr(&env, create).await;
+
+    // GitLab resolves the closing reference asynchronously, so both embeds can
+    // be empty for a beat after creation — poll until they populate.
+
+    // mr_get embeds the issue this MR will close.
+    let mut closes_ok = false;
+    for _ in 0..20 {
+        let mr = get_mr_slimmed(&env, mr_iid).await;
+        if let Some(arr) = mr["closes_issues"].as_array()
+            && arr.iter().any(|i| i["iid"].as_u64() == Some(issue_iid))
+        {
+            closes_ok = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    assert!(closes_ok, "closes_issues must contain the referenced issue");
+
+    // issue_get embeds the MR that will close it (closed_by).
+    let mut closed_by_ok = false;
+    for _ in 0..20 {
+        let issue = slim::slim_get(
+            issues::issue_get(
+                &env.client,
+                issues::IssueGetParams {
+                    project_id: env.project.clone(),
+                    issue_iid,
+                },
+            )
+            .await
+            .expect("issue_get"),
+        );
+        if let Some(arr) = issue["closed_by"].as_array()
+            && arr.iter().any(|m| m["iid"].as_u64() == Some(mr_iid))
+        {
+            closed_by_ok = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    assert!(closed_by_ok, "closed_by must contain the closing MR");
+
+    delete_mr(&env, mr_iid).await;
+    delete_branch(&env, &branch).await;
+    delete_issue(&env, issue_iid).await;
 }

@@ -204,15 +204,17 @@ pub(super) fn assert_nonempty_str(v: &Value, key: &str) {
     assert!(!s.is_empty(), "{key} must be a non-empty string");
 }
 
-/// A collapsed user object must carry only id/username/name (the slimmer drops
-/// avatar_url, web_url, state, etc.).
+/// A collapsed user object must be present and carry only id/username/name (the
+/// slimmer drops avatar_url, web_url, state, etc.). Requiring presence keeps the
+/// check from passing vacuously if the user/author field ever goes missing.
 pub(super) fn assert_user_collapsed(user: &Value) {
-    if let Some(obj) = user.as_object() {
-        for key in obj.keys() {
-            assert!(
-                matches!(key.as_str(), "id" | "username" | "name"),
-                "user object should be collapsed, unexpected key {key:?}"
-            );
-        }
+    let obj = user
+        .as_object()
+        .expect("user/author must be a present object");
+    for key in obj.keys() {
+        assert!(
+            matches!(key.as_str(), "id" | "username" | "name"),
+            "user object should be collapsed, unexpected key {key:?}"
+        );
     }
 }
