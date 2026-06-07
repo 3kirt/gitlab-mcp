@@ -4,6 +4,33 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.23.0] — 2026-06-07
+
+This release is test infrastructure, documentation, and developer process only —
+there are no changes to tool behaviour or output.
+
+### Added
+- **Live integration test suite** — a new `src/tools/live/` suite (gated behind a
+  `live-tests` cargo feature) exercises the tools against a real GitLab instance,
+  verifying request/response fidelity that the wiremock unit tests structurally
+  cannot. Covers Issues (including issue links, notes, and discussions), Merge
+  Requests, MR Discussions, Branches, Repository Files, Snippets, and Emoji
+  Reactions. Each test is self-seeding and self-cleaning, so runs are idempotent.
+- **Live tests are now a required release gate** — the release process runs the
+  live suite with real credentials and refuses to tag if it fails or silently
+  skips.
+
+### Removed
+- **Manual testing protocol retired** — `docs/testing-protocol.md` and the
+  `/test-api` skill that drove it are removed, superseded by the deterministic,
+  scriptable live suite above.
+
+### Documentation
+- Added `docs/testing.md` documenting the two-layer testing strategy — wiremock
+  unit tests vs. live integration tests, and what each layer verifies.
+
+---
+
 ## [0.22.0] — 2026-06-07
 
 ### Fixed
