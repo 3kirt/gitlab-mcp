@@ -81,4 +81,8 @@ Project- and group-scoped endpoints both accept either a numeric ID (`"42"`) or 
 
 ## Testing
 
+The overall strategy — unit (wiremock) tests vs. live integration tests, and what each layer verifies — is described in [`docs/testing.md`](docs/testing.md).
+
 End-to-end tool verification is documented in [`docs/testing-protocol.md`](docs/testing-protocol.md). It covers seed data setup, per-tool test cases, cross-tool workflows, and error-handling checks for Issues, Issue Links, Issue Notes, Branches, Merge Requests, MR Discussions, Repository/Files, and Epics endpoints against the test project `3kirt1/gitlab-mcp-testing` (and parent group `3kirt1` for epics).
+
+The scriptable automation of that protocol lives in [`src/tools/live_tests.rs`](src/tools/live_tests.rs) (Issues domain so far), gated behind the `live-tests` cargo feature. Run with `cargo test --features live-tests` plus `GITLAB_URL`/`GITLAB_TOKEN` in the env; see [`docs/testing.md`](docs/testing.md) for details.
