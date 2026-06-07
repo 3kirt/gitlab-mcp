@@ -78,9 +78,16 @@ module's `mod tests`.
 ## Layer 2 — Live integration tests
 
 A deterministic, scriptable replacement for the parts of the manual protocol
-(`docs/testing-protocol.md`) that need a real server. Currently covers the
-**Issues** domain (protocol §1–6) as the reference implementation;
+(`docs/testing-protocol.md`) that need a real server. Covers the **Issues**
+(protocol §1–6) and **Merge Requests** domains so far;
 [`src/tools/live_tests.rs`](../src/tools/live_tests.rs).
+
+The MR tests also exercise the seed pattern for resources that need git state:
+`file_create` with `start_branch` creates a source branch *and* a
+differentiating commit in one call, and the merge test targets a throwaway base
+branch so `main` is never modified. They also poll `merge_status` before
+merging, since GitLab computes mergeability asynchronously and rejects an early
+merge with `405`.
 
 ### How it's wired
 
