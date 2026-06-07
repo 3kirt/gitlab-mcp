@@ -22,7 +22,10 @@ use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError};
 use crate::tools::slim;
-use crate::tools::{PaginationParams, branches, issues, merge_requests, repository_files};
+use crate::tools::{
+    PaginationParams, branches, issue_discussions, issue_notes, issues, merge_requests,
+    repository_files,
+};
 
 // --------------------------------------------------------------------------
 // Harness
@@ -468,6 +471,291 @@ async fn issue_get_embeds_linked_issues() {
 
     delete_issue(&env, src).await;
     delete_issue(&env, dst).await;
+}
+
+// --------------------------------------------------------------------------
+// Issue Notes — flat comments on an issue
+// --------------------------------------------------------------------------
+
+/// Invariants for a note object (single-get / create / list item).
+fn assert_note_invariants(note: &Value) {
+    assert!(note.get("id").and_then(Value::as_u64).is_some(), "note id");
+    assert!(note.get("body").and_then(Value::as_str).is_some(), "body");
+    assert_no_stripped_keys(note);
+    assert_user_collapsed(&note["author"]);
+}
+
+#[tokio::test]
+async fn issue_notes_crud() {
+    let env = skip_unless_live!();
+    let tag = run_tag();
+
+    let (iid, _) = create_issue(
+        &env,
+        issues::IssueCreateParams {
+            project_id: env.project.clone(),
+            title: format!("{tag} notes"),
+            description: None,
+            labels: None,
+            assignee_ids: None,
+            milestone_id: None,
+            due_date: None,
+            weight: None,
+        },
+    )
+    .await;
+
+    // Create — the create response is slimmed via slim_get on the server.
+    let created = slim::slim_get(
+        issue_notes::issue_note_create(
+            &env.client,
+            issue_notes::IssueNoteCreateParams {
+                project_id: env.project.clone(),
+                issue_iid: iid,
+                body: format!("{tag} first comment"),
+                created_at: None,
+            },
+        )
+        .await
+        .expect("create note"),
+    );
+    assert_note_invariants(&created);
+    assert_eq!(created["body"], format!("{tag} first comment"));
+    let note_id = created["id"].as_u64().unwrap();
+
+    // Get the note back.
+    let got = slim::slim_get(
+        issue_notes::issue_note_get(
+            &env.client,
+            issue_notes::IssueNoteGetParams {
+                project_id: env.project.clone(),
+                issue_iid: iid,
+                note_id,
+            },
+        )
+        .await
+        .expect("get note"),
+    );
+    assert_note_invariants(&got);
+    assert_eq!(got["id"].as_u64().unwrap(), note_id);
+
+    // List — our note must appear and every item satisfies note invariants.
+    let (body, _) = issue_notes::issue_notes_list(
+        &env.client,
+        issue_notes::IssueNotesListParams {
+            project_id: env.project.clone(),
+            issue_iid: iid,
+            order_by: None,
+            sort: None,
+            pagination: pg(None, None),
+        },
+    )
+    .await
+    .expect("list notes");
+    let items = slim::slim_list(body);
+    let arr = items.as_array().expect("items array");
+    for item in arr {
+        assert_note_invariants(item);
+    }
+    assert!(
+        arr.iter().any(|n| n["id"].as_u64() == Some(note_id)),
+        "created note must appear in the list"
+    );
+
+    // Update the body.
+    let updated = slim::slim_get(
+        issue_notes::issue_note_update(
+            &env.client,
+            issue_notes::IssueNoteUpdateParams {
+                project_id: env.project.clone(),
+                issue_iid: iid,
+                note_id,
+                body: format!("{tag} edited comment"),
+            },
+        )
+        .await
+        .expect("update note"),
+    );
+    assert_eq!(updated["body"], format!("{tag} edited comment"));
+
+    // Delete; a follow-up get must 404.
+    issue_notes::issue_note_delete(
+        &env.client,
+        issue_notes::IssueNoteDeleteParams {
+            project_id: env.project.clone(),
+            issue_iid: iid,
+            note_id,
+        },
+    )
+    .await
+    .expect("delete note");
+    let err = issue_notes::issue_note_get(
+        &env.client,
+        issue_notes::IssueNoteGetParams {
+            project_id: env.project.clone(),
+            issue_iid: iid,
+            note_id,
+        },
+    )
+    .await
+    .expect_err("get after delete must 404");
+    assert!(
+        matches!(err, GitlabError::Api { status, .. } if status.as_u16() == 404),
+        "expected 404 after delete, got {err:?}"
+    );
+
+    delete_issue(&env, iid).await;
+}
+
+// --------------------------------------------------------------------------
+// Issue Discussions — threaded comments (a discussion wraps one or more notes)
+// --------------------------------------------------------------------------
+
+/// Count the notes inside a (slimmed) discussion object.
+fn discussion_note_count(disc: &Value) -> usize {
+    disc["notes"].as_array().map(Vec::len).unwrap_or(0)
+}
+
+#[tokio::test]
+async fn issue_discussions_crud() {
+    let env = skip_unless_live!();
+    let tag = run_tag();
+
+    let (iid, _) = create_issue(
+        &env,
+        issues::IssueCreateParams {
+            project_id: env.project.clone(),
+            title: format!("{tag} discussions"),
+            description: None,
+            labels: None,
+            assignee_ids: None,
+            milestone_id: None,
+            due_date: None,
+            weight: None,
+        },
+    )
+    .await;
+
+    // Start a discussion thread. The id is a hex string, not an integer.
+    let created = slim::slim_get(
+        issue_discussions::issue_discussion_create(
+            &env.client,
+            issue_discussions::IssueDiscussionCreateParams {
+                project_id: env.project.clone(),
+                issue_iid: iid,
+                body: format!("{tag} thread root"),
+                created_at: None,
+            },
+        )
+        .await
+        .expect("create discussion"),
+    );
+    let discussion_id = created["id"].as_str().expect("discussion id is a string").to_string();
+    assert_eq!(discussion_note_count(&created), 1, "root note present");
+    assert_eq!(created["notes"][0]["body"], format!("{tag} thread root"));
+
+    // Reply — adds a second note to the same thread.
+    let reply = slim::slim_get(
+        issue_discussions::issue_discussion_note_create(
+            &env.client,
+            issue_discussions::IssueDiscussionNoteCreateParams {
+                project_id: env.project.clone(),
+                issue_iid: iid,
+                discussion_id: discussion_id.clone(),
+                body: format!("{tag} reply"),
+                created_at: None,
+            },
+        )
+        .await
+        .expect("reply to discussion"),
+    );
+    let reply_id = reply["id"].as_u64().expect("reply note id");
+    assert_eq!(reply["body"], format!("{tag} reply"));
+
+    // Get the thread — both notes present, author collapsed on each.
+    let got = slim::slim_get(
+        issue_discussions::issue_discussion_get(
+            &env.client,
+            issue_discussions::IssueDiscussionGetParams {
+                project_id: env.project.clone(),
+                issue_iid: iid,
+                discussion_id: discussion_id.clone(),
+            },
+        )
+        .await
+        .expect("get discussion"),
+    );
+    assert_eq!(got["id"].as_str(), Some(discussion_id.as_str()));
+    assert_eq!(discussion_note_count(&got), 2, "root + reply");
+    for note in got["notes"].as_array().unwrap() {
+        assert_note_invariants(note);
+    }
+
+    // List — our discussion must appear.
+    let (body, _) = issue_discussions::issue_discussions_list(
+        &env.client,
+        issue_discussions::IssueDiscussionsListParams {
+            project_id: env.project.clone(),
+            issue_iid: iid,
+            pagination: pg(None, None),
+        },
+    )
+    .await
+    .expect("list discussions");
+    let discussions = slim::slim_list(body);
+    assert!(
+        discussions
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|d| d["id"].as_str() == Some(discussion_id.as_str())),
+        "created discussion must appear in the list"
+    );
+
+    // Edit the reply note within the thread.
+    let edited = slim::slim_get(
+        issue_discussions::issue_discussion_note_update(
+            &env.client,
+            issue_discussions::IssueDiscussionNoteUpdateParams {
+                project_id: env.project.clone(),
+                issue_iid: iid,
+                discussion_id: discussion_id.clone(),
+                note_id: reply_id,
+                body: format!("{tag} reply edited"),
+            },
+        )
+        .await
+        .expect("edit discussion note"),
+    );
+    assert_eq!(edited["body"], format!("{tag} reply edited"));
+
+    // Delete the reply — thread drops back to a single note.
+    issue_discussions::issue_discussion_note_delete(
+        &env.client,
+        issue_discussions::IssueDiscussionNoteDeleteParams {
+            project_id: env.project.clone(),
+            issue_iid: iid,
+            discussion_id: discussion_id.clone(),
+            note_id: reply_id,
+        },
+    )
+    .await
+    .expect("delete discussion note");
+    let after = slim::slim_get(
+        issue_discussions::issue_discussion_get(
+            &env.client,
+            issue_discussions::IssueDiscussionGetParams {
+                project_id: env.project.clone(),
+                issue_iid: iid,
+                discussion_id: discussion_id.clone(),
+            },
+        )
+        .await
+        .expect("get discussion after delete"),
+    );
+    assert_eq!(discussion_note_count(&after), 1, "reply removed, root remains");
+
+    delete_issue(&env, iid).await;
 }
 
 // ==========================================================================

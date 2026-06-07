@@ -79,8 +79,8 @@ module's `mod tests`.
 
 A deterministic, scriptable replacement for the parts of the manual protocol
 (`docs/testing-protocol.md`) that need a real server. Covers the **Issues**
-(protocol §1–6) and **Merge Requests** domains so far;
-[`src/tools/live_tests.rs`](../src/tools/live_tests.rs).
+(protocol §1–6, plus issue notes and issue discussions) and **Merge Requests**
+domains so far; [`src/tools/live_tests.rs`](../src/tools/live_tests.rs).
 
 The MR tests also exercise the seed pattern for resources that need git state:
 `file_create` with `start_branch` creates a source branch *and* a
