@@ -80,9 +80,9 @@ module's `mod tests`.
 A deterministic, scriptable replacement for the parts of the manual protocol
 (`docs/testing-protocol.md`) that need a real server. Covers the **Issues**
 (protocol §1–6, plus issue notes and issue discussions), **Merge Requests**,
-**Branches**, and **Repository Files** domains so far. The suite lives under
-[`src/tools/live/`](../src/tools/live/), one module per API area plus a shared
-`harness`.
+**MR Discussions**, **Branches**, and **Repository Files** domains so far. The
+suite lives under [`src/tools/live/`](../src/tools/live/), one module per API
+area plus a shared `harness`.
 
 The MR tests also exercise the seed pattern for resources that need git state:
 `file_create` with `start_branch` creates a source branch *and* a

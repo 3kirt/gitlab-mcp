@@ -8,8 +8,8 @@ use crate::client::GitlabError;
 use crate::tools::{issue_discussions, issue_notes, issues, slim};
 
 use super::harness::{
-    LiveEnv, assert_no_stripped_keys, assert_nonempty_str, assert_user_collapsed, pg, run_tag,
-    skip_unless_live,
+    LiveEnv, assert_no_stripped_keys, assert_nonempty_str, assert_note_invariants,
+    discussion_note_count, pg, run_tag, skip_unless_live,
 };
 
 // --------------------------------------------------------------------------
@@ -393,14 +393,6 @@ async fn issue_get_embeds_linked_issues() {
 // Issue Notes — flat comments on an issue
 // --------------------------------------------------------------------------
 
-/// Invariants for a note object (single-get / create / list item).
-fn assert_note_invariants(note: &Value) {
-    assert!(note.get("id").and_then(Value::as_u64).is_some(), "note id");
-    assert!(note.get("body").and_then(Value::as_str).is_some(), "body");
-    assert_no_stripped_keys(note);
-    assert_user_collapsed(&note["author"]);
-}
-
 #[tokio::test]
 async fn issue_notes_crud() {
     let env = skip_unless_live!();
@@ -526,11 +518,6 @@ async fn issue_notes_crud() {
 // --------------------------------------------------------------------------
 // Issue Discussions — threaded comments (a discussion wraps one or more notes)
 // --------------------------------------------------------------------------
-
-/// Count the notes inside a (slimmed) discussion object.
-fn discussion_note_count(disc: &Value) -> usize {
-    disc["notes"].as_array().map(Vec::len).unwrap_or(0)
-}
 
 #[tokio::test]
 async fn issue_discussions_crud() {

@@ -5,7 +5,7 @@
 use serde_json::Value;
 
 use crate::client::GitlabClient;
-use crate::tools::{PaginationParams, branches};
+use crate::tools::{PaginationParams, branches, repository_files};
 
 /// A live client plus the project under test, or `None` when credentials are
 /// absent (so tests skip rather than fail). Every test begins with
@@ -74,6 +74,44 @@ pub(super) async fn delete_branch(env: &LiveEnv, branch: &str) {
         },
     )
     .await;
+}
+
+/// Create a branch off `source_ref` carrying one new file, so an MR opened from
+/// it against `source_ref` has a real diff. Returns the branch name. Pair with
+/// [`delete_branch`] in teardown.
+pub(super) async fn seed_branch_with_file(env: &LiveEnv, branch: &str, source_ref: &str) -> String {
+    repository_files::file_create(
+        &env.client,
+        repository_files::FileCreateParams {
+            project_id: env.project.clone(),
+            file_path: format!("livetest/{branch}.txt"),
+            branch: branch.to_string(),
+            commit_message: format!("seed {branch}"),
+            content: format!("content for {branch}\n"),
+            encoding: None,
+            author_name: None,
+            author_email: None,
+            execute_filemode: None,
+            // Branch the new ref off an existing one in the same call.
+            start_branch: Some(source_ref.to_string()),
+        },
+    )
+    .await
+    .expect("seed branch with file");
+    branch.to_string()
+}
+
+/// Invariants for a note object (issue or MR, single-get / create / list item).
+pub(super) fn assert_note_invariants(note: &Value) {
+    assert!(note.get("id").and_then(Value::as_u64).is_some(), "note id");
+    assert!(note.get("body").and_then(Value::as_str).is_some(), "body");
+    assert_no_stripped_keys(note);
+    assert_user_collapsed(&note["author"]);
+}
+
+/// Count the notes inside a (slimmed) discussion object.
+pub(super) fn discussion_note_count(disc: &Value) -> usize {
+    disc["notes"].as_array().map(Vec::len).unwrap_or(0)
 }
 
 // --------------------------------------------------------------------------

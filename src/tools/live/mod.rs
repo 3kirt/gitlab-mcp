@@ -32,4 +32,5 @@ mod harness;
 mod branches;
 mod issues;
 mod merge_requests;
+mod mr_discussions;
 mod repository_files;

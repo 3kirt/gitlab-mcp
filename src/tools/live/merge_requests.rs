@@ -8,40 +8,16 @@
 use serde_json::Value;
 
 use crate::client::GitlabError;
-use crate::tools::{merge_requests, repository_files, slim};
+use crate::tools::{merge_requests, slim};
 
 use super::harness::{
     LiveEnv, assert_no_stripped_keys, assert_nonempty_str, assert_user_collapsed, delete_branch,
-    pg, run_tag, skip_unless_live,
+    pg, run_tag, seed_branch_with_file, skip_unless_live,
 };
 
 // --------------------------------------------------------------------------
 // MR helpers
 // --------------------------------------------------------------------------
-
-/// Create a branch off `source_ref` carrying one new file, so an MR opened from
-/// it against `source_ref` has a real diff. Returns the branch name.
-async fn seed_branch_with_file(env: &LiveEnv, branch: &str, source_ref: &str) -> String {
-    repository_files::file_create(
-        &env.client,
-        repository_files::FileCreateParams {
-            project_id: env.project.clone(),
-            file_path: format!("livetest/{branch}.txt"),
-            branch: branch.to_string(),
-            commit_message: format!("seed {branch}"),
-            content: format!("content for {branch}\n"),
-            encoding: None,
-            author_name: None,
-            author_email: None,
-            execute_filemode: None,
-            // Branch the new ref off an existing one in the same call.
-            start_branch: Some(source_ref.to_string()),
-        },
-    )
-    .await
-    .expect("seed branch with file");
-    branch.to_string()
-}
 
 async fn create_mr(env: &LiveEnv, p: merge_requests::MrCreateParams) -> (u64, Value) {
     let created = merge_requests::mr_create(&env.client, p)
