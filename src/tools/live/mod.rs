@@ -29,5 +29,6 @@
 
 mod harness;
 
+mod branches;
 mod issues;
 mod merge_requests;
