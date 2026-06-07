@@ -3,7 +3,8 @@ use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, encode_path_segment, paginate,
+    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, encode_path_segment,
+    list_paginated,
 };
 
 // --------------------------------------------------------------------------
@@ -51,7 +52,7 @@ pub async fn commits_list(client: &GitlabClient, p: CommitsListParams) -> ListRe
         "/api/v4/projects/{}/repository/commits",
         encode_namespace_id(&p.project_id)
     );
-    let params = QueryBuilder::new()
+    let qb = QueryBuilder::new()
         .opt("ref_name", p.ref_name)
         .opt("since", p.since)
         .opt("until", p.until)
@@ -62,17 +63,8 @@ pub async fn commits_list(client: &GitlabClient, p: CommitsListParams) -> ListRe
         .opt("order", p.order)
         .opt("with_stats", p.with_stats)
         .opt("trailers", p.trailers)
-        .opt("follow", p.follow)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+        .opt("follow", p.follow);
+    list_paginated(client, &path, qb, p.pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -218,18 +210,8 @@ pub async fn commit_refs(client: &GitlabClient, p: CommitRefsParams) -> ListResu
         encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
-    let params = QueryBuilder::new()
-        .opt("type", p.r#type)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+    let qb = QueryBuilder::new().opt("type", p.r#type);
+    list_paginated(client, &path, qb, p.pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -350,18 +332,8 @@ pub async fn commit_diff(client: &GitlabClient, p: CommitDiffParams) -> ListResu
         encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
-    let params = QueryBuilder::new()
-        .opt("unidiff", p.unidiff)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+    let qb = QueryBuilder::new().opt("unidiff", p.unidiff);
+    list_paginated(client, &path, qb, p.pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -387,17 +359,7 @@ pub async fn commit_comments_list(
         encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
-    let params = QueryBuilder::new()
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+    list_paginated(client, &path, QueryBuilder::new(), p.pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -461,17 +423,7 @@ pub async fn commit_discussions_list(
         encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
-    let params = QueryBuilder::new()
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+    list_paginated(client, &path, QueryBuilder::new(), p.pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -515,24 +467,15 @@ pub async fn commit_statuses_list(
         encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
-    let params = QueryBuilder::new()
+    let qb = QueryBuilder::new()
         .opt("ref", p.r#ref)
         .opt("name", p.name)
         .opt("stage", p.stage)
         .opt("all", p.all)
         .opt("pipeline_id", p.pipeline_id)
         .opt("order_by", p.order_by)
-        .opt("sort", p.sort)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+        .opt("sort", p.sort);
+    list_paginated(client, &path, qb, p.pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -609,18 +552,8 @@ pub async fn commit_merge_requests(
         encode_namespace_id(&p.project_id),
         encode_path_segment(&p.sha)
     );
-    let params = QueryBuilder::new()
-        .opt("state", p.state)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+    let qb = QueryBuilder::new().opt("state", p.state);
+    list_paginated(client, &path, qb, p.pagination).await
 }
 
 // --------------------------------------------------------------------------

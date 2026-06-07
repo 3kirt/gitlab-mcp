@@ -2,7 +2,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, paginate};
+use crate::tools::{
+    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, list_paginated,
+};
 
 // --------------------------------------------------------------------------
 // Shared CRUD helpers
@@ -20,17 +22,7 @@ async fn emoji_list(
     pagination: PaginationParams,
 ) -> ListResult {
     let path = format!("{parent_path}/award_emoji");
-    let params = QueryBuilder::new()
-        .opt("page", pagination.page)
-        .opt("per_page", pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+    list_paginated(client, &path, QueryBuilder::new(), pagination).await
 }
 
 async fn emoji_get(
@@ -86,6 +78,12 @@ fn snippet_path(project_id: &str, snippet_id: u64) -> String {
         encode_namespace_id(project_id),
         snippet_id
     )
+}
+
+/// Append `/notes/{note_id}` to a parent resource path, yielding the parent of
+/// a note's award-emoji endpoints.
+fn note_path(parent_path: &str, note_id: u64) -> String {
+    format!("{parent_path}/notes/{note_id}")
 }
 
 // --------------------------------------------------------------------------
@@ -355,11 +353,7 @@ pub async fn issue_note_emoji_list(
     client: &GitlabClient,
     p: IssueNoteEmojiListParams,
 ) -> ListResult {
-    let parent = format!(
-        "{}/notes/{}",
-        issue_path(&p.project_id, p.issue_iid),
-        p.note_id
-    );
+    let parent = note_path(&issue_path(&p.project_id, p.issue_iid), p.note_id);
     emoji_list(client, &parent, p.pagination).await
 }
 
@@ -379,11 +373,7 @@ pub async fn issue_note_emoji_get(
     client: &GitlabClient,
     p: IssueNoteEmojiGetParams,
 ) -> Result<Value, GitlabError> {
-    let parent = format!(
-        "{}/notes/{}",
-        issue_path(&p.project_id, p.issue_iid),
-        p.note_id
-    );
+    let parent = note_path(&issue_path(&p.project_id, p.issue_iid), p.note_id);
     emoji_get(client, &parent, p.award_id).await
 }
 
@@ -403,11 +393,7 @@ pub async fn issue_note_emoji_create(
     client: &GitlabClient,
     p: IssueNoteEmojiCreateParams,
 ) -> Result<Value, GitlabError> {
-    let parent = format!(
-        "{}/notes/{}",
-        issue_path(&p.project_id, p.issue_iid),
-        p.note_id
-    );
+    let parent = note_path(&issue_path(&p.project_id, p.issue_iid), p.note_id);
     emoji_create(client, &parent, &p.name).await
 }
 
@@ -427,11 +413,7 @@ pub async fn issue_note_emoji_delete(
     client: &GitlabClient,
     p: IssueNoteEmojiDeleteParams,
 ) -> Result<(), GitlabError> {
-    let parent = format!(
-        "{}/notes/{}",
-        issue_path(&p.project_id, p.issue_iid),
-        p.note_id
-    );
+    let parent = note_path(&issue_path(&p.project_id, p.issue_iid), p.note_id);
     emoji_delete(client, &parent, p.award_id).await
 }
 
@@ -452,11 +434,7 @@ pub struct MrNoteEmojiListParams {
 }
 
 pub async fn mr_note_emoji_list(client: &GitlabClient, p: MrNoteEmojiListParams) -> ListResult {
-    let parent = format!(
-        "{}/notes/{}",
-        mr_path(&p.project_id, p.merge_request_iid),
-        p.note_id
-    );
+    let parent = note_path(&mr_path(&p.project_id, p.merge_request_iid), p.note_id);
     emoji_list(client, &parent, p.pagination).await
 }
 
@@ -476,11 +454,7 @@ pub async fn mr_note_emoji_get(
     client: &GitlabClient,
     p: MrNoteEmojiGetParams,
 ) -> Result<Value, GitlabError> {
-    let parent = format!(
-        "{}/notes/{}",
-        mr_path(&p.project_id, p.merge_request_iid),
-        p.note_id
-    );
+    let parent = note_path(&mr_path(&p.project_id, p.merge_request_iid), p.note_id);
     emoji_get(client, &parent, p.award_id).await
 }
 
@@ -500,11 +474,7 @@ pub async fn mr_note_emoji_create(
     client: &GitlabClient,
     p: MrNoteEmojiCreateParams,
 ) -> Result<Value, GitlabError> {
-    let parent = format!(
-        "{}/notes/{}",
-        mr_path(&p.project_id, p.merge_request_iid),
-        p.note_id
-    );
+    let parent = note_path(&mr_path(&p.project_id, p.merge_request_iid), p.note_id);
     emoji_create(client, &parent, &p.name).await
 }
 
@@ -524,11 +494,7 @@ pub async fn mr_note_emoji_delete(
     client: &GitlabClient,
     p: MrNoteEmojiDeleteParams,
 ) -> Result<(), GitlabError> {
-    let parent = format!(
-        "{}/notes/{}",
-        mr_path(&p.project_id, p.merge_request_iid),
-        p.note_id
-    );
+    let parent = note_path(&mr_path(&p.project_id, p.merge_request_iid), p.note_id);
     emoji_delete(client, &parent, p.award_id).await
 }
 
@@ -552,11 +518,7 @@ pub async fn snippet_note_emoji_list(
     client: &GitlabClient,
     p: SnippetNoteEmojiListParams,
 ) -> ListResult {
-    let parent = format!(
-        "{}/notes/{}",
-        snippet_path(&p.project_id, p.snippet_id),
-        p.note_id
-    );
+    let parent = note_path(&snippet_path(&p.project_id, p.snippet_id), p.note_id);
     emoji_list(client, &parent, p.pagination).await
 }
 
@@ -576,11 +538,7 @@ pub async fn snippet_note_emoji_get(
     client: &GitlabClient,
     p: SnippetNoteEmojiGetParams,
 ) -> Result<Value, GitlabError> {
-    let parent = format!(
-        "{}/notes/{}",
-        snippet_path(&p.project_id, p.snippet_id),
-        p.note_id
-    );
+    let parent = note_path(&snippet_path(&p.project_id, p.snippet_id), p.note_id);
     emoji_get(client, &parent, p.award_id).await
 }
 
@@ -600,11 +558,7 @@ pub async fn snippet_note_emoji_create(
     client: &GitlabClient,
     p: SnippetNoteEmojiCreateParams,
 ) -> Result<Value, GitlabError> {
-    let parent = format!(
-        "{}/notes/{}",
-        snippet_path(&p.project_id, p.snippet_id),
-        p.note_id
-    );
+    let parent = note_path(&snippet_path(&p.project_id, p.snippet_id), p.note_id);
     emoji_create(client, &parent, &p.name).await
 }
 
@@ -624,11 +578,7 @@ pub async fn snippet_note_emoji_delete(
     client: &GitlabClient,
     p: SnippetNoteEmojiDeleteParams,
 ) -> Result<(), GitlabError> {
-    let parent = format!(
-        "{}/notes/{}",
-        snippet_path(&p.project_id, p.snippet_id),
-        p.note_id
-    );
+    let parent = note_path(&snippet_path(&p.project_id, p.snippet_id), p.note_id);
     emoji_delete(client, &parent, p.award_id).await
 }
 

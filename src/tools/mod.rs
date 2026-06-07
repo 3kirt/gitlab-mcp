@@ -201,6 +201,23 @@ pub async fn paginate(
     Ok((Value::Array(all), meta))
 }
 
+/// Finalize a list request: append the shared `page`/`per_page` query params to
+/// an endpoint-specific [`QueryBuilder`] and drive [`paginate`] with the
+/// caller's `fetch_all` flag. Collapses the boilerplate tail every list domain
+/// function would otherwise repeat.
+pub async fn list_paginated(
+    client: &GitlabClient,
+    path: &str,
+    qb: QueryBuilder,
+    pagination: PaginationParams,
+) -> ListResult {
+    let params = qb
+        .opt("page", pagination.page)
+        .opt("per_page", pagination.per_page)
+        .into_params();
+    paginate(client, path, &params, pagination.fetch_all.unwrap_or(false)).await
+}
+
 // --------------------------------------------------------------------------
 // Query construction
 // --------------------------------------------------------------------------
@@ -283,6 +300,14 @@ impl QueryBuilder {
     }
 }
 
+/// Serialize a request-body value to JSON. Every caller passes a scalar,
+/// `String`, or `Vec` of those, whose `Serialize` impls are infallible, so this
+/// never actually errors — but fall back to `Null` rather than panicking if a
+/// future caller ever passes a type that can.
+fn to_json<T: serde::Serialize>(v: T) -> Value {
+    serde_json::to_value(v).unwrap_or(Value::Null)
+}
+
 pub struct BodyBuilder {
     map: serde_json::Map<String, Value>,
 }
@@ -295,15 +320,13 @@ impl BodyBuilder {
     }
 
     pub fn req<T: serde::Serialize>(mut self, key: &'static str, v: T) -> Self {
-        self.map
-            .insert(key.to_string(), serde_json::to_value(v).unwrap());
+        self.map.insert(key.to_string(), to_json(v));
         self
     }
 
     pub fn opt<T: serde::Serialize>(mut self, key: &'static str, v: Option<T>) -> Self {
         if let Some(v) = v {
-            self.map
-                .insert(key.to_string(), serde_json::to_value(v).unwrap());
+            self.map.insert(key.to_string(), to_json(v));
         }
         self
     }
@@ -805,10 +828,11 @@ impl GitlabMcpServer {
             Ok(()) => Ok(CallToolResult::success(vec![Content::text(
                 "merge request unapproved",
             )])),
-            Err(e) => tool_error(&format!(
-                "unapproving merge request: {}",
-                e.to_tool_message()
-            )),
+            Err(e) => {
+                let msg = format!("unapproving merge request: {}", e.to_tool_message());
+                self.send_log(LoggingLevel::Error, &msg).await;
+                tool_error(&msg)
+            }
         }
     }
 
@@ -1362,7 +1386,11 @@ impl GitlabMcpServer {
         let client = self.get_client()?;
         match jobs::job_get_trace(client, p).await {
             Ok(text) => Ok(CallToolResult::success(vec![Content::text(text)])),
-            Err(e) => tool_error(&format!("getting job trace: {}", e.to_tool_message())),
+            Err(e) => {
+                let msg = format!("getting job trace: {}", e.to_tool_message());
+                self.send_log(LoggingLevel::Error, &msg).await;
+                tool_error(&msg)
+            }
         }
     }
 

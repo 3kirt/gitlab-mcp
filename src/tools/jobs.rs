@@ -2,7 +2,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, paginate};
+use crate::tools::{
+    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, list_paginated,
+};
 
 // --------------------------------------------------------------------------
 // List project jobs
@@ -31,20 +33,11 @@ pub async fn job_list(client: &GitlabClient, p: JobListParams) -> ListResult {
         "/api/v4/projects/{}/jobs",
         encode_namespace_id(&p.project_id)
     );
-    let params = QueryBuilder::new()
+    let qb = QueryBuilder::new()
         .multi("scope[]", p.scope)
         .opt("order_by", p.order_by)
-        .opt("sort", p.sort)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+        .opt("sort", p.sort);
+    list_paginated(client, &path, qb, p.pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -76,19 +69,10 @@ pub async fn job_list_for_pipeline(
         encode_namespace_id(&p.project_id),
         p.pipeline_id
     );
-    let params = QueryBuilder::new()
+    let qb = QueryBuilder::new()
         .multi("scope[]", p.scope)
-        .opt("include_retried", p.include_retried)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+        .opt("include_retried", p.include_retried);
+    list_paginated(client, &path, qb, p.pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -115,18 +99,8 @@ pub async fn job_list_bridges(client: &GitlabClient, p: JobListBridgesParams) ->
         encode_namespace_id(&p.project_id),
         p.pipeline_id
     );
-    let params = QueryBuilder::new()
-        .multi("scope[]", p.scope)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+    let qb = QueryBuilder::new().multi("scope[]", p.scope);
+    list_paginated(client, &path, qb, p.pagination).await
 }
 
 // --------------------------------------------------------------------------

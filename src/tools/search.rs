@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use crate::client::{GitlabClient, ListResult};
-use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id, paginate};
+use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id, list_paginated};
 
 // --------------------------------------------------------------------------
 // Shared search filters
@@ -31,8 +31,10 @@ pub struct SearchFilters {
     pub pagination: PaginationParams,
 }
 
-fn search_params(f: SearchFilters) -> Vec<(&'static str, String)> {
-    QueryBuilder::new()
+/// Build the shared search query params, returning the pagination fields
+/// separately so the caller can drive [`list_paginated`].
+fn search_query(f: SearchFilters) -> (QueryBuilder, PaginationParams) {
+    let qb = QueryBuilder::new()
         .opt("scope", Some(f.scope))
         .opt("search", Some(f.search))
         .opt("search_type", f.search_type)
@@ -40,10 +42,8 @@ fn search_params(f: SearchFilters) -> Vec<(&'static str, String)> {
         .opt("sort", f.sort)
         .opt("confidential", f.confidential)
         .opt("state", f.state)
-        .opt("fields", f.fields)
-        .opt("page", f.pagination.page)
-        .opt("per_page", f.pagination.per_page)
-        .into_params()
+        .opt("fields", f.fields);
+    (qb, f.pagination)
 }
 
 // --------------------------------------------------------------------------
@@ -57,14 +57,8 @@ pub struct GlobalSearchParams {
 }
 
 pub async fn global_search(client: &GitlabClient, p: GlobalSearchParams) -> ListResult {
-    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
-    paginate(
-        client,
-        "/api/v4/search",
-        &search_params(p.filters),
-        fetch_all,
-    )
-    .await
+    let (qb, pagination) = search_query(p.filters);
+    list_paginated(client, "/api/v4/search", qb, pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -81,8 +75,8 @@ pub struct GroupSearchParams {
 
 pub async fn group_search(client: &GitlabClient, p: GroupSearchParams) -> ListResult {
     let path = format!("/api/v4/groups/{}/search", encode_namespace_id(&p.group_id));
-    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
-    paginate(client, &path, &search_params(p.filters), fetch_all).await
+    let (qb, pagination) = search_query(p.filters);
+    list_paginated(client, &path, qb, pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -102,6 +96,6 @@ pub async fn project_search(client: &GitlabClient, p: ProjectSearchParams) -> Li
         "/api/v4/projects/{}/search",
         encode_namespace_id(&p.project_id)
     );
-    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
-    paginate(client, &path, &search_params(p.filters), fetch_all).await
+    let (qb, pagination) = search_query(p.filters);
+    list_paginated(client, &path, qb, pagination).await
 }

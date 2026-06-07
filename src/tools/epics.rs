@@ -11,7 +11,7 @@ use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, PaginationMeta};
 use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, paginate,
+    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, list_paginated,
     unwrap_404_as_empty_array,
 };
 
@@ -38,11 +38,10 @@ async fn resolve_epic_id(
 /// GitLab's REST API stores fixed vs inherited dates separately, so we always
 /// flip the `*_is_fixed` flag when the corresponding date is set.
 fn apply_epic_dates(
-    builder: BodyBuilder,
+    mut builder: BodyBuilder,
     start_date: Option<String>,
     due_date: Option<String>,
 ) -> BodyBuilder {
-    let mut builder = builder;
     if let Some(date) = start_date {
         builder = builder
             .req("start_date_is_fixed", true)
@@ -90,22 +89,19 @@ pub async fn epics_list(
 ) -> Result<(Value, PaginationMeta), GitlabError> {
     let gid = encode_namespace_id(&p.group_id);
     let labels = p.label_name.map(|v| v.join(","));
-    let params = QueryBuilder::new()
+    let qb = QueryBuilder::new()
         .opt("state", p.state)
         .opt("search", p.search)
         .opt("author_username", p.author_username)
         .opt("labels", labels)
         .multi("iids[]", p.iids)
         .opt("order_by", p.order_by)
-        .opt("sort", p.sort)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
+        .opt("sort", p.sort);
+    list_paginated(
         client,
         &format!("/api/v4/groups/{gid}/epics"),
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
+        qb,
+        p.pagination,
     )
     .await
 }

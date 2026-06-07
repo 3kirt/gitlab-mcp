@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, paginate,
+    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, list_paginated,
     unwrap_404_as_empty_array, unwrap_404_or_403_as_empty_array,
 };
 
@@ -70,7 +70,7 @@ pub async fn mrs_list(client: &GitlabClient, p: MrsListParams) -> ListResult {
         "/api/v4/projects/{}/merge_requests",
         encode_namespace_id(&p.project_id)
     );
-    let params = QueryBuilder::new()
+    let qb = QueryBuilder::new()
         .opt("state", p.state)
         .opt("source_branch", p.source_branch)
         .opt("target_branch", p.target_branch)
@@ -86,17 +86,8 @@ pub async fn mrs_list(client: &GitlabClient, p: MrsListParams) -> ListResult {
         .opt("updated_after", p.updated_after)
         .opt("updated_before", p.updated_before)
         .opt("order_by", p.order_by)
-        .opt("sort", p.sort)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+        .opt("sort", p.sort);
+    list_paginated(client, &path, qb, p.pagination).await
 }
 
 // --------------------------------------------------------------------------

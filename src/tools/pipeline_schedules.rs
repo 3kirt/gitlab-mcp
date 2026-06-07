@@ -3,7 +3,8 @@ use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, encode_path_segment, paginate,
+    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, encode_path_segment,
+    list_paginated,
 };
 
 // --------------------------------------------------------------------------
@@ -28,18 +29,8 @@ pub async fn pipeline_schedules_list(
         "/api/v4/projects/{}/pipeline_schedules",
         encode_namespace_id(&p.project_id)
     );
-    let params = QueryBuilder::new()
-        .opt("scope", p.scope)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+    let qb = QueryBuilder::new().opt("scope", p.scope);
+    list_paginated(client, &path, qb, p.pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -105,24 +96,15 @@ pub async fn pipeline_schedule_pipelines_list(
         encode_namespace_id(&p.project_id),
         p.pipeline_schedule_id
     );
-    let params = QueryBuilder::new()
+    let qb = QueryBuilder::new()
         .opt("status", p.status)
         .opt("scope", p.scope)
         .opt("sort", p.sort)
         .opt("updated_after", p.updated_after)
         .opt("updated_before", p.updated_before)
         .opt("created_after", p.created_after)
-        .opt("created_before", p.created_before)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+        .opt("created_before", p.created_before);
+    list_paginated(client, &path, qb, p.pagination).await
 }
 
 // --------------------------------------------------------------------------

@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id, paginate};
+use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id, list_paginated};
 
 // --------------------------------------------------------------------------
 // Shared list filters
@@ -31,19 +31,19 @@ pub struct RunnerListFilters {
     pub pagination: PaginationParams,
 }
 
+/// Build the shared runner list query, returning the pagination fields
+/// separately so the caller can drive [`list_paginated`].
 fn runner_query(
     runner_type: Option<String>,
     filters: RunnerListFilters,
-) -> Vec<(&'static str, String)> {
-    QueryBuilder::new()
+) -> (QueryBuilder, PaginationParams) {
+    let qb = QueryBuilder::new()
         .opt("type", runner_type)
         .opt("status", filters.status)
         .opt("paused", filters.paused)
         .multi("tag_list[]", filters.tag_list)
-        .opt("version_prefix", filters.version_prefix)
-        .opt("page", filters.pagination.page)
-        .opt("per_page", filters.pagination.per_page)
-        .into_params()
+        .opt("version_prefix", filters.version_prefix);
+    (qb, filters.pagination)
 }
 
 // --------------------------------------------------------------------------
@@ -63,14 +63,8 @@ pub struct RunnersListParams {
 }
 
 pub async fn runners_list(client: &GitlabClient, p: RunnersListParams) -> ListResult {
-    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
-    paginate(
-        client,
-        "/api/v4/runners",
-        &runner_query(p.runner_type, p.filters),
-        fetch_all,
-    )
-    .await
+    let (qb, pagination) = runner_query(p.runner_type, p.filters);
+    list_paginated(client, "/api/v4/runners", qb, pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -90,14 +84,8 @@ pub struct RunnersAllListParams {
 }
 
 pub async fn runners_all_list(client: &GitlabClient, p: RunnersAllListParams) -> ListResult {
-    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
-    paginate(
-        client,
-        "/api/v4/runners/all",
-        &runner_query(p.runner_type, p.filters),
-        fetch_all,
-    )
-    .await
+    let (qb, pagination) = runner_query(p.runner_type, p.filters);
+    list_paginated(client, "/api/v4/runners/all", qb, pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -137,20 +125,11 @@ pub struct RunnerJobsListParams {
 
 pub async fn runner_jobs_list(client: &GitlabClient, p: RunnerJobsListParams) -> ListResult {
     let path = format!("/api/v4/runners/{}/jobs", p.id);
-    let params = QueryBuilder::new()
+    let qb = QueryBuilder::new()
         .opt("system_id", p.system_id)
         .opt("status", p.status)
-        .opt("sort", p.sort)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+        .opt("sort", p.sort);
+    list_paginated(client, &path, qb, p.pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -170,17 +149,7 @@ pub async fn runner_managers_list(
     p: RunnerManagersListParams,
 ) -> ListResult {
     let path = format!("/api/v4/runners/{}/managers", p.id);
-    let params = QueryBuilder::new()
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+    list_paginated(client, &path, QueryBuilder::new(), p.pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -211,14 +180,8 @@ pub async fn project_runners_list(
         "/api/v4/projects/{}/runners",
         encode_namespace_id(&p.project_id)
     );
-    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
-    paginate(
-        client,
-        &path,
-        &runner_query(p.runner_type, p.filters),
-        fetch_all,
-    )
-    .await
+    let (qb, pagination) = runner_query(p.runner_type, p.filters);
+    list_paginated(client, &path, qb, pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -239,8 +202,8 @@ pub async fn group_runners_list(client: &GitlabClient, p: GroupRunnersListParams
         encode_namespace_id(&p.group_id)
     );
     // Group runners endpoint doesn't accept a `type` filter — pass None.
-    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
-    paginate(client, &path, &runner_query(None, p.filters), fetch_all).await
+    let (qb, pagination) = runner_query(None, p.filters);
+    list_paginated(client, &path, qb, pagination).await
 }
 
 // --------------------------------------------------------------------------

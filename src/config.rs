@@ -101,7 +101,8 @@ fn enforce_https(url: &str) -> anyhow::Result<()> {
     if url.starts_with("http://") {
         let parsed = url::Url::parse(url).with_context(|| format!("invalid GitLab URL: {url}"))?;
         let host = parsed.host_str().unwrap_or("");
-        if host == "localhost" || host == "127.0.0.1" {
+        // `host_str` returns IPv6 literals bracketed, e.g. "[::1]".
+        if host == "localhost" || host == "127.0.0.1" || host == "[::1]" {
             return Ok(());
         }
     }
@@ -133,6 +134,12 @@ mod tests {
     fn http_loopback_is_allowed() {
         assert!(enforce_https("http://127.0.0.1").is_ok());
         assert!(enforce_https("http://127.0.0.1:8080").is_ok());
+    }
+
+    #[test]
+    fn http_ipv6_loopback_is_allowed() {
+        assert!(enforce_https("http://[::1]").is_ok());
+        assert!(enforce_https("http://[::1]:8080").is_ok());
     }
 
     #[test]

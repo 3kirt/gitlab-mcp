@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
-    PaginationParams, QueryBuilder, encode_namespace_id, encode_path_segment, paginate,
+    PaginationParams, QueryBuilder, encode_namespace_id, encode_path_segment, list_paginated,
 };
 
 // --------------------------------------------------------------------------
@@ -29,19 +29,10 @@ pub async fn branches_list(client: &GitlabClient, p: BranchesListParams) -> List
         "/api/v4/projects/{}/repository/branches",
         encode_namespace_id(&p.project_id)
     );
-    let params = QueryBuilder::new()
+    let qb = QueryBuilder::new()
         .opt("regex", p.regex)
-        .opt("search", p.search)
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+        .opt("search", p.search);
+    list_paginated(client, &path, qb, p.pagination).await
 }
 
 // --------------------------------------------------------------------------

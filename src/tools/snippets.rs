@@ -2,7 +2,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_path_segment, paginate};
+use crate::tools::{
+    BodyBuilder, PaginationParams, QueryBuilder, encode_path_segment, list_paginated,
+};
 
 // --------------------------------------------------------------------------
 // Shared list filters
@@ -21,13 +23,13 @@ pub struct SnippetsListFilters {
     pub pagination: PaginationParams,
 }
 
-fn snippets_query(f: SnippetsListFilters) -> Vec<(&'static str, String)> {
-    QueryBuilder::new()
+/// Build the shared snippet list query, returning the pagination fields
+/// separately so the caller can drive [`list_paginated`].
+fn snippets_query(f: SnippetsListFilters) -> (QueryBuilder, PaginationParams) {
+    let qb = QueryBuilder::new()
         .opt("created_after", f.created_after)
-        .opt("created_before", f.created_before)
-        .opt("page", f.pagination.page)
-        .opt("per_page", f.pagination.per_page)
-        .into_params()
+        .opt("created_before", f.created_before);
+    (qb, f.pagination)
 }
 
 // --------------------------------------------------------------------------
@@ -41,14 +43,8 @@ pub struct SnippetsListParams {
 }
 
 pub async fn snippets_list(client: &GitlabClient, p: SnippetsListParams) -> ListResult {
-    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
-    paginate(
-        client,
-        "/api/v4/snippets",
-        &snippets_query(p.filters),
-        fetch_all,
-    )
-    .await
+    let (qb, pagination) = snippets_query(p.filters);
+    list_paginated(client, "/api/v4/snippets", qb, pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -65,14 +61,8 @@ pub async fn snippets_public_list(
     client: &GitlabClient,
     p: SnippetsPublicListParams,
 ) -> ListResult {
-    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
-    paginate(
-        client,
-        "/api/v4/snippets/public",
-        &snippets_query(p.filters),
-        fetch_all,
-    )
-    .await
+    let (qb, pagination) = snippets_query(p.filters);
+    list_paginated(client, "/api/v4/snippets/public", qb, pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -88,12 +78,9 @@ pub struct SnippetsAllListParams {
 }
 
 pub async fn snippets_all_list(client: &GitlabClient, p: SnippetsAllListParams) -> ListResult {
-    let fetch_all = p.filters.pagination.fetch_all.unwrap_or(false);
-    let mut params = snippets_query(p.filters);
-    if let Some(storage) = p.repository_storage {
-        params.push(("repository_storage", storage));
-    }
-    paginate(client, "/api/v4/snippets/all", &params, fetch_all).await
+    let (qb, pagination) = snippets_query(p.filters);
+    let qb = qb.opt("repository_storage", p.repository_storage);
+    list_paginated(client, "/api/v4/snippets/all", qb, pagination).await
 }
 
 // --------------------------------------------------------------------------

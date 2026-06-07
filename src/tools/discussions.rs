@@ -1,8 +1,10 @@
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, paginate};
+use crate::tools::{
+    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, list_paginated,
+};
 
 // --------------------------------------------------------------------------
 // List MR discussions
@@ -24,17 +26,7 @@ pub async fn mr_discussions_list(client: &GitlabClient, p: MrDiscussionsListPara
         encode_namespace_id(&p.project_id),
         p.merge_request_iid
     );
-    let params = QueryBuilder::new()
-        .opt("page", p.pagination.page)
-        .opt("per_page", p.pagination.per_page)
-        .into_params();
-    paginate(
-        client,
-        &path,
-        &params,
-        p.pagination.fetch_all.unwrap_or(false),
-    )
-    .await
+    list_paginated(client, &path, QueryBuilder::new(), p.pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -115,33 +107,19 @@ fn build_position(p: &MrDiscussionCreateParams) -> Option<Value> {
         return None;
     }
 
-    let mut pos = json!({});
-    let obj = pos.as_object_mut().unwrap();
-    if let Some(v) = &p.position_base_sha {
-        obj.insert("base_sha".into(), json!(v));
-    }
-    if let Some(v) = &p.position_head_sha {
-        obj.insert("head_sha".into(), json!(v));
-    }
-    if let Some(v) = &p.position_start_sha {
-        obj.insert("start_sha".into(), json!(v));
-    }
-    obj.insert(
-        "position_type".into(),
-        json!(p.position_type.as_deref().unwrap_or("text")),
-    );
-    if let Some(v) = &p.position_new_path {
-        obj.insert("new_path".into(), json!(v));
-    }
-    if let Some(v) = &p.position_old_path {
-        obj.insert("old_path".into(), json!(v));
-    }
-    if let Some(v) = p.position_new_line {
-        obj.insert("new_line".into(), json!(v));
-    }
-    if let Some(v) = p.position_old_line {
-        obj.insert("old_line".into(), json!(v));
-    }
+    let pos = BodyBuilder::new()
+        .opt("base_sha", p.position_base_sha.as_deref())
+        .opt("head_sha", p.position_head_sha.as_deref())
+        .opt("start_sha", p.position_start_sha.as_deref())
+        .req(
+            "position_type",
+            p.position_type.as_deref().unwrap_or("text"),
+        )
+        .opt("new_path", p.position_new_path.as_deref())
+        .opt("old_path", p.position_old_path.as_deref())
+        .opt("new_line", p.position_new_line)
+        .opt("old_line", p.position_old_line)
+        .build();
     Some(pos)
 }
 
