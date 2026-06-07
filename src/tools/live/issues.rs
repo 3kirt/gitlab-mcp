@@ -9,7 +9,7 @@ use crate::tools::{issue_discussions, issue_notes, issues, slim};
 
 use super::harness::{
     LiveEnv, assert_no_stripped_keys, assert_nonempty_str, assert_note_invariants,
-    discussion_note_count, pg, run_tag, skip_unless_live,
+    delete_issue, discussion_note_count, pg, run_tag, skip_unless_live,
 };
 
 // --------------------------------------------------------------------------
@@ -45,17 +45,6 @@ async fn create_issue(env: &LiveEnv, p: issues::IssueCreateParams) -> (u64, Valu
         .expect("issue_create");
     let iid = created["iid"].as_u64().expect("created issue has iid");
     (iid, created)
-}
-
-async fn delete_issue(env: &LiveEnv, iid: u64) {
-    let _ = issues::issue_delete(
-        &env.client,
-        issues::IssueDeleteParams {
-            project_id: env.project.clone(),
-            issue_iid: iid,
-        },
-    )
-    .await;
 }
 
 /// Fetch an issue through the same path the server uses: domain function +

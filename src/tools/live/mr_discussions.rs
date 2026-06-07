@@ -6,54 +6,16 @@
 
 use serde_json::Value;
 
-use crate::tools::{discussions, merge_requests, slim};
+use crate::tools::{discussions, slim};
 
 use super::harness::{
-    LiveEnv, assert_note_invariants, delete_branch, discussion_note_count, pg, run_tag,
-    seed_branch_with_file, skip_unless_live,
+    LiveEnv, assert_note_invariants, delete_branch, delete_mr, discussion_note_count, pg, run_tag,
+    seed_mr, skip_unless_live,
 };
 
 // --------------------------------------------------------------------------
 // MR discussion helpers
 // --------------------------------------------------------------------------
-
-/// Seed an MR (with a real diff) to host discussions; returns (mr_iid, branch).
-async fn seed_mr(env: &LiveEnv, tag: &str) -> (u64, String) {
-    let branch = format!("{tag}-disc-feat");
-    seed_branch_with_file(env, &branch, "main").await;
-    let created = merge_requests::mr_create(
-        &env.client,
-        merge_requests::MrCreateParams {
-            project_id: env.project.clone(),
-            source_branch: branch.clone(),
-            target_branch: "main".into(),
-            title: format!("{tag} discussion mr"),
-            description: None,
-            assignee_id: None,
-            reviewer_ids: None,
-            labels: None,
-            milestone_id: None,
-            squash: true,
-            remove_source_branch: true,
-            draft: None,
-        },
-    )
-    .await
-    .expect("mr_create");
-    let iid = created["iid"].as_u64().expect("created MR has iid");
-    (iid, branch)
-}
-
-async fn delete_mr(env: &LiveEnv, iid: u64) {
-    let _ = merge_requests::mr_delete(
-        &env.client,
-        merge_requests::MrDeleteParams {
-            project_id: env.project.clone(),
-            merge_request_iid: iid,
-        },
-    )
-    .await;
-}
 
 async fn get_discussion(env: &LiveEnv, mr_iid: u64, discussion_id: &str) -> Value {
     slim::slim_get(

@@ -30,6 +30,7 @@
 mod harness;
 
 mod branches;
+mod emoji_reactions;
 mod issues;
 mod merge_requests;
 mod mr_discussions;

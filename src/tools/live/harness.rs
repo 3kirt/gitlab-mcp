@@ -5,7 +5,7 @@
 use serde_json::Value;
 
 use crate::client::GitlabClient;
-use crate::tools::{PaginationParams, branches, repository_files};
+use crate::tools::{PaginationParams, branches, issues, merge_requests, repository_files};
 
 /// A live client plus the project under test, or `None` when credentials are
 /// absent (so tests skip rather than fail). Every test begins with
@@ -99,6 +99,78 @@ pub(super) async fn seed_branch_with_file(env: &LiveEnv, branch: &str, source_re
     .await
     .expect("seed branch with file");
     branch.to_string()
+}
+
+/// Create a minimal issue (title only) and return its iid — for tests that just
+/// need an issue to attach things to. Pair with [`delete_issue`]. (Issue-domain
+/// tests that assert on the create payload use their own richer helper.)
+pub(super) async fn seed_issue(env: &LiveEnv, title: &str) -> u64 {
+    let created = issues::issue_create(
+        &env.client,
+        issues::IssueCreateParams {
+            project_id: env.project.clone(),
+            title: title.to_string(),
+            description: None,
+            labels: None,
+            assignee_ids: None,
+            milestone_id: None,
+            due_date: None,
+            weight: None,
+        },
+    )
+    .await
+    .expect("seed issue");
+    created["iid"].as_u64().expect("created issue has iid")
+}
+
+pub(super) async fn delete_issue(env: &LiveEnv, iid: u64) {
+    let _ = issues::issue_delete(
+        &env.client,
+        issues::IssueDeleteParams {
+            project_id: env.project.clone(),
+            issue_iid: iid,
+        },
+    )
+    .await;
+}
+
+/// Seed a minimal MR with a real diff (throwaway branch off `main`). Returns
+/// `(mr_iid, branch)`; pair with [`delete_mr`] and [`delete_branch`].
+pub(super) async fn seed_mr(env: &LiveEnv, tag: &str) -> (u64, String) {
+    let branch = format!("{tag}-mr-feat");
+    seed_branch_with_file(env, &branch, "main").await;
+    let created = merge_requests::mr_create(
+        &env.client,
+        merge_requests::MrCreateParams {
+            project_id: env.project.clone(),
+            source_branch: branch.clone(),
+            target_branch: "main".into(),
+            title: format!("{tag} mr"),
+            description: None,
+            assignee_id: None,
+            reviewer_ids: None,
+            labels: None,
+            milestone_id: None,
+            squash: true,
+            remove_source_branch: true,
+            draft: None,
+        },
+    )
+    .await
+    .expect("seed mr");
+    let iid = created["iid"].as_u64().expect("created MR has iid");
+    (iid, branch)
+}
+
+pub(super) async fn delete_mr(env: &LiveEnv, iid: u64) {
+    let _ = merge_requests::mr_delete(
+        &env.client,
+        merge_requests::MrDeleteParams {
+            project_id: env.project.clone(),
+            merge_request_iid: iid,
+        },
+    )
+    .await;
 }
 
 /// Invariants for a note object (issue or MR, single-get / create / list item).
