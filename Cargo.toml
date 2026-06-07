@@ -9,6 +9,12 @@ license = "GPL-3.0"
 name = "gitlab-mcp"
 path = "src/main.rs"
 
+[features]
+# Opt-in live integration tests that hit a real GitLab instance.
+# Compiled only under `cargo test --features live-tests`; require
+# GITLAB_URL + GITLAB_TOKEN (and optionally GITLAB_TEST_PROJECT) in the env.
+live-tests = []
+
 [dependencies]
 rmcp = { version = "1.7", features = [
     "server",
