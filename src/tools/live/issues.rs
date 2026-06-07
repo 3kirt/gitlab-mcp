@@ -379,6 +379,136 @@ async fn issue_get_embeds_linked_issues() {
 }
 
 // --------------------------------------------------------------------------
+// Issue Links — the dedicated list/get/create/delete tools
+//
+// The embed test above covers `issue_get`'s `linked_issues`; this drives the
+// relationship-id flow: create returns source/target issues, the list surfaces
+// the `issue_link_id`, and get/delete key off it.
+// --------------------------------------------------------------------------
+
+#[tokio::test]
+async fn issue_links_crud() {
+    let env = skip_unless_live!();
+    let tag = run_tag();
+
+    let (src, _) = create_issue(
+        &env,
+        issues::IssueCreateParams {
+            project_id: env.project.clone(),
+            title: format!("{tag} link source"),
+            description: None,
+            labels: None,
+            assignee_ids: None,
+            milestone_id: None,
+            due_date: None,
+            weight: None,
+        },
+    )
+    .await;
+    let (dst, _) = create_issue(
+        &env,
+        issues::IssueCreateParams {
+            project_id: env.project.clone(),
+            title: format!("{tag} link target"),
+            description: None,
+            labels: None,
+            assignee_ids: None,
+            milestone_id: None,
+            due_date: None,
+            weight: None,
+        },
+    )
+    .await;
+
+    // Create a relates_to link (blocks/is_blocked_by are Premium-gated). The
+    // response carries the source and target issue objects.
+    let created = slim::slim_get(
+        issues::issue_link_create(
+            &env.client,
+            issues::IssueLinkCreateParams {
+                project_id: env.project.clone(),
+                issue_iid: src,
+                target_project_id: env.project.clone(),
+                target_issue_iid: dst,
+                link_type: Some("relates_to".into()),
+            },
+        )
+        .await
+        .expect("create link"),
+    );
+    assert_eq!(created["source_issue"]["iid"], src);
+    assert_eq!(created["target_issue"]["iid"], dst);
+    assert_eq!(created["link_type"], "relates_to");
+
+    // List links on the source — one entry pointing at dst, carrying the
+    // relationship id used by get/delete.
+    let (body, _) = issues::issue_links_list(
+        &env.client,
+        issues::IssueLinksListParams {
+            project_id: env.project.clone(),
+            issue_iid: src,
+        },
+    )
+    .await
+    .expect("list links");
+    let items = slim::slim_list(body);
+    let arr = items.as_array().expect("items array");
+    assert_eq!(arr.len(), 1, "exactly one link");
+    assert_eq!(arr[0]["iid"], dst);
+    assert_eq!(arr[0]["link_type"], "relates_to");
+    let issue_link_id = arr[0]["issue_link_id"].as_u64().expect("issue_link_id");
+
+    // Get the link by its relationship id.
+    let got = slim::slim_get(
+        issues::issue_link_get(
+            &env.client,
+            issues::IssueLinkGetParams {
+                project_id: env.project.clone(),
+                issue_iid: src,
+                issue_link_id,
+            },
+        )
+        .await
+        .expect("get link"),
+    );
+    assert_eq!(got["source_issue"]["iid"], src);
+    assert_eq!(got["target_issue"]["iid"], dst);
+    assert_eq!(got["link_type"], "relates_to");
+
+    // Delete the link — returns the removed relationship; the list is then empty.
+    let deleted = slim::slim_get(
+        issues::issue_link_delete(
+            &env.client,
+            issues::IssueLinkDeleteParams {
+                project_id: env.project.clone(),
+                issue_iid: src,
+                issue_link_id,
+            },
+        )
+        .await
+        .expect("delete link"),
+    );
+    assert_eq!(deleted["link_type"], "relates_to");
+
+    let (body, _) = issues::issue_links_list(
+        &env.client,
+        issues::IssueLinksListParams {
+            project_id: env.project.clone(),
+            issue_iid: src,
+        },
+    )
+    .await
+    .expect("list after delete");
+    assert!(
+        slim::slim_list(body).as_array().unwrap().is_empty(),
+        "link removed"
+    );
+
+    delete_issue(&env, src).await;
+    delete_issue(&env, dst).await;
+}
+
+// --------------------------------------------------------------------------
 // Issue Notes — flat comments on an issue
 // --------------------------------------------------------------------------
 

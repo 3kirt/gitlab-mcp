@@ -150,12 +150,11 @@ GITLAB_TEST_PROJECT=3kirt1/gitlab-mcp-testing \
 ## Coverage
 
 The live suite is being grown domain-by-domain. Covered today: Issues (including
-issue notes and issue discussions), Merge Requests, MR Discussions, Branches,
-Repository Files, and Emoji Reactions (the issue, issue-note, and MR awardable
-types — MR-note and snippet awardables remain). Not yet automated: issue links
-(only the `issue_get` embed is covered), pipeline schedules, snippets, and the
-read-only families (commits, repository tree/compare, search, runners, jobs,
-pipelines).
+issue links, issue notes, and issue discussions), Merge Requests, MR Discussions,
+Branches, Repository Files, and Emoji Reactions (the issue, issue-note, and MR
+awardable types — MR-note and snippet awardables remain). Not yet automated:
+pipeline schedules, snippets, and the read-only families (commits, repository
+tree/compare, search, runners, jobs, pipelines).
 
 **Epics** are Premium/Ultimate-only. The standing test token is on a Free-tier
 gitlab.com account, so epic operations return `403`/`404` there; epics can only be
