@@ -4,6 +4,26 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.22.0] — 2026-06-07
+
+### Fixed
+- **Error logging on two tools** — failures from `gitlab_mrs_unapprove` and
+  `gitlab_jobs_get_trace` are now forwarded to the MCP client via the logging
+  protocol, matching every other tool. Previously these two hand-rolled handlers
+  returned the error to the caller but never emitted a log notification.
+- **IPv6 loopback over HTTP** — `http://[::1]` GitLab URLs are now exempt from
+  HTTPS enforcement, alongside the existing `localhost` and `127.0.0.1`
+  exemptions.
+
+### Changed
+- **List pagination de-duplicated** — every list tool now routes through a
+  shared `list_paginated` helper instead of repeating the
+  `page`/`per_page` + pagination-walk boilerplate, removing a class of
+  copy-paste drift across the domain modules. No change to tool behaviour or
+  output.
+
+---
+
 ## [0.21.0] — 2026-06-04
 
 ### Changed
