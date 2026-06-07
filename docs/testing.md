@@ -6,7 +6,7 @@ replaces the other; together they cover the whole surface.
 | Layer | Lives in | Hits network? | Verifies |
 |---|---|---|---|
 | **Unit tests** | `#[cfg(test)] mod tests` in each `src/**.rs` | No (wiremock or pure logic) | Our code against *our* assumptions — request construction, response transforms, slimming, pagination, config parsing |
-| **Live integration tests** | `src/tools/live_tests.rs` (feature-gated) | Yes — a real GitLab instance | Fidelity to the *actual* GitLab API — param names, body shapes, response shapes, tier/licensing behavior |
+| **Live integration tests** | `src/tools/live/` (feature-gated) | Yes — a real GitLab instance | Fidelity to the *actual* GitLab API — param names, body shapes, response shapes, tier/licensing behavior |
 
 ## Why two layers
 
@@ -80,14 +80,16 @@ module's `mod tests`.
 A deterministic, scriptable replacement for the parts of the manual protocol
 (`docs/testing-protocol.md`) that need a real server. Covers the **Issues**
 (protocol §1–6, plus issue notes and issue discussions) and **Merge Requests**
-domains so far; [`src/tools/live_tests.rs`](../src/tools/live_tests.rs).
+domains so far. The suite lives under [`src/tools/live/`](../src/tools/live/),
+one module per API area plus a shared `harness`.
 
 The MR tests also exercise the seed pattern for resources that need git state:
 `file_create` with `start_branch` creates a source branch *and* a
 differentiating commit in one call, and the merge test targets a throwaway base
-branch so `main` is never modified. They also poll `merge_status` before
-merging, since GitLab computes mergeability asynchronously and rejects an early
-merge with `405`.
+branch so `main` is never modified. They also poll `detailed_merge_status` and
+retry the merge on a transient `405`, since GitLab computes mergeability
+asynchronously and briefly rejects an early merge even once the status reads
+ready.
 
 ### How it's wired
 
@@ -95,12 +97,19 @@ merge with `405`.
   `cargo test` never builds or runs these, so the everyday loop stays fast and
   offline.
 - **Located inside the `tools` module** (`#[cfg(all(test, feature = "live-tests"))]
-  mod live_tests;` in `src/tools/mod.rs`), *not* in a top-level `tests/`
-  directory. This is deliberate: an external `tests/` crate can only see the
-  public API, but the live tests need the private `slim` module and the
-  `pub(crate)` `PaginationParams` to reproduce the server's exact output. Placing
-  them as a child of `tools` grants that access **without widening the crate's
-  public surface**.
+  mod live;` in `src/tools/mod.rs`), *not* in a top-level `tests/` directory.
+  This is deliberate: an external `tests/` crate can only see the public API, but
+  the live tests need the private `slim` module and the `pub(crate)`
+  `PaginationParams` to reproduce the server's exact output. Placing them as a
+  child of `tools` grants that access **without widening the crate's public
+  surface**. The single `#[cfg]` on `mod live;` gates the whole subtree, so each
+  area module under `live/` inherits the gating without repeating it.
+- **One module per API area, plus a shared `harness`.** `live/harness.rs` holds
+  the environment/credentials (`LiveEnv`, `live_env`), the `skip_unless_live!`
+  macro, `run_tag`/`pg`, and the cross-domain invariants
+  (`assert_no_stripped_keys`, `assert_user_collapsed`, …); each area file
+  (`live/issues.rs`, `live/merge_requests.rs`) does `use super::harness::*` and
+  holds that area's seeding helpers, area-specific invariants, and tests.
 
 ### Design properties
 
@@ -144,7 +153,7 @@ protocol: a human or an agent (via the `test-api` skill) walks each tool against
 the live test project and checks results against the invariant tables. It remains
 the source of truth for *what* to verify and for domains not yet automated.
 
-`src/tools/live_tests.rs` is the **scriptable automation** of that protocol —
+`src/tools/live/` is the **scriptable automation** of that protocol —
 deterministic, assertable, CI-runnable, no LLM in the loop. The intent is to
 migrate the protocol domain-by-domain into live tests, with the manual protocol
 covering the long tail until then.
@@ -159,9 +168,10 @@ cargo clippy --features live-tests --tests --locked -- -D warnings
 
 ## Adding a new domain to the live layer
 
-1. Add a section to `src/tools/live_tests.rs` mirroring the relevant
-   `docs/testing-protocol.md` sections.
-2. Reuse the harness (`live_env`, `skip_unless_live!`, `run_tag`) and add an
+1. Add a `src/tools/live/<area>.rs` module (declared in `src/tools/live/mod.rs`)
+   mirroring the relevant `docs/testing-protocol.md` sections.
+2. `use super::harness::*` for the shared bits (`live_env`, `skip_unless_live!`,
+   `run_tag`, `pg`, the cross-domain invariants) and add an area-specific
    invariants helper for the domain's response shape.
 3. Make every test self-seed and self-clean — create what you need, delete it in
    teardown — so the suite stays idempotent.

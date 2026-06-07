@@ -40,9 +40,10 @@ pub mod snippets;
 
 // Opt-in live integration tests (cargo test --features live-tests).
 // Placed inside `tools` so it can reach the private `slim` module and the
-// pub(crate) helpers without widening the crate's public surface.
+// pub(crate) helpers without widening the crate's public surface. The whole
+// subtree is gated here, so each area module under `live/` need not repeat it.
 #[cfg(all(test, feature = "live-tests"))]
-mod live_tests;
+mod live;
 
 // --------------------------------------------------------------------------
 // Progress notifications
