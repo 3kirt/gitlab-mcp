@@ -8,11 +8,11 @@
 use serde_json::Value;
 
 use crate::client::GitlabError;
-use crate::tools::{branches, merge_requests, repository_files, slim};
+use crate::tools::{merge_requests, repository_files, slim};
 
 use super::harness::{
-    LiveEnv, assert_no_stripped_keys, assert_nonempty_str, assert_user_collapsed, pg, run_tag,
-    skip_unless_live,
+    LiveEnv, assert_no_stripped_keys, assert_nonempty_str, assert_user_collapsed, delete_branch,
+    pg, run_tag, skip_unless_live,
 };
 
 // --------------------------------------------------------------------------
@@ -41,17 +41,6 @@ async fn seed_branch_with_file(env: &LiveEnv, branch: &str, source_ref: &str) ->
     .await
     .expect("seed branch with file");
     branch.to_string()
-}
-
-async fn delete_branch(env: &LiveEnv, branch: &str) {
-    let _ = branches::branch_delete(
-        &env.client,
-        branches::BranchDeleteParams {
-            project_id: env.project.clone(),
-            branch: branch.to_string(),
-        },
-    )
-    .await;
 }
 
 async fn create_mr(env: &LiveEnv, p: merge_requests::MrCreateParams) -> (u64, Value) {

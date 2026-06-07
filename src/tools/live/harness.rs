@@ -5,7 +5,7 @@
 use serde_json::Value;
 
 use crate::client::GitlabClient;
-use crate::tools::PaginationParams;
+use crate::tools::{PaginationParams, branches};
 
 /// A live client plus the project under test, or `None` when credentials are
 /// absent (so tests skip rather than fail). Every test begins with
@@ -60,6 +60,20 @@ pub(super) fn pg(page: Option<u64>, per_page: Option<u64>) -> PaginationParams {
         per_page,
         fetch_all: None,
     }
+}
+
+/// Best-effort teardown of a throwaway branch (and all its commits). Shared by
+/// every area that seeds git state. Ignores errors so cleanup never masks a
+/// test failure.
+pub(super) async fn delete_branch(env: &LiveEnv, branch: &str) {
+    let _ = branches::branch_delete(
+        &env.client,
+        branches::BranchDeleteParams {
+            project_id: env.project.clone(),
+            branch: branch.to_string(),
+        },
+    )
+    .await;
 }
 
 // --------------------------------------------------------------------------

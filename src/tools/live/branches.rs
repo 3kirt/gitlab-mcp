@@ -7,7 +7,8 @@ use crate::client::GitlabError;
 use crate::tools::{branches, slim};
 
 use super::harness::{
-    LiveEnv, assert_no_stripped_keys, assert_nonempty_str, pg, run_tag, skip_unless_live,
+    LiveEnv, assert_no_stripped_keys, assert_nonempty_str, delete_branch, pg, run_tag,
+    skip_unless_live,
 };
 
 // --------------------------------------------------------------------------
@@ -25,17 +26,6 @@ async fn create_branch(env: &LiveEnv, name: &str, source_ref: &str) -> Value {
     )
     .await
     .expect("branch_create")
-}
-
-async fn delete_branch(env: &LiveEnv, name: &str) {
-    let _ = branches::branch_delete(
-        &env.client,
-        branches::BranchDeleteParams {
-            project_id: env.project.clone(),
-            branch: name.to_string(),
-        },
-    )
-    .await;
 }
 
 /// Fetch a branch through the server's path: domain function + `slim_get`.
