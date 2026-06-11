@@ -4,6 +4,19 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.24.0] — 2026-06-11
+
+### Fixed
+- **URL path-segment encoding** — branch names and file paths containing characters beyond `/` (spaces, `%`, `{`, `}`, `#`, `?`, and others) are now correctly percent-encoded using the `percent-encoding` crate with a full RFC 3986 path-segment character set. Previously only forward slashes were encoded, so branches like `fix/some issue` would produce malformed URLs.
+
+### Changed
+- **Per-domain tool routers** — the 157-shim monolith in `src/tools/mod.rs` has been split into per-domain `#[tool_router]` blocks co-located with their domain functions (one per domain file). `mod.rs` now assembles them via a composing `tool_router()` function; a guard test enforces the expected tool count and catches accidental omissions or name collisions.
+- **Shared project and group path helpers** — `project_path()` and `group_path()` helpers centralise the `/api/v4/projects/{id}` and `/api/v4/groups/{id}` prefix construction that was previously repeated across every domain module.
+- **HTTP status-check de-duplicated** — a `check_status()` helper in `src/client.rs` replaces five copies of the same 4-line error-extraction block in `list`, `post_void`, `get_text`, `delete`, and `handle_response`.
+- **Shared test fixture** — `mock_client()` extracted to a new `src/test_util.rs`, eliminating a copy of the function from every domain module's test section.
+
+---
+
 ## [0.23.0] — 2026-06-07
 
 This release is test infrastructure, documentation, and developer process only —
