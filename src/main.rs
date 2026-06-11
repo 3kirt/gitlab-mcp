@@ -1,5 +1,7 @@
 mod client;
 mod config;
+#[cfg(test)]
+mod test_util;
 mod tools;
 
 use std::path::PathBuf;

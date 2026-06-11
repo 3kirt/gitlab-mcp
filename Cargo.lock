@@ -511,6 +511,7 @@ version = "0.23.0"
 dependencies = [
  "anyhow",
  "clap",
+ "percent-encoding",
  "reqwest",
  "rmcp",
  "schemars",

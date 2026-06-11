@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id, list_paginated};
+use crate::tools::{PaginationParams, QueryBuilder, group_path, list_paginated, project_path};
 
 // --------------------------------------------------------------------------
 // Shared list filters
@@ -176,10 +176,7 @@ pub async fn project_runners_list(
     client: &GitlabClient,
     p: ProjectRunnersListParams,
 ) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/runners",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/runners", project_path(&p.project_id));
     let (qb, pagination) = runner_query(p.runner_type, p.filters);
     list_paginated(client, &path, qb, pagination).await
 }
@@ -197,13 +194,94 @@ pub struct GroupRunnersListParams {
 }
 
 pub async fn group_runners_list(client: &GitlabClient, p: GroupRunnersListParams) -> ListResult {
-    let path = format!(
-        "/api/v4/groups/{}/runners",
-        encode_namespace_id(&p.group_id)
-    );
+    let path = format!("{}/runners", group_path(&p.group_id));
     // Group runners endpoint doesn't accept a `type` filter — pass None.
     let (qb, pagination) = runner_query(None, p.filters);
     list_paginated(client, &path, qb, pagination).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_runners, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "List runners available to the current authenticated user. Optional filters: type (\"instance_type\", \"group_type\", \"project_type\"), status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page."
+    )]
+    async fn gitlab_runners_list(
+        &self,
+        Parameters(p): Parameters<RunnersListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, runners_list, p, "runners")
+    }
+
+    #[tool(
+        description = "List all runners registered on the GitLab instance (administrators only). Optional filters: type (\"instance_type\", \"group_type\", \"project_type\"), status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page."
+    )]
+    async fn gitlab_runners_all_list(
+        &self,
+        Parameters(p): Parameters<RunnersAllListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, runners_all_list, p, "runners")
+    }
+
+    #[tool(
+        description = "Get details of a single GitLab runner by ID. Returns architecture, description, ip_address, status, tag_list, version, platform, projects, and more."
+    )]
+    async fn gitlab_runners_get(
+        &self,
+        Parameters(p): Parameters<RunnerGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, runner_get, p, "runner")
+    }
+
+    #[tool(
+        description = "List jobs processed by a specific GitLab runner. Optional filters: system_id (runner manager), status (\"running\", \"success\", \"failed\", \"canceled\"), sort (\"asc\" or \"desc\"). Paginate with page and per_page."
+    )]
+    async fn gitlab_runners_jobs_list(
+        &self,
+        Parameters(p): Parameters<RunnerJobsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, runner_jobs_list, p, "runner jobs")
+    }
+
+    #[tool(
+        description = "List runner managers (individual machines) registered under a GitLab runner. Returns system_id, version, platform, architecture, ip_address, status, and last contact time. Paginate with page and per_page."
+    )]
+    async fn gitlab_runners_managers_list(
+        &self,
+        Parameters(p): Parameters<RunnerManagersListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, runner_managers_list, p, "runner managers")
+    }
+
+    #[tool(
+        description = "List runners available to a GitLab project. project_id accepts a numeric ID or namespace path. Optional filters: type (\"instance_type\", \"group_type\", \"project_type\"), status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page."
+    )]
+    async fn gitlab_runners_list_for_project(
+        &self,
+        Parameters(p): Parameters<ProjectRunnersListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, project_runners_list, p, "project runners")
+    }
+
+    #[tool(
+        description = "List runners available to a GitLab group. group_id accepts a numeric ID or namespace path. Optional filters: status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page."
+    )]
+    async fn gitlab_runners_list_for_group(
+        &self,
+        Parameters(p): Parameters<GroupRunnersListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, group_runners_list, p, "group runners")
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -216,12 +294,8 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::*;
-    use crate::client::GitlabClient;
+    use crate::test_util::mock_client;
     use crate::tools::PaginationParams;
-
-    fn mock_client(server: &MockServer) -> GitlabClient {
-        GitlabClient::new(server.uri(), "test-token").unwrap()
-    }
 
     fn no_filters() -> RunnerListFilters {
         RunnerListFilters {

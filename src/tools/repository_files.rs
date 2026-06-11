@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{BodyBuilder, QueryBuilder, encode_namespace_id, encode_path_segment};
+use crate::tools::{BodyBuilder, QueryBuilder, encode_path_segment, project_path};
 
 // --------------------------------------------------------------------------
 // Get file (metadata + Base64 content)
@@ -26,8 +26,8 @@ pub struct FileGetParams {
 
 pub async fn file_get(client: &GitlabClient, p: FileGetParams) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/files/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/files/{}",
+        project_path(&p.project_id),
         encode_path_segment(&p.file_path)
     );
     let params = QueryBuilder::new()
@@ -58,8 +58,8 @@ pub struct FileRawParams {
 
 pub async fn file_raw(client: &GitlabClient, p: FileRawParams) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/files/{}/raw",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/files/{}/raw",
+        project_path(&p.project_id),
         encode_path_segment(&p.file_path)
     );
     let params = QueryBuilder::new()
@@ -94,8 +94,8 @@ pub struct FileBlameParams {
 
 pub async fn file_blame(client: &GitlabClient, p: FileBlameParams) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/files/{}/blame",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/files/{}/blame",
+        project_path(&p.project_id),
         encode_path_segment(&p.file_path)
     );
     let params = QueryBuilder::new()
@@ -140,8 +140,8 @@ pub struct FileCreateParams {
 
 pub async fn file_create(client: &GitlabClient, p: FileCreateParams) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/files/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/files/{}",
+        project_path(&p.project_id),
         encode_path_segment(&p.file_path)
     );
     let body = BodyBuilder::new()
@@ -195,8 +195,8 @@ pub struct FileUpdateParams {
 
 pub async fn file_update(client: &GitlabClient, p: FileUpdateParams) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/files/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/files/{}",
+        project_path(&p.project_id),
         encode_path_segment(&p.file_path)
     );
     let body = BodyBuilder::new()
@@ -245,8 +245,8 @@ pub struct FileDeleteParams {
 
 pub async fn file_delete(client: &GitlabClient, p: FileDeleteParams) -> Result<(), GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/files/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/files/{}",
+        project_path(&p.project_id),
         encode_path_segment(&p.file_path)
     );
     let body = BodyBuilder::new()
@@ -262,6 +262,80 @@ pub async fn file_delete(client: &GitlabClient, p: FileDeleteParams) -> Result<(
 }
 
 // --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_repository_files, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "Get a file from a GitLab repository. Returns metadata and Base64-encoded content. Required: project_id, file_path (e.g. \"src/main.rs\"), ref_name (branch/tag/SHA or \"HEAD\" for default branch)."
+    )]
+    async fn gitlab_file_get(
+        &self,
+        Parameters(p): Parameters<FileGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, file_get, p, "file")
+    }
+
+    #[tool(
+        description = "Get the raw text content of a file from a GitLab repository. Required: project_id, file_path. Optional: ref_name (default: HEAD), lfs (return LFS object instead of pointer)."
+    )]
+    async fn gitlab_file_raw(
+        &self,
+        Parameters(p): Parameters<FileRawParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, file_raw, p, "raw file")
+    }
+
+    #[tool(
+        description = "Get the blame history for a file in a GitLab repository, showing which commit last modified each line. Required: project_id, file_path, ref_name. Optional: range_start, range_end (1-based line numbers)."
+    )]
+    async fn gitlab_file_blame(
+        &self,
+        Parameters(p): Parameters<FileBlameParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, file_blame, p, "file blame")
+    }
+
+    #[tool(
+        description = "Create a new file in a GitLab repository. Required: project_id, file_path, branch, commit_message, content. Optional: encoding (\"base64\"), author_name, author_email, execute_filemode, start_branch."
+    )]
+    async fn gitlab_file_create(
+        &self,
+        Parameters(p): Parameters<FileCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, file_create, p, "file")
+    }
+
+    #[tool(
+        description = "Update an existing file in a GitLab repository. Required: project_id, file_path, branch, commit_message, content. Optional: encoding (\"base64\"), author_name, author_email, execute_filemode, last_commit_id, start_branch."
+    )]
+    async fn gitlab_file_update(
+        &self,
+        Parameters(p): Parameters<FileUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, file_update, p, "file")
+    }
+
+    #[tool(
+        description = "Delete a file from a GitLab repository by committing its removal. Required: project_id, file_path, branch, commit_message. Optional: author_name, author_email, last_commit_id, start_branch."
+    )]
+    async fn gitlab_file_delete(
+        &self,
+        Parameters(p): Parameters<FileDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, file_delete, p, "file")
+    }
+}
+
+// --------------------------------------------------------------------------
 // Tests
 // --------------------------------------------------------------------------
 
@@ -274,11 +348,7 @@ mod tests {
         FileBlameParams, FileCreateParams, FileDeleteParams, FileGetParams, FileRawParams,
         FileUpdateParams, file_blame, file_create, file_delete, file_get, file_raw, file_update,
     };
-    use crate::client::GitlabClient;
-
-    fn mock_client(server: &MockServer) -> GitlabClient {
-        GitlabClient::new(server.uri(), "test-token").unwrap()
-    }
+    use crate::test_util::mock_client;
 
     fn captured_body(reqs: &[wiremock::Request], m: wiremock::http::Method) -> serde_json::Value {
         reqs.iter()

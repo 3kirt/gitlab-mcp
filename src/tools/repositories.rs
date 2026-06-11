@@ -2,9 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, list_paginated,
-};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, project_path};
 
 // --------------------------------------------------------------------------
 // List repository tree
@@ -41,10 +39,7 @@ pub struct RepoTreeListParams {
 }
 
 pub async fn repo_tree_list(client: &GitlabClient, p: RepoTreeListParams) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/repository/tree",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/repository/tree", project_path(&p.project_id));
     let qb = QueryBuilder::new()
         .opt("path", p.path)
         .opt("ref", p.ref_name)
@@ -72,11 +67,7 @@ pub async fn repo_blob_get(
     client: &GitlabClient,
     p: RepoBlobGetParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/repository/blobs/{}",
-        encode_namespace_id(&p.project_id),
-        p.sha
-    );
+    let path = format!("{}/repository/blobs/{}", project_path(&p.project_id), p.sha);
     client.get(&path).await
 }
 
@@ -97,8 +88,8 @@ pub async fn repo_blob_raw(
     p: RepoBlobRawParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/blobs/{}/raw",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/blobs/{}/raw",
+        project_path(&p.project_id),
         p.sha
     );
     let content = client.get_text(&path, &[]).await?;
@@ -129,10 +120,7 @@ pub async fn repo_compare(
     client: &GitlabClient,
     p: RepoCompareParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/repository/compare",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/repository/compare", project_path(&p.project_id));
     let params = QueryBuilder::new()
         .opt("from", Some(p.from))
         .opt("to", Some(p.to))
@@ -169,10 +157,7 @@ pub async fn repo_contributors_list(
     client: &GitlabClient,
     p: RepoContributorsListParams,
 ) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/repository/contributors",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/repository/contributors", project_path(&p.project_id));
     let qb = QueryBuilder::new()
         .opt("order_by", p.order_by)
         .opt("sort", p.sort)
@@ -198,10 +183,7 @@ pub async fn repo_merge_base(
     client: &GitlabClient,
     p: RepoMergeBaseParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/repository/merge_base",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/repository/merge_base", project_path(&p.project_id));
     let params: Vec<(&str, String)> = p.refs.into_iter().map(|r| ("refs[]", r)).collect();
     client.get_with_params(&path, &params).await
 }
@@ -238,10 +220,7 @@ pub async fn repo_changelog_get(
     client: &GitlabClient,
     p: RepoChangelogGetParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/repository/changelog",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/repository/changelog", project_path(&p.project_id));
     let params = QueryBuilder::new()
         .opt("version", Some(p.version))
         .opt("config_file", p.config_file)
@@ -292,10 +271,7 @@ pub async fn repo_changelog_add(
     client: &GitlabClient,
     p: RepoChangelogAddParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/repository/changelog",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/repository/changelog", project_path(&p.project_id));
     let body = BodyBuilder::new()
         .req("version", &p.version)
         .opt("branch", p.branch)
@@ -326,12 +302,113 @@ pub struct RepoHealthParams {
 }
 
 pub async fn repo_health(client: &GitlabClient, p: RepoHealthParams) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/repository/health",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/repository/health", project_path(&p.project_id));
     let params = QueryBuilder::new()
         .opt("generate", p.generate)
         .into_params();
     client.get_with_params(&path, &params).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_repositories, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "List files and directories in a GitLab repository tree. Optional: path (subdirectory), ref (branch/tag/SHA), recursive, pagination mode (keyset), page_token, page, per_page."
+    )]
+    async fn gitlab_repo_tree(
+        &self,
+        Parameters(p): Parameters<RepoTreeListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, repo_tree_list, p, "repository tree")
+    }
+
+    #[tool(
+        description = "Get metadata for a GitLab repository blob (file) by its SHA. Returns content (Base64 encoded), encoding, sha, and size in bytes."
+    )]
+    async fn gitlab_repo_blob_get(
+        &self,
+        Parameters(p): Parameters<RepoBlobGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repo_blob_get, p, "blob")
+    }
+
+    #[tool(
+        description = "Get the raw text content of a GitLab repository blob by its SHA. Best suited for text files; binary files may not decode cleanly."
+    )]
+    async fn gitlab_repo_blob_raw(
+        &self,
+        Parameters(p): Parameters<RepoBlobRawParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repo_blob_raw, p, "raw blob")
+    }
+
+    #[tool(
+        description = "Compare two refs (branches, tags, or commit SHAs) in a GitLab repository. Returns commit list, diffs, and comparison metadata. Optional: from_project_id, straight (direct diff), unidiff (unified format)."
+    )]
+    async fn gitlab_repo_compare(
+        &self,
+        Parameters(p): Parameters<RepoCompareParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repo_compare, p, "repository comparison")
+    }
+
+    #[tool(
+        description = "List contributors for a GitLab repository with commit counts, additions, and deletions. Optional: order_by (name/email/commits), sort (asc/desc), ref (branch/tag/SHA), page, per_page."
+    )]
+    async fn gitlab_repo_contributors(
+        &self,
+        Parameters(p): Parameters<RepoContributorsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, repo_contributors_list, p, "contributors")
+    }
+
+    #[tool(
+        description = "Find the common ancestor (merge base) of two or more refs (commit SHAs, branch names, or tag names) in a GitLab repository."
+    )]
+    async fn gitlab_repo_merge_base(
+        &self,
+        Parameters(p): Parameters<RepoMergeBaseParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repo_merge_base, p, "merge base")
+    }
+
+    #[tool(
+        description = "Generate changelog markdown for a semantic version without committing it. Required: project_id, version. Optional: config_file, config_file_ref, from, to, trailer, date."
+    )]
+    async fn gitlab_repo_changelog_get(
+        &self,
+        Parameters(p): Parameters<RepoChangelogGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repo_changelog_get, p, "changelog")
+    }
+
+    #[tool(
+        description = "Generate changelog for a semantic version and commit it to the repository. Required: project_id, version. Optional: branch, config_file, config_file_ref, file, from, to, message, trailer, date."
+    )]
+    async fn gitlab_repo_changelog_add(
+        &self,
+        Parameters(p): Parameters<RepoChangelogAddParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, repo_changelog_add, p, "changelog")
+    }
+
+    #[tool(
+        description = "Get repository health statistics for a GitLab project, including size, references, objects, commit graph, and bitmap information. Optional: generate (create a report if none exists)."
+    )]
+    async fn gitlab_repo_health(
+        &self,
+        Parameters(p): Parameters<RepoHealthParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, repo_health, p, "repository health")
+    }
 }

@@ -2,9 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, list_paginated,
-};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, project_path};
 
 // --------------------------------------------------------------------------
 // List pipelines
@@ -62,10 +60,7 @@ pub struct PipelineListParams {
 }
 
 pub async fn pipeline_list(client: &GitlabClient, p: PipelineListParams) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/pipelines",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/pipelines", project_path(&p.project_id));
     let qb = QueryBuilder::new()
         .opt("scope", p.scope)
         .opt("status", p.status)
@@ -101,8 +96,8 @@ pub async fn pipeline_get(
     p: PipelineGetParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipelines/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/pipelines/{}",
+        project_path(&p.project_id),
         p.pipeline_id
     );
     client.get(&path).await
@@ -125,10 +120,7 @@ pub async fn pipeline_get_latest(
     client: &GitlabClient,
     p: PipelineGetLatestParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/pipelines/latest",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/pipelines/latest", project_path(&p.project_id));
     let params = QueryBuilder::new().opt("ref", p.ref_).into_params();
     client.get_with_params(&path, &params).await
 }
@@ -152,8 +144,8 @@ pub async fn pipeline_get_variables(
     p: PipelineGetVariablesParams,
 ) -> ListResult {
     let path = format!(
-        "/api/v4/projects/{}/pipelines/{}/variables",
-        encode_namespace_id(&p.project_id),
+        "{}/pipelines/{}/variables",
+        project_path(&p.project_id),
         p.pipeline_id
     );
     list_paginated(client, &path, QueryBuilder::new(), p.pagination).await
@@ -176,8 +168,8 @@ pub async fn pipeline_get_test_report(
     p: PipelineGetTestReportParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipelines/{}/test_report",
-        encode_namespace_id(&p.project_id),
+        "{}/pipelines/{}/test_report",
+        project_path(&p.project_id),
         p.pipeline_id
     );
     client.get(&path).await
@@ -200,8 +192,8 @@ pub async fn pipeline_get_test_report_summary(
     p: PipelineGetTestReportSummaryParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipelines/{}/test_report_summary",
-        encode_namespace_id(&p.project_id),
+        "{}/pipelines/{}/test_report_summary",
+        project_path(&p.project_id),
         p.pipeline_id
     );
     client.get(&path).await
@@ -230,10 +222,7 @@ pub async fn pipeline_create(
     client: &GitlabClient,
     p: PipelineCreateParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/pipeline",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/pipeline", project_path(&p.project_id));
     let body = BodyBuilder::new()
         .req("ref", &p.ref_)
         .opt("variables", p.variables)
@@ -259,8 +248,8 @@ pub async fn pipeline_retry(
     p: PipelineRetryParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipelines/{}/retry",
-        encode_namespace_id(&p.project_id),
+        "{}/pipelines/{}/retry",
+        project_path(&p.project_id),
         p.pipeline_id
     );
     client.post(&path, &json!({})).await
@@ -283,8 +272,8 @@ pub async fn pipeline_cancel(
     p: PipelineCancelParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipelines/{}/cancel",
-        encode_namespace_id(&p.project_id),
+        "{}/pipelines/{}/cancel",
+        project_path(&p.project_id),
         p.pipeline_id
     );
     client.post(&path, &json!({})).await
@@ -307,8 +296,8 @@ pub async fn pipeline_delete(
     p: PipelineDeleteParams,
 ) -> Result<(), GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipelines/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/pipelines/{}",
+        project_path(&p.project_id),
         p.pipeline_id
     );
     client.delete(&path).await
@@ -333,9 +322,134 @@ pub async fn pipeline_update_metadata(
     p: PipelineUpdateMetadataParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipelines/{}/metadata",
-        encode_namespace_id(&p.project_id),
+        "{}/pipelines/{}/metadata",
+        project_path(&p.project_id),
         p.pipeline_id
     );
     client.put(&path, &json!({ "name": p.name })).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_pipelines, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "List pipelines for a GitLab project. Optional filters: scope, status, source, ref, sha, yaml_errors, username, updated_after/before, created_after/before, order_by, sort, name. Paginate with page and per_page."
+    )]
+    async fn gitlab_pipelines_list(
+        &self,
+        Parameters(p): Parameters<PipelineListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, pipeline_list, p, "pipelines")
+    }
+
+    #[tool(description = "Get a single GitLab pipeline by project ID and pipeline ID.")]
+    async fn gitlab_pipelines_get(
+        &self,
+        Parameters(p): Parameters<PipelineGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, pipeline_get, p, "pipeline")
+    }
+
+    #[tool(
+        description = "Get the latest pipeline for a GitLab project. Optional: ref (branch or tag name; defaults to project default branch)."
+    )]
+    async fn gitlab_pipelines_get_latest(
+        &self,
+        Parameters(p): Parameters<PipelineGetLatestParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, pipeline_get_latest, p, "latest pipeline")
+    }
+
+    #[tool(
+        description = "List variables defined on a specific GitLab pipeline run. Returns key/value pairs used when the pipeline was triggered. Paginate with page and per_page."
+    )]
+    async fn gitlab_pipelines_get_variables(
+        &self,
+        Parameters(p): Parameters<PipelineGetVariablesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, pipeline_get_variables, p, "pipeline variables")
+    }
+
+    #[tool(
+        description = "Get the full test report for a GitLab pipeline, including suite and case details with pass/fail/error counts."
+    )]
+    async fn gitlab_pipelines_get_test_report(
+        &self,
+        Parameters(p): Parameters<PipelineGetTestReportParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, pipeline_get_test_report, p, "pipeline test report")
+    }
+
+    #[tool(
+        description = "Get the test report summary for a GitLab pipeline — total counts only without per-case details."
+    )]
+    async fn gitlab_pipelines_get_test_report_summary(
+        &self,
+        Parameters(p): Parameters<PipelineGetTestReportSummaryParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(
+            self,
+            pipeline_get_test_report_summary,
+            p,
+            "pipeline test report summary"
+        )
+    }
+
+    #[tool(
+        description = "Create (trigger) a new GitLab pipeline. Required: project_id, ref (branch/tag/SHA). Optional: variables (array of {key, value, variable_type} objects), inputs."
+    )]
+    async fn gitlab_pipelines_create(
+        &self,
+        Parameters(p): Parameters<PipelineCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, pipeline_create, p, "pipeline")
+    }
+
+    #[tool(
+        description = "Retry all failed and canceled jobs in a GitLab pipeline, creating a new pipeline run."
+    )]
+    async fn gitlab_pipelines_retry(
+        &self,
+        Parameters(p): Parameters<PipelineRetryParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(self, pipeline_retry, p, "retrying", "pipeline")
+    }
+
+    #[tool(description = "Cancel all running jobs in a GitLab pipeline.")]
+    async fn gitlab_pipelines_cancel(
+        &self,
+        Parameters(p): Parameters<PipelineCancelParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(self, pipeline_cancel, p, "canceling", "pipeline")
+    }
+
+    #[tool(
+        description = "Delete a GitLab pipeline and all its jobs. Requires at least Maintainer role. This action is permanent."
+    )]
+    async fn gitlab_pipelines_delete(
+        &self,
+        Parameters(p): Parameters<PipelineDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, pipeline_delete, p, "pipeline")
+    }
+
+    #[tool(
+        description = "Update the name of a GitLab pipeline. Required: project_id, pipeline_id, name (new pipeline name)."
+    )]
+    async fn gitlab_pipelines_update_metadata(
+        &self,
+        Parameters(p): Parameters<PipelineUpdateMetadataParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, pipeline_update_metadata, p, "pipeline metadata")
+    }
 }

@@ -2,9 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, list_paginated,
-};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, project_path};
 
 // --------------------------------------------------------------------------
 // List MR discussions
@@ -22,8 +20,8 @@ pub struct MrDiscussionsListParams {
 
 pub async fn mr_discussions_list(client: &GitlabClient, p: MrDiscussionsListParams) -> ListResult {
     let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/discussions",
-        encode_namespace_id(&p.project_id),
+        "{}/merge_requests/{}/discussions",
+        project_path(&p.project_id),
         p.merge_request_iid
     );
     list_paginated(client, &path, QueryBuilder::new(), p.pagination).await
@@ -48,8 +46,8 @@ pub async fn mr_discussion_get(
     p: MrDiscussionGetParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/discussions/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/merge_requests/{}/discussions/{}",
+        project_path(&p.project_id),
         p.merge_request_iid,
         p.discussion_id
     );
@@ -128,8 +126,8 @@ pub async fn mr_discussion_create(
     p: MrDiscussionCreateParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/discussions",
-        encode_namespace_id(&p.project_id),
+        "{}/merge_requests/{}/discussions",
+        project_path(&p.project_id),
         p.merge_request_iid
     );
     let position = build_position(&p);
@@ -163,8 +161,8 @@ pub async fn mr_discussion_resolve(
     p: MrDiscussionResolveParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/discussions/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/merge_requests/{}/discussions/{}",
+        project_path(&p.project_id),
         p.merge_request_iid,
         p.discussion_id
     );
@@ -197,8 +195,8 @@ pub async fn mr_discussion_note_create(
     p: MrDiscussionNoteCreateParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/discussions/{}/notes",
-        encode_namespace_id(&p.project_id),
+        "{}/merge_requests/{}/discussions/{}/notes",
+        project_path(&p.project_id),
         p.merge_request_iid,
         p.discussion_id
     );
@@ -236,8 +234,8 @@ pub async fn mr_discussion_note_update(
     p: MrDiscussionNoteUpdateParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/discussions/{}/notes/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/merge_requests/{}/discussions/{}/notes/{}",
+        project_path(&p.project_id),
         p.merge_request_iid,
         p.discussion_id,
         p.note_id
@@ -270,13 +268,97 @@ pub async fn mr_discussion_note_delete(
     p: MrDiscussionNoteDeleteParams,
 ) -> Result<(), GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/discussions/{}/notes/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/merge_requests/{}/discussions/{}/notes/{}",
+        project_path(&p.project_id),
         p.merge_request_iid,
         p.discussion_id,
         p.note_id
     );
     client.delete(&path).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_discussions, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "List comments and discussion threads on a GitLab merge request (an MR's notes/comments live here). Each thread has an individual_note flag and a notes[] array; plain top-level comments appear as single-note threads. Paginate with page and per_page."
+    )]
+    async fn gitlab_mrs_discussions_list(
+        &self,
+        Parameters(p): Parameters<MrDiscussionsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, mr_discussions_list, p, "MR discussions")
+    }
+
+    #[tool(
+        description = "Get a single comment thread (discussion) on a GitLab merge request by discussion ID (hex string)."
+    )]
+    async fn gitlab_mrs_discussions_get(
+        &self,
+        Parameters(p): Parameters<MrDiscussionGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, mr_discussion_get, p, "MR discussion")
+    }
+
+    #[tool(
+        description = "Comment on a GitLab merge request (creates a note / starts a discussion thread). To post a plain top-level comment, pass only body — this is the MR equivalent of gitlab_issues_notes_create. To pin an inline comment to a specific diff line, also pass the position_* fields. Required: project_id, merge_request_iid, body. Optional: commit_id (pin to commit SHA); inline diff-note position: position_base_sha, position_head_sha, position_start_sha, position_type (\"text\"/\"image\"/\"file\"), position_new_path, position_old_path, position_new_line, position_old_line."
+    )]
+    async fn gitlab_mrs_discussions_create(
+        &self,
+        Parameters(p): Parameters<MrDiscussionCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, mr_discussion_create, p, "MR discussion")
+    }
+
+    #[tool(
+        description = "Resolve or unresolve a discussion thread on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, resolved (true to resolve, false to unresolve). Requires Developer role or being the change author."
+    )]
+    async fn gitlab_mrs_discussions_resolve(
+        &self,
+        Parameters(p): Parameters<MrDiscussionResolveParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, mr_discussion_resolve, p, "MR discussion")
+    }
+
+    #[tool(
+        description = "Reply to an existing comment thread (discussion) on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
+    )]
+    async fn gitlab_mrs_discussions_note_create(
+        &self,
+        Parameters(p): Parameters<MrDiscussionNoteCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, mr_discussion_note_create, p, "MR discussion note")
+    }
+
+    #[tool(
+        description = "Edit or resolve a comment (note) on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, note_id. Provide exactly one of: body (new comment text) or resolved (true/false)."
+    )]
+    async fn gitlab_mrs_discussions_note_update(
+        &self,
+        Parameters(p): Parameters<MrDiscussionNoteUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, mr_discussion_note_update, p, "MR discussion note")
+    }
+
+    #[tool(
+        description = "Delete a comment (note) from a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, note_id. This action is permanent."
+    )]
+    async fn gitlab_mrs_discussions_note_delete(
+        &self,
+        Parameters(p): Parameters<MrDiscussionNoteDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, mr_discussion_note_delete, p, "MR discussion note")
+    }
 }
 
 #[cfg(test)]

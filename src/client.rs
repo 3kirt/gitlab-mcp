@@ -125,11 +125,7 @@ impl GitlabClient {
     pub async fn list(&self, path: &str, params: &[(&str, String)]) -> ListResult {
         let url = self.url(path);
         let resp = self.http.get(&url).query(params).send().await?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(GitlabError::Api { status, body });
-        }
+        let resp = check_status(resp).await?;
         let meta = PaginationMeta {
             page: parse_pagination_header(resp.headers(), "x-page"),
             per_page: parse_pagination_header(resp.headers(), "x-per-page"),
@@ -152,11 +148,7 @@ impl GitlabClient {
     pub async fn post_void(&self, path: &str, body: &Value) -> Result<(), GitlabError> {
         let url = self.url(path);
         let resp = self.http.post(&url).json(body).send().await?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(GitlabError::Api { status, body });
-        }
+        check_status(resp).await?;
         Ok(())
     }
 
@@ -175,11 +167,7 @@ impl GitlabClient {
     ) -> Result<String, GitlabError> {
         let url = self.url(path);
         let resp = self.http.get(&url).query(params).send().await?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(GitlabError::Api { status, body });
-        }
+        let resp = check_status(resp).await?;
         Ok(resp.text().await?)
     }
 
@@ -201,11 +189,7 @@ impl GitlabClient {
     pub async fn delete(&self, path: &str) -> Result<(), GitlabError> {
         let url = self.url(path);
         let resp = self.http.delete(&url).send().await?;
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(GitlabError::Api { status, body });
-        }
+        check_status(resp).await?;
         Ok(())
     }
 
@@ -214,16 +198,23 @@ impl GitlabClient {
     }
 
     async fn handle_response(&self, resp: reqwest::Response) -> Result<Value, GitlabError> {
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(GitlabError::Api { status, body });
-        }
-        if status == StatusCode::NO_CONTENT {
+        let resp = check_status(resp).await?;
+        if resp.status() == StatusCode::NO_CONTENT {
             return Ok(Value::Null);
         }
         Ok(resp.json().await?)
     }
+}
+
+/// Map a non-2xx response to [`GitlabError::Api`] (consuming the body as the
+/// error message), passing successful responses through untouched.
+async fn check_status(resp: reqwest::Response) -> Result<reqwest::Response, GitlabError> {
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(GitlabError::Api { status, body });
+    }
+    Ok(resp)
 }
 
 fn parse_pagination_header(headers: &header::HeaderMap, name: &str) -> Option<u64> {
@@ -236,12 +227,9 @@ fn parse_pagination_header(headers: &header::HeaderMap, name: &str) -> Option<u6
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::mock_client;
     use wiremock::matchers::{body_json, header, method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-
-    fn mock_client(server: &MockServer) -> GitlabClient {
-        GitlabClient::new(server.uri(), "test-token").unwrap()
-    }
 
     fn api_err(status: StatusCode, body: &str) -> GitlabError {
         GitlabError::Api {

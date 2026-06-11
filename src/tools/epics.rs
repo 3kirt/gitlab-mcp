@@ -9,9 +9,9 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::client::{GitlabClient, GitlabError, PaginationMeta};
+use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, list_paginated,
+    BodyBuilder, PaginationParams, QueryBuilder, group_path, list_paginated,
     unwrap_404_as_empty_array,
 };
 
@@ -20,15 +20,13 @@ use crate::tools::{
 // --------------------------------------------------------------------------
 
 /// Resolve an epic IID (relative to the group) to the numeric global epic ID
-/// that the REST `parent_id` field expects.
+/// that the REST `parent_id` field expects. `grp` is the [`group_path`] prefix.
 async fn resolve_epic_id(
     client: &GitlabClient,
-    gid: &str,
+    grp: &str,
     epic_iid: u64,
 ) -> Result<u64, GitlabError> {
-    let parent = client
-        .get(&format!("/api/v4/groups/{gid}/epics/{epic_iid}"))
-        .await?;
+    let parent = client.get(&format!("{grp}/epics/{epic_iid}")).await?;
     parent["id"]
         .as_u64()
         .ok_or_else(|| GitlabError::Other("parent epic response missing id field".into()))
@@ -83,11 +81,8 @@ pub struct EpicsListParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn epics_list(
-    client: &GitlabClient,
-    p: EpicsListParams,
-) -> Result<(Value, PaginationMeta), GitlabError> {
-    let gid = encode_namespace_id(&p.group_id);
+pub async fn epics_list(client: &GitlabClient, p: EpicsListParams) -> ListResult {
+    let grp = group_path(&p.group_id);
     let labels = p.label_name.map(|v| v.join(","));
     let qb = QueryBuilder::new()
         .opt("state", p.state)
@@ -97,13 +92,7 @@ pub async fn epics_list(
         .multi("iids[]", p.iids)
         .opt("order_by", p.order_by)
         .opt("sort", p.sort);
-    list_paginated(
-        client,
-        &format!("/api/v4/groups/{gid}/epics"),
-        qb,
-        p.pagination,
-    )
-    .await
+    list_paginated(client, &format!("{grp}/epics"), qb, p.pagination).await
 }
 
 // --------------------------------------------------------------------------
@@ -119,18 +108,12 @@ pub struct EpicGetParams {
 }
 
 pub async fn epic_get(client: &GitlabClient, p: EpicGetParams) -> Result<Value, GitlabError> {
-    let gid = encode_namespace_id(&p.group_id);
+    let grp = group_path(&p.group_id);
     let iid = p.epic_iid;
-    let mut epic = client
-        .get(&format!("/api/v4/groups/{gid}/epics/{iid}"))
-        .await?;
+    let mut epic = client.get(&format!("{grp}/epics/{iid}")).await?;
     // Supplement with the epic's child issues — the REST epic body only carries
     // child epics under hierarchy, not the classic epic→issue associations.
-    let issues = unwrap_404_as_empty_array(
-        client
-            .get(&format!("/api/v4/groups/{gid}/epics/{iid}/issues"))
-            .await,
-    )?;
+    let issues = unwrap_404_as_empty_array(client.get(&format!("{grp}/epics/{iid}/issues")).await)?;
     epic["issues"] = issues;
     Ok(epic)
 }
@@ -158,7 +141,7 @@ pub struct EpicCreateParams {
 }
 
 pub async fn epic_create(client: &GitlabClient, p: EpicCreateParams) -> Result<Value, GitlabError> {
-    let gid = encode_namespace_id(&p.group_id);
+    let grp = group_path(&p.group_id);
 
     let parent_id: Option<u64> = match p.parent_epic_iid {
         None => None,
@@ -167,7 +150,7 @@ pub async fn epic_create(client: &GitlabClient, p: EpicCreateParams) -> Result<V
                 "parent_epic_iid=0 is only valid on update (to clear an existing parent)".into(),
             ));
         }
-        Some(parent_iid) => Some(resolve_epic_id(client, &gid, parent_iid).await?),
+        Some(parent_iid) => Some(resolve_epic_id(client, &grp, parent_iid).await?),
     };
 
     let body = apply_epic_dates(
@@ -181,9 +164,7 @@ pub async fn epic_create(client: &GitlabClient, p: EpicCreateParams) -> Result<V
     )
     .build();
 
-    client
-        .post(&format!("/api/v4/groups/{gid}/epics"), &body)
-        .await
+    client.post(&format!("{grp}/epics"), &body).await
 }
 
 // --------------------------------------------------------------------------
@@ -219,13 +200,13 @@ pub struct EpicUpdateParams {
 }
 
 pub async fn epic_update(client: &GitlabClient, p: EpicUpdateParams) -> Result<Value, GitlabError> {
-    let gid = encode_namespace_id(&p.group_id);
+    let grp = group_path(&p.group_id);
     let iid = p.epic_iid;
 
     let parent_id: Option<u64> = match p.parent_epic_iid {
         None => None,
         Some(0) => Some(0),
-        Some(parent_iid) => Some(resolve_epic_id(client, &gid, parent_iid).await?),
+        Some(parent_iid) => Some(resolve_epic_id(client, &grp, parent_iid).await?),
     };
 
     let body = apply_epic_dates(
@@ -242,9 +223,7 @@ pub async fn epic_update(client: &GitlabClient, p: EpicUpdateParams) -> Result<V
     )
     .build();
 
-    client
-        .put(&format!("/api/v4/groups/{gid}/epics/{iid}"), &body)
-        .await
+    client.put(&format!("{grp}/epics/{iid}"), &body).await
 }
 
 // --------------------------------------------------------------------------
@@ -267,12 +246,12 @@ pub async fn epic_issue_assign(
     client: &GitlabClient,
     p: EpicIssueAssignParams,
 ) -> Result<Value, GitlabError> {
-    let gid = encode_namespace_id(&p.group_id);
+    let grp = group_path(&p.group_id);
     let iid = p.epic_iid;
     let issue_id = p.issue_id;
     client
         .post(
-            &format!("/api/v4/groups/{gid}/epics/{iid}/issues/{issue_id}"),
+            &format!("{grp}/epics/{iid}/issues/{issue_id}"),
             &serde_json::json!({}),
         )
         .await
@@ -298,11 +277,11 @@ pub async fn epic_issue_remove(
     client: &GitlabClient,
     p: EpicIssueRemoveParams,
 ) -> Result<Value, GitlabError> {
-    let gid = encode_namespace_id(&p.group_id);
+    let grp = group_path(&p.group_id);
     let iid = p.epic_iid;
     let eid = p.epic_issue_id;
     client
-        .delete_json(&format!("/api/v4/groups/{gid}/epics/{iid}/issues/{eid}"))
+        .delete_json(&format!("{grp}/epics/{iid}/issues/{eid}"))
         .await
 }
 
@@ -319,11 +298,99 @@ pub struct EpicDeleteParams {
 }
 
 pub async fn epic_delete(client: &GitlabClient, p: EpicDeleteParams) -> Result<(), GitlabError> {
-    let gid = encode_namespace_id(&p.group_id);
+    let grp = group_path(&p.group_id);
     let iid = p.epic_iid;
-    client
-        .delete(&format!("/api/v4/groups/{gid}/epics/{iid}"))
-        .await
+    client.delete(&format!("{grp}/epics/{iid}")).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_epics, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "List epics in a GitLab group. Required: group_id (numeric ID or full namespace path like \"mygroup\"). Optional filters: state (opened/closed/all), search, author_username, label_name (array of label names), iids (array of epic IIDs from the URL). Sort: order_by (created_at/updated_at/title) and sort (asc/desc). Pagination: page and per_page (default 20, max 100). Returns each epic with id, iid, title, state, author, labels, dates, and web_url."
+    )]
+    async fn gitlab_epics_list(
+        &self,
+        Parameters(p): Parameters<EpicsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, epics_list, p, "epics")
+    }
+
+    #[tool(
+        description = "Get a single GitLab epic by group and epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`). group_id accepts a numeric ID or full namespace path. Returns full epic details: id, iid, title, description, state, author, labels, start_date, due_date, parent_id, parent_iid, web_url, and issues (child issues associated with the epic)."
+    )]
+    async fn gitlab_epics_get(
+        &self,
+        Parameters(p): Parameters<EpicGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, epic_get, p, "epic")
+    }
+
+    #[tool(
+        description = "Create a new epic in a GitLab group. Required: group_id (numeric ID or full namespace path), title. Optional: description (Markdown), labels (comma-separated label names), parent_epic_iid (an existing epic IID in the same group to set as the hierarchy parent; 0 is not valid on create), start_date and due_date (ISO 8601)."
+    )]
+    async fn gitlab_epics_create(
+        &self,
+        Parameters(p): Parameters<EpicCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, epic_create, p, "epic")
+    }
+
+    #[tool(
+        description = "Update an existing GitLab epic by group and epic IID. All fields are optional. Use state_event=\"close\" or \"reopen\" to change state. Use labels to replace all labels, add_labels/remove_labels to adjust them incrementally. For parent_epic_iid: pass an existing epic IID to set a new parent, or 0 to remove the existing parent."
+    )]
+    async fn gitlab_epics_update(
+        &self,
+        Parameters(p): Parameters<EpicUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, epic_update, p, "epic")
+    }
+
+    #[tool(
+        description = "Delete a GitLab epic by group and epic IID. Requires sufficient group permissions. This action is permanent and cannot be undone."
+    )]
+    async fn gitlab_epics_delete(
+        &self,
+        Parameters(p): Parameters<EpicDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, epic_delete, p, "epic")
+    }
+
+    #[tool(
+        description = "Assign an issue to a GitLab epic. Required: group_id (numeric ID or full namespace path), epic_iid (epic's IID from the URL), issue_id (the global numeric issue ID — not the project-scoped IID; use gitlab_issues_get to find it). Returns the epic-issue association object, which includes an `id` field (the epic_issue_id) needed to remove or reorder the issue."
+    )]
+    async fn gitlab_epics_issue_assign(
+        &self,
+        Parameters(p): Parameters<EpicIssueAssignParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, epic_issue_assign, p, "epic-issue association")
+    }
+
+    #[tool(
+        description = "Remove an issue from a GitLab epic. Required: group_id (numeric ID or full namespace path), epic_iid (epic's IID from the URL), epic_issue_id (the association ID — the `id` field returned by gitlab_epics_get in the issues array, or by gitlab_epics_issue_assign). Returns the deleted association object."
+    )]
+    async fn gitlab_epics_issue_remove(
+        &self,
+        Parameters(p): Parameters<EpicIssueRemoveParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(
+            self,
+            epic_issue_remove,
+            p,
+            "removing",
+            "epic-issue association"
+        )
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -340,12 +407,8 @@ mod tests {
         EpicIssueRemoveParams, EpicUpdateParams, EpicsListParams, epic_create, epic_delete,
         epic_get, epic_issue_assign, epic_issue_remove, epic_update, epics_list,
     };
-    use crate::client::GitlabClient;
+    use crate::test_util::mock_client;
     use crate::tools::PaginationParams;
-
-    fn mock_client(server: &MockServer) -> GitlabClient {
-        GitlabClient::new(server.uri(), "test-token").unwrap()
-    }
 
     fn epic_json(iid: u64, title: &str) -> serde_json::Value {
         serde_json::json!({

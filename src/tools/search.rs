@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 use crate::client::{GitlabClient, ListResult};
-use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id, list_paginated};
+use crate::tools::{PaginationParams, QueryBuilder, group_path, list_paginated, project_path};
 
 // --------------------------------------------------------------------------
 // Shared search filters
@@ -74,7 +74,7 @@ pub struct GroupSearchParams {
 }
 
 pub async fn group_search(client: &GitlabClient, p: GroupSearchParams) -> ListResult {
-    let path = format!("/api/v4/groups/{}/search", encode_namespace_id(&p.group_id));
+    let path = format!("{}/search", group_path(&p.group_id));
     let (qb, pagination) = search_query(p.filters);
     list_paginated(client, &path, qb, pagination).await
 }
@@ -92,10 +92,51 @@ pub struct ProjectSearchParams {
 }
 
 pub async fn project_search(client: &GitlabClient, p: ProjectSearchParams) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/search",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/search", project_path(&p.project_id));
     let (qb, pagination) = search_query(p.filters);
     list_paginated(client, &path, qb, pagination).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_search, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "Search across the entire GitLab instance. Required: scope (projects, issues, merge_requests, milestones, snippet_titles, users, wiki_blobs, commits, blobs, notes), search. Optional: search_type, order_by, sort, confidential, state, fields, page, per_page."
+    )]
+    async fn gitlab_search_global(
+        &self,
+        Parameters(p): Parameters<GlobalSearchParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, global_search, p, "search results")
+    }
+
+    #[tool(
+        description = "Search within a group. Required: group_id, scope, search. Optional: search_type, order_by, sort, confidential, state, fields, page, per_page."
+    )]
+    async fn gitlab_search_group(
+        &self,
+        Parameters(p): Parameters<GroupSearchParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, group_search, p, "search results")
+    }
+
+    #[tool(
+        description = "Search within a project. Required: project_id, scope, search. Optional: search_type, order_by, sort, confidential, state, fields, page, per_page."
+    )]
+    async fn gitlab_search_project(
+        &self,
+        Parameters(p): Parameters<ProjectSearchParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, project_search, p, "search results")
+    }
 }

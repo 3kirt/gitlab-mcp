@@ -2,9 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, list_paginated,
-};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, project_path};
 
 // --------------------------------------------------------------------------
 // List project jobs
@@ -29,10 +27,7 @@ pub struct JobListParams {
 }
 
 pub async fn job_list(client: &GitlabClient, p: JobListParams) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/jobs",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/jobs", project_path(&p.project_id));
     let qb = QueryBuilder::new()
         .multi("scope[]", p.scope)
         .opt("order_by", p.order_by)
@@ -65,8 +60,8 @@ pub async fn job_list_for_pipeline(
     p: JobListForPipelineParams,
 ) -> ListResult {
     let path = format!(
-        "/api/v4/projects/{}/pipelines/{}/jobs",
-        encode_namespace_id(&p.project_id),
+        "{}/pipelines/{}/jobs",
+        project_path(&p.project_id),
         p.pipeline_id
     );
     let qb = QueryBuilder::new()
@@ -95,8 +90,8 @@ pub struct JobListBridgesParams {
 
 pub async fn job_list_bridges(client: &GitlabClient, p: JobListBridgesParams) -> ListResult {
     let path = format!(
-        "/api/v4/projects/{}/pipelines/{}/bridges",
-        encode_namespace_id(&p.project_id),
+        "{}/pipelines/{}/bridges",
+        project_path(&p.project_id),
         p.pipeline_id
     );
     let qb = QueryBuilder::new().multi("scope[]", p.scope);
@@ -116,11 +111,7 @@ pub struct JobGetParams {
 }
 
 pub async fn job_get(client: &GitlabClient, p: JobGetParams) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/jobs/{}",
-        encode_namespace_id(&p.project_id),
-        p.job_id
-    );
+    let path = format!("{}/jobs/{}", project_path(&p.project_id), p.job_id);
     client.get(&path).await
 }
 
@@ -140,11 +131,7 @@ pub async fn job_get_trace(
     client: &GitlabClient,
     p: JobGetTraceParams,
 ) -> Result<String, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/jobs/{}/trace",
-        encode_namespace_id(&p.project_id),
-        p.job_id
-    );
+    let path = format!("{}/jobs/{}/trace", project_path(&p.project_id), p.job_id);
     client.get_text(&path, &[]).await
 }
 
@@ -165,11 +152,7 @@ pub struct JobCancelParams {
 }
 
 pub async fn job_cancel(client: &GitlabClient, p: JobCancelParams) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/jobs/{}/cancel",
-        encode_namespace_id(&p.project_id),
-        p.job_id
-    );
+    let path = format!("{}/jobs/{}/cancel", project_path(&p.project_id), p.job_id);
     let body = BodyBuilder::new().opt("force", p.force).build();
     client.post(&path, &body).await
 }
@@ -187,11 +170,7 @@ pub struct JobRetryParams {
 }
 
 pub async fn job_retry(client: &GitlabClient, p: JobRetryParams) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/jobs/{}/retry",
-        encode_namespace_id(&p.project_id),
-        p.job_id
-    );
+    let path = format!("{}/jobs/{}/retry", project_path(&p.project_id), p.job_id);
     client.post(&path, &json!({})).await
 }
 
@@ -208,11 +187,7 @@ pub struct JobEraseParams {
 }
 
 pub async fn job_erase(client: &GitlabClient, p: JobEraseParams) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/jobs/{}/erase",
-        encode_namespace_id(&p.project_id),
-        p.job_id
-    );
+    let path = format!("{}/jobs/{}/erase", project_path(&p.project_id), p.job_id);
     client.post(&path, &json!({})).await
 }
 
@@ -233,13 +208,109 @@ pub struct JobPlayParams {
 }
 
 pub async fn job_play(client: &GitlabClient, p: JobPlayParams) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/jobs/{}/play",
-        encode_namespace_id(&p.project_id),
-        p.job_id
-    );
+    let path = format!("{}/jobs/{}/play", project_path(&p.project_id), p.job_id);
     let body = BodyBuilder::new()
         .opt("job_variables_attributes", p.job_variables_attributes)
         .build();
     client.post(&path, &body).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_jobs, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "List jobs for a GitLab project. Optional: scope (array of states to filter by), order_by, sort, page, per_page."
+    )]
+    async fn gitlab_jobs_list(
+        &self,
+        Parameters(p): Parameters<JobListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, job_list, p, "jobs")
+    }
+
+    #[tool(
+        description = "List jobs for a specific GitLab pipeline. Optional: scope (array of states), include_retried (include non-latest attempts), page, per_page."
+    )]
+    async fn gitlab_jobs_list_for_pipeline(
+        &self,
+        Parameters(p): Parameters<JobListForPipelineParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, job_list_for_pipeline, p, "pipeline jobs")
+    }
+
+    #[tool(
+        description = "List bridge (downstream trigger) jobs for a GitLab pipeline. Optional: scope (array of states), page, per_page."
+    )]
+    async fn gitlab_jobs_list_bridges(
+        &self,
+        Parameters(p): Parameters<JobListBridgesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, job_list_bridges, p, "pipeline bridges")
+    }
+
+    #[tool(
+        description = "Get a single GitLab job by project ID and job ID. Returns full job metadata including stage, status, runner, timings, and artifacts."
+    )]
+    async fn gitlab_jobs_get(
+        &self,
+        Parameters(p): Parameters<JobGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, job_get, p, "job")
+    }
+
+    #[tool(description = "Get the raw log output (trace) of a GitLab job as plain text.")]
+    async fn gitlab_jobs_get_trace(
+        &self,
+        Parameters(p): Parameters<JobGetTraceParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_text!(self, job_get_trace, p, "getting", "job trace")
+    }
+
+    #[tool(
+        description = "Cancel a running GitLab job. Optional: force (force-cancel a job already in \"canceling\" state)."
+    )]
+    async fn gitlab_jobs_cancel(
+        &self,
+        Parameters(p): Parameters<JobCancelParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(self, job_cancel, p, "canceling", "job")
+    }
+
+    #[tool(description = "Retry a failed or canceled GitLab job, creating a new job run.")]
+    async fn gitlab_jobs_retry(
+        &self,
+        Parameters(p): Parameters<JobRetryParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(self, job_retry, p, "retrying", "job")
+    }
+
+    #[tool(
+        description = "Erase a GitLab job — removes the job log and artifacts. The job must be finished."
+    )]
+    async fn gitlab_jobs_erase(
+        &self,
+        Parameters(p): Parameters<JobEraseParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(self, job_erase, p, "erasing", "job")
+    }
+
+    #[tool(
+        description = "Trigger a manual GitLab job. Optional: job_variables_attributes (array of {key, value, variable_type} objects to override job variables)."
+    )]
+    async fn gitlab_jobs_play(
+        &self,
+        Parameters(p): Parameters<JobPlayParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(self, job_play, p, "triggering", "job")
+    }
 }

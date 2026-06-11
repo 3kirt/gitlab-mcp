@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, list_paginated,
+    BodyBuilder, PaginationParams, QueryBuilder, list_paginated, project_path,
     unwrap_404_as_empty_array, unwrap_404_or_403_as_empty_array,
 };
 
@@ -66,10 +66,7 @@ pub struct MrsListParams {
 }
 
 pub async fn mrs_list(client: &GitlabClient, p: MrsListParams) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/merge_requests",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/merge_requests", project_path(&p.project_id));
     let qb = QueryBuilder::new()
         .opt("state", p.state)
         .opt("source_branch", p.source_branch)
@@ -105,11 +102,11 @@ pub struct MrGetParams {
 }
 
 pub async fn mr_get(client: &GitlabClient, p: MrGetParams) -> Result<Value, GitlabError> {
-    let pid = encode_namespace_id(&p.project_id);
+    let proj = project_path(&p.project_id);
     let iid = p.merge_request_iid;
-    let mr_path = format!("/api/v4/projects/{pid}/merge_requests/{iid}");
-    let closes_path = format!("/api/v4/projects/{pid}/merge_requests/{iid}/closes_issues");
-    let related_path = format!("/api/v4/projects/{pid}/merge_requests/{iid}/related_issues");
+    let mr_path = format!("{proj}/merge_requests/{iid}");
+    let closes_path = format!("{proj}/merge_requests/{iid}/closes_issues");
+    let related_path = format!("{proj}/merge_requests/{iid}/related_issues");
     let (mut mr, closes_issues, related_issues) = tokio::try_join!(
         client.get(&mr_path),
         async { unwrap_404_as_empty_array(client.get(&closes_path).await) },
@@ -157,10 +154,7 @@ pub struct MrCreateParams {
 }
 
 pub async fn mr_create(client: &GitlabClient, p: MrCreateParams) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/merge_requests",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/merge_requests", project_path(&p.project_id));
     // GitLab ignores the `draft` body field; the title prefix is the reliable mechanism.
     let title = match p.draft {
         Some(true) if !p.title.starts_with("Draft:") => format!("Draft: {}", p.title),
@@ -217,8 +211,8 @@ pub struct MrUpdateParams {
 
 pub async fn mr_update(client: &GitlabClient, p: MrUpdateParams) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/merge_requests/{}",
+        project_path(&p.project_id),
         p.merge_request_iid
     );
     // GitLab's update endpoint doesn't accept `draft` as a body field; draft status is
@@ -275,8 +269,8 @@ pub struct MrDeleteParams {
 
 pub async fn mr_delete(client: &GitlabClient, p: MrDeleteParams) -> Result<(), GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/merge_requests/{}",
+        project_path(&p.project_id),
         p.merge_request_iid
     );
     client.delete(&path).await
@@ -304,8 +298,8 @@ pub struct MrMergeParams {
 
 pub async fn mr_merge(client: &GitlabClient, p: MrMergeParams) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/merge",
-        encode_namespace_id(&p.project_id),
+        "{}/merge_requests/{}/merge",
+        project_path(&p.project_id),
         p.merge_request_iid
     );
     let body = BodyBuilder::new()
@@ -342,8 +336,8 @@ pub struct MrApproveParams {
 
 pub async fn mr_approve(client: &GitlabClient, p: MrApproveParams) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/approve",
-        encode_namespace_id(&p.project_id),
+        "{}/merge_requests/{}/approve",
+        project_path(&p.project_id),
         p.merge_request_iid
     );
     let body = BodyBuilder::new()
@@ -367,11 +361,112 @@ pub struct MrUnapproveParams {
 
 pub async fn mr_unapprove(client: &GitlabClient, p: MrUnapproveParams) -> Result<(), GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/merge_requests/{}/unapprove",
-        encode_namespace_id(&p.project_id),
+        "{}/merge_requests/{}/unapprove",
+        project_path(&p.project_id),
         p.merge_request_iid
     );
     client.post_void(&path, &serde_json::json!({})).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_merge_requests, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "List merge requests for a GitLab project. Filters: state (opened/closed/merged/all), source_branch, target_branch, author_id, assignee_id, reviewer_id, labels, search, draft, scope, created_after/created_before, updated_after/updated_before (ISO 8601), order_by, sort. Paginate with page and per_page."
+    )]
+    async fn gitlab_mrs_list(
+        &self,
+        Parameters(p): Parameters<MrsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, mrs_list, p, "merge requests")
+    }
+
+    #[tool(
+        description = "Get a single GitLab merge request by project ID and merge request IID (the number shown in the GitLab UI). The response includes a closes_issues array (issues that will close when this MR is merged) and a related_issues array (all issues mentioned in or related to the MR; Premium/Ultimate — empty on lower tiers)."
+    )]
+    async fn gitlab_mrs_get(
+        &self,
+        Parameters(p): Parameters<MrGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, mr_get, p, "merge request")
+    }
+
+    #[tool(
+        description = "Create a new merge request in a GitLab project. Required: project_id, source_branch, target_branch, title. Optional: description, assignee_id, reviewer_ids, labels, milestone_id, squash, remove_source_branch, draft."
+    )]
+    async fn gitlab_mrs_create(
+        &self,
+        Parameters(p): Parameters<MrCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, mr_create, p, "merge request")
+    }
+
+    #[tool(
+        description = "Update an existing GitLab merge request. Use state_event=\"close\" to close or \"reopen\" to reopen. All fields except project_id and merge_request_iid are optional."
+    )]
+    async fn gitlab_mrs_update(
+        &self,
+        Parameters(p): Parameters<MrUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, mr_update, p, "merge request")
+    }
+
+    #[tool(
+        description = "Delete a GitLab merge request. Requires at least Maintainer role. This action is permanent and cannot be undone."
+    )]
+    async fn gitlab_mrs_delete(
+        &self,
+        Parameters(p): Parameters<MrDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, mr_delete, p, "merge request")
+    }
+
+    #[tool(
+        description = "Accept and merge a GitLab merge request. Optional: merge_commit_message, squash, should_remove_source_branch, merge_when_pipeline_succeeds."
+    )]
+    async fn gitlab_mrs_merge(
+        &self,
+        Parameters(p): Parameters<MrMergeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, mr_merge, p, "merge request")
+    }
+
+    #[tool(
+        description = "Approve a GitLab merge request. Required: project_id and merge_request_iid. Optional: sha (HEAD commit SHA to guard against concurrent updates), approval_password (only needed if re-authentication is enabled). Returns the updated approval state including approvals_left and approved_by."
+    )]
+    async fn gitlab_mrs_approve(
+        &self,
+        Parameters(p): Parameters<MrApproveParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, mr_approve, p, "merge request approval")
+    }
+
+    #[tool(
+        description = "Unapprove a GitLab merge request that the current user has previously approved. Required: project_id and merge_request_iid."
+    )]
+    async fn gitlab_mrs_unapprove(
+        &self,
+        Parameters(p): Parameters<MrUnapproveParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_unit!(
+            self,
+            mr_unapprove,
+            p,
+            "unapproving",
+            "merge request",
+            "merge request unapproved"
+        )
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -386,11 +481,7 @@ mod tests {
     use super::{
         MrApproveParams, MrGetParams, MrUnapproveParams, mr_approve, mr_get, mr_unapprove,
     };
-    use crate::client::GitlabClient;
-
-    fn mock_client(server: &MockServer) -> GitlabClient {
-        GitlabClient::new(server.uri(), "test-token").unwrap()
-    }
+    use crate::test_util::mock_client;
 
     fn mr_json(iid: u64) -> serde_json::Value {
         serde_json::json!({

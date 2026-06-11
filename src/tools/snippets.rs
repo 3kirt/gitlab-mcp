@@ -288,17 +288,128 @@ pub async fn snippet_user_agent_detail(
         .await
 }
 
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_snippets, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "List snippets for the current authenticated user. Optional: created_after, created_before (ISO 8601). Paginate with page and per_page."
+    )]
+    async fn gitlab_snippets_list(
+        &self,
+        Parameters(p): Parameters<SnippetsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, snippets_list, p, "snippets")
+    }
+
+    #[tool(
+        description = "List all public snippets. Optional: created_after, created_before (ISO 8601). Paginate with page and per_page."
+    )]
+    async fn gitlab_snippets_public_list(
+        &self,
+        Parameters(p): Parameters<SnippetsPublicListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, snippets_public_list, p, "public snippets")
+    }
+
+    #[tool(
+        description = "List all snippets the current user has access to (administrators and auditors see all snippets). Optional: created_after, created_before, repository_storage (admin only). Paginate with page and per_page."
+    )]
+    async fn gitlab_snippets_all_list(
+        &self,
+        Parameters(p): Parameters<SnippetsAllListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, snippets_all_list, p, "all snippets")
+    }
+
+    #[tool(description = "Get a single GitLab snippet by ID.")]
+    async fn gitlab_snippets_get(
+        &self,
+        Parameters(p): Parameters<SnippetGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, snippet_get, p, "snippet")
+    }
+
+    #[tool(description = "Get the raw content of a GitLab snippet. Returns {\"content\": \"...\"}")]
+    async fn gitlab_snippets_raw(
+        &self,
+        Parameters(p): Parameters<SnippetRawParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, snippet_raw, p, "snippet raw content")
+    }
+
+    #[tool(
+        description = "Get the raw content of a specific file in a GitLab snippet repository. Required: id, ref_name (branch/tag/commit), file_path (URL-encoded). Returns {\"content\": \"...\"}."
+    )]
+    async fn gitlab_snippets_file_raw(
+        &self,
+        Parameters(p): Parameters<SnippetFileRawParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, snippet_file_raw, p, "snippet file content")
+    }
+
+    #[tool(
+        description = "Create a new GitLab snippet. Required: title, files (array of {content, file_path}). Optional: description, visibility (\"public\", \"internal\", or \"private\")."
+    )]
+    async fn gitlab_snippets_create(
+        &self,
+        Parameters(p): Parameters<SnippetCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, snippet_create, p, "snippet")
+    }
+
+    #[tool(
+        description = "Update an existing GitLab snippet. Required: id. Optional: title, description, visibility, files (array of {action, file_path, previous_path, content}; action must be \"create\", \"update\", \"delete\", or \"move\")."
+    )]
+    async fn gitlab_snippets_update(
+        &self,
+        Parameters(p): Parameters<SnippetUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, snippet_update, p, "snippet")
+    }
+
+    #[tool(
+        description = "Delete a GitLab snippet by ID. This action is permanent and cannot be undone."
+    )]
+    async fn gitlab_snippets_delete(
+        &self,
+        Parameters(p): Parameters<SnippetDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, snippet_delete, p, "snippet")
+    }
+
+    #[tool(
+        description = "Get user agent details for a GitLab snippet (administrators only). Returns ip_address, user_agent, and akismet_submitted."
+    )]
+    async fn gitlab_snippets_user_agent_detail(
+        &self,
+        Parameters(p): Parameters<SnippetUserAgentDetailParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(
+            self,
+            snippet_user_agent_detail,
+            p,
+            "snippet user agent detail"
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{SnippetFileRawParams, snippet_file_raw};
-    use crate::client::GitlabClient;
-
-    fn mock_client(server: &MockServer) -> GitlabClient {
-        GitlabClient::new(server.uri(), "test-token").unwrap()
-    }
+    use crate::test_util::mock_client;
 
     #[tokio::test]
     async fn snippet_file_raw_encodes_slashes_in_file_path() {

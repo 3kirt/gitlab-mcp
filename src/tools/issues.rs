@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, list_paginated,
+    BodyBuilder, PaginationParams, QueryBuilder, list_paginated, project_path,
     unwrap_404_as_empty_array,
 };
 
@@ -54,10 +54,7 @@ pub struct IssuesListParams {
 }
 
 pub async fn issues_list(client: &GitlabClient, p: IssuesListParams) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/issues",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/issues", project_path(&p.project_id));
     let qb = QueryBuilder::new()
         .opt("state", p.state)
         .opt("labels", p.labels)
@@ -87,11 +84,11 @@ pub struct IssueGetParams {
 }
 
 pub async fn issue_get(client: &GitlabClient, p: IssueGetParams) -> Result<Value, GitlabError> {
-    let pid = encode_namespace_id(&p.project_id);
+    let proj = project_path(&p.project_id);
     let iid = p.issue_iid;
-    let issue_path = format!("/api/v4/projects/{pid}/issues/{iid}");
-    let links_path = format!("/api/v4/projects/{pid}/issues/{iid}/links");
-    let closed_by_path = format!("/api/v4/projects/{pid}/issues/{iid}/closed_by");
+    let issue_path = format!("{proj}/issues/{iid}");
+    let links_path = format!("{proj}/issues/{iid}/links");
+    let closed_by_path = format!("{proj}/issues/{iid}/closed_by");
     let (mut issue, links, closed_by) = tokio::try_join!(
         client.get(&issue_path),
         async { unwrap_404_as_empty_array(client.get(&links_path).await) },
@@ -130,10 +127,7 @@ pub async fn issue_create(
     client: &GitlabClient,
     p: IssueCreateParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/issues",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/issues", project_path(&p.project_id));
     let body = BodyBuilder::new()
         .req("title", &p.title)
         .opt("description", p.description)
@@ -178,11 +172,7 @@ pub async fn issue_update(
     client: &GitlabClient,
     p: IssueUpdateParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/issues/{}",
-        encode_namespace_id(&p.project_id),
-        p.issue_iid
-    );
+    let path = format!("{}/issues/{}", project_path(&p.project_id), p.issue_iid);
     let body = BodyBuilder::new()
         .opt("title", p.title)
         .opt("description", p.description)
@@ -209,11 +199,7 @@ pub struct IssueDeleteParams {
 }
 
 pub async fn issue_delete(client: &GitlabClient, p: IssueDeleteParams) -> Result<(), GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/issues/{}",
-        encode_namespace_id(&p.project_id),
-        p.issue_iid
-    );
+    let path = format!("{}/issues/{}", project_path(&p.project_id), p.issue_iid);
     client.delete(&path).await
 }
 
@@ -231,8 +217,8 @@ pub struct IssueLinksListParams {
 
 pub async fn issue_links_list(client: &GitlabClient, p: IssueLinksListParams) -> ListResult {
     let path = format!(
-        "/api/v4/projects/{}/issues/{}/links",
-        encode_namespace_id(&p.project_id),
+        "{}/issues/{}/links",
+        project_path(&p.project_id),
         p.issue_iid
     );
     client.list(&path, &[]).await
@@ -257,8 +243,8 @@ pub async fn issue_link_get(
     p: IssueLinkGetParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/issues/{}/links/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/issues/{}/links/{}",
+        project_path(&p.project_id),
         p.issue_iid,
         p.issue_link_id
     );
@@ -290,8 +276,8 @@ pub async fn issue_link_create(
     p: IssueLinkCreateParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/issues/{}/links",
-        encode_namespace_id(&p.project_id),
+        "{}/issues/{}/links",
+        project_path(&p.project_id),
         p.issue_iid
     );
     let body = BodyBuilder::new()
@@ -321,12 +307,116 @@ pub async fn issue_link_delete(
     p: IssueLinkDeleteParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/issues/{}/links/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/issues/{}/links/{}",
+        project_path(&p.project_id),
         p.issue_iid,
         p.issue_link_id
     );
     client.delete_json(&path).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_issues, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "List issues for a GitLab project. Filters: state (opened/closed/all), labels, search, scope, assignee_id, author_id, created_after/created_before, updated_after/updated_before (ISO 8601), order_by, sort. Paginate with page and per_page."
+    )]
+    async fn gitlab_issues_list(
+        &self,
+        Parameters(p): Parameters<IssuesListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, issues_list, p, "issues")
+    }
+
+    #[tool(
+        description = "Get a single GitLab issue by project ID and issue IID (the issue number shown in the GitLab UI). The response includes a linked_issues array (linked issues with link type and issue_link_id) and a closed_by array (merge requests that will close this issue when merged)."
+    )]
+    async fn gitlab_issues_get(
+        &self,
+        Parameters(p): Parameters<IssueGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, issue_get, p, "issue")
+    }
+
+    #[tool(
+        description = "Create a new issue in a GitLab project. Required: project_id, title. Optional: description, labels, assignee_ids, milestone_id, due_date, weight."
+    )]
+    async fn gitlab_issues_create(
+        &self,
+        Parameters(p): Parameters<IssueCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, issue_create, p, "issue")
+    }
+
+    #[tool(
+        description = "Update an existing GitLab issue. Use state_event=\"close\" to close it or \"reopen\" to reopen it. All fields except project_id and issue_iid are optional."
+    )]
+    async fn gitlab_issues_update(
+        &self,
+        Parameters(p): Parameters<IssueUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, issue_update, p, "issue")
+    }
+
+    #[tool(
+        description = "Delete a GitLab issue. Requires at least Maintainer role on the project. This action is permanent and cannot be undone."
+    )]
+    async fn gitlab_issues_delete(
+        &self,
+        Parameters(p): Parameters<IssueDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, issue_delete, p, "issue")
+    }
+
+    #[tool(
+        description = "List all links for a GitLab issue. Returns linked issues with their link type (relates_to, blocks, is_blocked_by) and issue_link_id."
+    )]
+    async fn gitlab_issues_links_list(
+        &self,
+        Parameters(p): Parameters<IssueLinksListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, issue_links_list, p, "issue links")
+    }
+
+    #[tool(
+        description = "Get a single issue link by its relationship ID (issue_link_id). Returns source_issue, target_issue, and link_type."
+    )]
+    async fn gitlab_issues_links_get(
+        &self,
+        Parameters(p): Parameters<IssueLinkGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, issue_link_get, p, "issue link")
+    }
+
+    #[tool(
+        description = "Create a link between two GitLab issues. Required: project_id, issue_iid (source), target_project_id, target_issue_iid. Optional: link_type (\"relates_to\" (default), \"blocks\", or \"is_blocked_by\")."
+    )]
+    async fn gitlab_issues_links_create(
+        &self,
+        Parameters(p): Parameters<IssueLinkCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, issue_link_create, p, "issue link")
+    }
+
+    #[tool(
+        description = "Delete a link between two GitLab issues by its relationship ID (issue_link_id from the list response). Returns the deleted link object."
+    )]
+    async fn gitlab_issues_links_delete(
+        &self,
+        Parameters(p): Parameters<IssueLinkDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(self, issue_link_delete, p, "deleting", "issue link")
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -339,11 +429,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{IssueGetParams, issue_get};
-    use crate::client::GitlabClient;
-
-    fn mock_client(server: &MockServer) -> GitlabClient {
-        GitlabClient::new(server.uri(), "test-token").unwrap()
-    }
+    use crate::test_util::mock_client;
 
     fn issue_json(iid: u64) -> serde_json::Value {
         serde_json::json!({

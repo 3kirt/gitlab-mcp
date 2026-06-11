@@ -2,9 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, list_paginated,
-};
+use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, project_path};
 
 // --------------------------------------------------------------------------
 // List issue notes
@@ -28,8 +26,8 @@ pub struct IssueNotesListParams {
 
 pub async fn issue_notes_list(client: &GitlabClient, p: IssueNotesListParams) -> ListResult {
     let path = format!(
-        "/api/v4/projects/{}/issues/{}/notes",
-        encode_namespace_id(&p.project_id),
+        "{}/issues/{}/notes",
+        project_path(&p.project_id),
         p.issue_iid
     );
     let qb = QueryBuilder::new()
@@ -57,8 +55,8 @@ pub async fn issue_note_get(
     p: IssueNoteGetParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/issues/{}/notes/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/issues/{}/notes/{}",
+        project_path(&p.project_id),
         p.issue_iid,
         p.note_id
     );
@@ -88,8 +86,8 @@ pub async fn issue_note_create(
     p: IssueNoteCreateParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/issues/{}/notes",
-        encode_namespace_id(&p.project_id),
+        "{}/issues/{}/notes",
+        project_path(&p.project_id),
         p.issue_iid
     );
     let body = BodyBuilder::new()
@@ -120,8 +118,8 @@ pub async fn issue_note_update(
     p: IssueNoteUpdateParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/issues/{}/notes/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/issues/{}/notes/{}",
+        project_path(&p.project_id),
         p.issue_iid,
         p.note_id
     );
@@ -148,10 +146,72 @@ pub async fn issue_note_delete(
     p: IssueNoteDeleteParams,
 ) -> Result<(), GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/issues/{}/notes/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/issues/{}/notes/{}",
+        project_path(&p.project_id),
         p.issue_iid,
         p.note_id
     );
     client.delete(&path).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_issue_notes, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "List notes (comments) on a GitLab issue. Optional: order_by (\"created_at\" or \"updated_at\"), sort (\"asc\" or \"desc\"). Paginate with page and per_page."
+    )]
+    async fn gitlab_issues_notes_list(
+        &self,
+        Parameters(p): Parameters<IssueNotesListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, issue_notes_list, p, "issue notes")
+    }
+
+    #[tool(description = "Get a single note on a GitLab issue by note ID.")]
+    async fn gitlab_issues_notes_get(
+        &self,
+        Parameters(p): Parameters<IssueNoteGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, issue_note_get, p, "issue note")
+    }
+
+    #[tool(
+        description = "Create a new note (comment) on a GitLab issue. Required: project_id, issue_iid, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
+    )]
+    async fn gitlab_issues_notes_create(
+        &self,
+        Parameters(p): Parameters<IssueNoteCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, issue_note_create, p, "issue note")
+    }
+
+    #[tool(
+        description = "Update the body of a note on a GitLab issue. Required: project_id, issue_iid, note_id, body."
+    )]
+    async fn gitlab_issues_notes_update(
+        &self,
+        Parameters(p): Parameters<IssueNoteUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, issue_note_update, p, "issue note")
+    }
+
+    #[tool(
+        description = "Delete a note from a GitLab issue. Required: project_id, issue_iid, note_id. This action is permanent."
+    )]
+    async fn gitlab_issues_notes_delete(
+        &self,
+        Parameters(p): Parameters<IssueNoteDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, issue_note_delete, p, "issue note")
+    }
 }

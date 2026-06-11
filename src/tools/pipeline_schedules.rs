@@ -3,8 +3,7 @@ use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, encode_path_segment,
-    list_paginated,
+    BodyBuilder, PaginationParams, QueryBuilder, encode_path_segment, list_paginated, project_path,
 };
 
 // --------------------------------------------------------------------------
@@ -25,10 +24,7 @@ pub async fn pipeline_schedules_list(
     client: &GitlabClient,
     p: PipelineSchedulesListParams,
 ) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/pipeline_schedules",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/pipeline_schedules", project_path(&p.project_id));
     let qb = QueryBuilder::new().opt("scope", p.scope);
     list_paginated(client, &path, qb, p.pagination).await
 }
@@ -50,8 +46,8 @@ pub async fn pipeline_schedule_get(
     p: PipelineScheduleGetParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipeline_schedules/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/pipeline_schedules/{}",
+        project_path(&p.project_id),
         p.pipeline_schedule_id
     );
     client.get(&path).await
@@ -92,8 +88,8 @@ pub async fn pipeline_schedule_pipelines_list(
     p: PipelineSchedulePipelinesListParams,
 ) -> ListResult {
     let path = format!(
-        "/api/v4/projects/{}/pipeline_schedules/{}/pipelines",
-        encode_namespace_id(&p.project_id),
+        "{}/pipeline_schedules/{}/pipelines",
+        project_path(&p.project_id),
         p.pipeline_schedule_id
     );
     let qb = QueryBuilder::new()
@@ -135,10 +131,7 @@ pub async fn pipeline_schedule_create(
     client: &GitlabClient,
     p: PipelineScheduleCreateParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/pipeline_schedules",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/pipeline_schedules", project_path(&p.project_id));
     let body = BodyBuilder::new()
         .req("cron", p.cron)
         .req("description", p.description)
@@ -177,8 +170,8 @@ pub async fn pipeline_schedule_update(
     p: PipelineScheduleUpdateParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipeline_schedules/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/pipeline_schedules/{}",
+        project_path(&p.project_id),
         p.pipeline_schedule_id
     );
     let body = BodyBuilder::new()
@@ -208,8 +201,8 @@ pub async fn pipeline_schedule_take_ownership(
     p: PipelineScheduleTakeOwnershipParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipeline_schedules/{}/take_ownership",
-        encode_namespace_id(&p.project_id),
+        "{}/pipeline_schedules/{}/take_ownership",
+        project_path(&p.project_id),
         p.pipeline_schedule_id
     );
     client.post(&path, &json!({})).await
@@ -232,8 +225,8 @@ pub async fn pipeline_schedule_play(
     p: PipelineSchedulePlayParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipeline_schedules/{}/play",
-        encode_namespace_id(&p.project_id),
+        "{}/pipeline_schedules/{}/play",
+        project_path(&p.project_id),
         p.pipeline_schedule_id
     );
     client.post(&path, &json!({})).await
@@ -256,8 +249,8 @@ pub async fn pipeline_schedule_delete(
     p: PipelineScheduleDeleteParams,
 ) -> Result<(), GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipeline_schedules/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/pipeline_schedules/{}",
+        project_path(&p.project_id),
         p.pipeline_schedule_id
     );
     client.delete(&path).await
@@ -286,8 +279,8 @@ pub async fn pipeline_schedule_variable_create(
     p: PipelineScheduleVariableCreateParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipeline_schedules/{}/variables",
-        encode_namespace_id(&p.project_id),
+        "{}/pipeline_schedules/{}/variables",
+        project_path(&p.project_id),
         p.pipeline_schedule_id
     );
     let body = BodyBuilder::new()
@@ -313,8 +306,8 @@ pub async fn pipeline_schedule_variable_get(
     p: PipelineScheduleVariableGetParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipeline_schedules/{}/variables/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/pipeline_schedules/{}/variables/{}",
+        project_path(&p.project_id),
         p.pipeline_schedule_id,
         encode_path_segment(&p.key)
     );
@@ -340,8 +333,8 @@ pub async fn pipeline_schedule_variable_update(
     p: PipelineScheduleVariableUpdateParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipeline_schedules/{}/variables/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/pipeline_schedules/{}/variables/{}",
+        project_path(&p.project_id),
         p.pipeline_schedule_id,
         encode_path_segment(&p.key)
     );
@@ -367,10 +360,167 @@ pub async fn pipeline_schedule_variable_delete(
     p: PipelineScheduleVariableDeleteParams,
 ) -> Result<(), GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/pipeline_schedules/{}/variables/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/pipeline_schedules/{}/variables/{}",
+        project_path(&p.project_id),
         p.pipeline_schedule_id,
         encode_path_segment(&p.key)
     );
     client.delete(&path).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_pipeline_schedules, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "List pipeline schedules for a GitLab project. Optional: scope (\"active\" or \"inactive\"), page, per_page."
+    )]
+    async fn gitlab_pipeline_schedules_list(
+        &self,
+        Parameters(p): Parameters<PipelineSchedulesListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, pipeline_schedules_list, p, "pipeline schedules")
+    }
+
+    #[tool(description = "Get a single GitLab pipeline schedule by project ID and schedule ID.")]
+    async fn gitlab_pipeline_schedules_get(
+        &self,
+        Parameters(p): Parameters<PipelineScheduleGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, pipeline_schedule_get, p, "pipeline schedule")
+    }
+
+    #[tool(
+        description = "List pipelines triggered by a pipeline schedule. Optional filters: status, scope, sort, created_after, created_before, updated_after, updated_before, page, per_page."
+    )]
+    async fn gitlab_pipeline_schedules_pipelines_list(
+        &self,
+        Parameters(p): Parameters<PipelineSchedulePipelinesListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(
+            self,
+            pipeline_schedule_pipelines_list,
+            p,
+            "schedule pipelines"
+        )
+    }
+
+    #[tool(
+        description = "Create a new pipeline schedule. Required: project_id, cron, description, ref. Optional: active, cron_timezone."
+    )]
+    async fn gitlab_pipeline_schedules_create(
+        &self,
+        Parameters(p): Parameters<PipelineScheduleCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, pipeline_schedule_create, p, "pipeline schedule")
+    }
+
+    #[tool(
+        description = "Update an existing GitLab pipeline schedule. All fields optional: cron, description, ref, active, cron_timezone."
+    )]
+    async fn gitlab_pipeline_schedules_update(
+        &self,
+        Parameters(p): Parameters<PipelineScheduleUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, pipeline_schedule_update, p, "pipeline schedule")
+    }
+
+    #[tool(description = "Delete a GitLab pipeline schedule.")]
+    async fn gitlab_pipeline_schedules_delete(
+        &self,
+        Parameters(p): Parameters<PipelineScheduleDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, pipeline_schedule_delete, p, "pipeline schedule")
+    }
+
+    #[tool(description = "Take ownership of a GitLab pipeline schedule.")]
+    async fn gitlab_pipeline_schedules_take_ownership(
+        &self,
+        Parameters(p): Parameters<PipelineScheduleTakeOwnershipParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(
+            self,
+            pipeline_schedule_take_ownership,
+            p,
+            "taking ownership of",
+            "pipeline schedule"
+        )
+    }
+
+    #[tool(description = "Run a GitLab pipeline schedule immediately (trigger now).")]
+    async fn gitlab_pipeline_schedules_play(
+        &self,
+        Parameters(p): Parameters<PipelineSchedulePlayParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(
+            self,
+            pipeline_schedule_play,
+            p,
+            "playing",
+            "pipeline schedule"
+        )
+    }
+
+    #[tool(
+        description = "Create a variable for a GitLab pipeline schedule. Required: project_id, pipeline_schedule_id, key, value. Optional: variable_type (\"env_var\" or \"file\")."
+    )]
+    async fn gitlab_pipeline_schedules_variables_create(
+        &self,
+        Parameters(p): Parameters<PipelineScheduleVariableCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(
+            self,
+            pipeline_schedule_variable_create,
+            p,
+            "pipeline schedule variable"
+        )
+    }
+
+    #[tool(description = "Get a variable from a GitLab pipeline schedule.")]
+    async fn gitlab_pipeline_schedules_variables_get(
+        &self,
+        Parameters(p): Parameters<PipelineScheduleVariableGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(
+            self,
+            pipeline_schedule_variable_get,
+            p,
+            "pipeline schedule variable"
+        )
+    }
+
+    #[tool(description = "Update a variable in a GitLab pipeline schedule.")]
+    async fn gitlab_pipeline_schedules_variables_update(
+        &self,
+        Parameters(p): Parameters<PipelineScheduleVariableUpdateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(
+            self,
+            pipeline_schedule_variable_update,
+            p,
+            "pipeline schedule variable"
+        )
+    }
+
+    #[tool(description = "Delete a variable from a GitLab pipeline schedule.")]
+    async fn gitlab_pipeline_schedules_variables_delete(
+        &self,
+        Parameters(p): Parameters<PipelineScheduleVariableDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(
+            self,
+            pipeline_schedule_variable_delete,
+            p,
+            "pipeline schedule variable"
+        )
+    }
 }

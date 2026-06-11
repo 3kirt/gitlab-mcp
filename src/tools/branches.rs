@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
-    PaginationParams, QueryBuilder, encode_namespace_id, encode_path_segment, list_paginated,
+    PaginationParams, QueryBuilder, encode_path_segment, list_paginated, project_path,
 };
 
 // --------------------------------------------------------------------------
@@ -25,10 +25,7 @@ pub struct BranchesListParams {
 }
 
 pub async fn branches_list(client: &GitlabClient, p: BranchesListParams) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/repository/branches",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/repository/branches", project_path(&p.project_id));
     let qb = QueryBuilder::new()
         .opt("regex", p.regex)
         .opt("search", p.search);
@@ -49,8 +46,8 @@ pub struct BranchGetParams {
 
 pub async fn branch_get(client: &GitlabClient, p: BranchGetParams) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/branches/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/branches/{}",
+        project_path(&p.project_id),
         encode_path_segment(&p.branch)
     );
     client.get(&path).await
@@ -78,10 +75,7 @@ pub async fn branch_create(
     client: &GitlabClient,
     p: BranchCreateParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/repository/branches",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/repository/branches", project_path(&p.project_id));
     let body = json!({
         "branch": p.branch,
         "ref": p.source_ref,
@@ -108,8 +102,8 @@ pub async fn branch_delete(
     p: BranchDeleteParams,
 ) -> Result<(), GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/branches/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/branches/{}",
+        project_path(&p.project_id),
         encode_path_segment(&p.branch)
     );
     client.delete(&path).await
@@ -129,11 +123,72 @@ pub async fn branches_delete_merged(
     client: &GitlabClient,
     p: BranchesDeleteMergedParams,
 ) -> Result<(), GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/repository/merged_branches",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/repository/merged_branches", project_path(&p.project_id));
     client.delete(&path).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_branches, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "List branches for a GitLab project, sorted alphabetically. Optional filters: search (substring match) and regex (re2 regular expression). Paginate with page and per_page."
+    )]
+    async fn gitlab_branches_list(
+        &self,
+        Parameters(p): Parameters<BranchesListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, branches_list, p, "branches")
+    }
+
+    #[tool(
+        description = "Get a single GitLab branch by project and branch name. Returns commit details and protection status."
+    )]
+    async fn gitlab_branches_get(
+        &self,
+        Parameters(p): Parameters<BranchGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, branch_get, p, "branch")
+    }
+
+    #[tool(
+        description = "Create a new branch in a GitLab project. Required: project_id, branch (new branch name), ref (source branch name or commit SHA)."
+    )]
+    async fn gitlab_branches_create(
+        &self,
+        Parameters(p): Parameters<BranchCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, branch_create, p, "branch")
+    }
+
+    #[tool(
+        description = "Delete a GitLab branch by name. Cannot delete default or protected branches."
+    )]
+    async fn gitlab_branches_delete(
+        &self,
+        Parameters(p): Parameters<BranchDeleteParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, branch_delete, p, "branch")
+    }
+
+    #[tool(
+        description = "Delete all branches in a GitLab project that have been merged into the default branch. Protected branches are excluded."
+    )]
+    async fn gitlab_branches_delete_merged(
+        &self,
+        Parameters(p): Parameters<BranchesDeleteMergedParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_delete!(self, branches_delete_merged, p, "merged branches")
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -149,11 +204,7 @@ mod tests {
         BranchCreateParams, BranchDeleteParams, BranchGetParams, branch_create, branch_delete,
         branch_get,
     };
-    use crate::client::GitlabClient;
-
-    fn mock_client(server: &MockServer) -> GitlabClient {
-        GitlabClient::new(server.uri(), "test-token").unwrap()
-    }
+    use crate::test_util::mock_client;
 
     #[tokio::test]
     async fn branch_get_encodes_slash_in_branch_name() {

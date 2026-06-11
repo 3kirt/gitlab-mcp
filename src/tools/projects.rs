@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{QueryBuilder, encode_namespace_id};
+use crate::tools::{QueryBuilder, project_path};
 
 // --------------------------------------------------------------------------
 // Get single project
@@ -19,13 +19,35 @@ pub struct ProjectGetParams {
 }
 
 pub async fn project_get(client: &GitlabClient, p: ProjectGetParams) -> Result<Value, GitlabError> {
-    let pid = encode_namespace_id(&p.project_id);
+    let proj = project_path(&p.project_id);
     let params = QueryBuilder::new()
         .opt("statistics", p.statistics)
         .into_params();
-    client
-        .get_with_params(&format!("/api/v4/projects/{pid}"), &params)
-        .await
+    client.get_with_params(&proj, &params).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_projects, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "Get a GitLab project by ID or namespace path. project_id accepts a numeric ID (e.g. \"42\") or a full namespace path (e.g. \"mygroup/myrepo\"). Optional: statistics=true to include commit/storage counts (requires Reporter role or higher). Returns core project details: id, name, path, path_with_namespace, description, visibility, default_branch, web_url, http_url_to_repo, namespace, created_at, and feature settings."
+    )]
+    async fn gitlab_projects_get(
+        &self,
+        Parameters(p): Parameters<ProjectGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, project_get, p, "project")
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -38,11 +60,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{ProjectGetParams, project_get};
-    use crate::client::GitlabClient;
-
-    fn mock_client(server: &MockServer) -> GitlabClient {
-        GitlabClient::new(server.uri(), "test-token").unwrap()
-    }
+    use crate::test_util::mock_client;
 
     fn project_json(id: u64, name: &str, path_str: &str) -> serde_json::Value {
         serde_json::json!({

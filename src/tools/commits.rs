@@ -3,8 +3,7 @@ use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
 use crate::tools::{
-    BodyBuilder, PaginationParams, QueryBuilder, encode_namespace_id, encode_path_segment,
-    list_paginated,
+    BodyBuilder, PaginationParams, QueryBuilder, encode_path_segment, list_paginated, project_path,
 };
 
 // --------------------------------------------------------------------------
@@ -48,10 +47,7 @@ pub struct CommitsListParams {
 }
 
 pub async fn commits_list(client: &GitlabClient, p: CommitsListParams) -> ListResult {
-    let path = format!(
-        "/api/v4/projects/{}/repository/commits",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/repository/commits", project_path(&p.project_id));
     let qb = QueryBuilder::new()
         .opt("ref_name", p.ref_name)
         .opt("since", p.since)
@@ -129,10 +125,7 @@ pub async fn commit_create(
     client: &GitlabClient,
     p: CommitCreateParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "/api/v4/projects/{}/repository/commits",
-        encode_namespace_id(&p.project_id)
-    );
+    let path = format!("{}/repository/commits", project_path(&p.project_id));
     let actions_arr: Vec<Value> = p
         .actions
         .into_iter()
@@ -180,8 +173,8 @@ pub struct CommitGetParams {
 
 pub async fn commit_get(client: &GitlabClient, p: CommitGetParams) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/commits/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/commits/{}",
+        project_path(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new().opt("stats", p.stats).into_params();
@@ -206,8 +199,8 @@ pub struct CommitRefsParams {
 
 pub async fn commit_refs(client: &GitlabClient, p: CommitRefsParams) -> ListResult {
     let path = format!(
-        "/api/v4/projects/{}/repository/commits/{}/refs",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/commits/{}/refs",
+        project_path(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let qb = QueryBuilder::new().opt("type", p.r#type);
@@ -233,8 +226,8 @@ pub async fn commit_sequence(
     p: CommitSequenceParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/commits/{}/sequence",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/commits/{}/sequence",
+        project_path(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let params = QueryBuilder::new()
@@ -266,8 +259,8 @@ pub async fn commit_cherry_pick(
     p: CommitCherryPickParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/commits/{}/cherry_pick",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/commits/{}/cherry_pick",
+        project_path(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let body = BodyBuilder::new()
@@ -299,8 +292,8 @@ pub async fn commit_revert(
     p: CommitRevertParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/commits/{}/revert",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/commits/{}/revert",
+        project_path(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let body = BodyBuilder::new()
@@ -328,8 +321,8 @@ pub struct CommitDiffParams {
 
 pub async fn commit_diff(client: &GitlabClient, p: CommitDiffParams) -> ListResult {
     let path = format!(
-        "/api/v4/projects/{}/repository/commits/{}/diff",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/commits/{}/diff",
+        project_path(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let qb = QueryBuilder::new().opt("unidiff", p.unidiff);
@@ -355,8 +348,8 @@ pub async fn commit_comments_list(
     p: CommitCommentsListParams,
 ) -> ListResult {
     let path = format!(
-        "/api/v4/projects/{}/repository/commits/{}/comments",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/commits/{}/comments",
+        project_path(&p.project_id),
         encode_path_segment(&p.sha)
     );
     list_paginated(client, &path, QueryBuilder::new(), p.pagination).await
@@ -387,8 +380,8 @@ pub async fn commit_comment_create(
     p: CommitCommentCreateParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/commits/{}/comments",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/commits/{}/comments",
+        project_path(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let body = BodyBuilder::new()
@@ -419,8 +412,8 @@ pub async fn commit_discussions_list(
     p: CommitDiscussionsListParams,
 ) -> ListResult {
     let path = format!(
-        "/api/v4/projects/{}/repository/commits/{}/discussions",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/commits/{}/discussions",
+        project_path(&p.project_id),
         encode_path_segment(&p.sha)
     );
     list_paginated(client, &path, QueryBuilder::new(), p.pagination).await
@@ -463,8 +456,8 @@ pub async fn commit_statuses_list(
     p: CommitStatusesListParams,
 ) -> ListResult {
     let path = format!(
-        "/api/v4/projects/{}/repository/commits/{}/statuses",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/commits/{}/statuses",
+        project_path(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let qb = QueryBuilder::new()
@@ -511,8 +504,8 @@ pub async fn commit_status_set(
     p: CommitStatusSetParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/statuses/{}",
-        encode_namespace_id(&p.project_id),
+        "{}/statuses/{}",
+        project_path(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let body = BodyBuilder::new()
@@ -548,8 +541,8 @@ pub async fn commit_merge_requests(
     p: CommitMergeRequestsParams,
 ) -> ListResult {
     let path = format!(
-        "/api/v4/projects/{}/repository/commits/{}/merge_requests",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/commits/{}/merge_requests",
+        project_path(&p.project_id),
         encode_path_segment(&p.sha)
     );
     let qb = QueryBuilder::new().opt("state", p.state);
@@ -573,11 +566,173 @@ pub async fn commit_signature(
     p: CommitSignatureParams,
 ) -> Result<Value, GitlabError> {
     let path = format!(
-        "/api/v4/projects/{}/repository/commits/{}/signature",
-        encode_namespace_id(&p.project_id),
+        "{}/repository/commits/{}/signature",
+        project_path(&p.project_id),
         encode_path_segment(&p.sha)
     );
     client.get(&path).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_commits, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "List commits for a GitLab project. Optional filters: ref_name (branch/tag/range), since/until (ISO 8601), path (file filter), author, all, first_parent, order (default/topo), with_stats, trailers, follow. Paginate with page and per_page."
+    )]
+    async fn gitlab_commits_list(
+        &self,
+        Parameters(p): Parameters<CommitsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, commits_list, p, "commits")
+    }
+
+    #[tool(
+        description = "Get a single GitLab commit by SHA, branch name, or tag name. Optional: stats (include commit statistics, default true)."
+    )]
+    async fn gitlab_commits_get(
+        &self,
+        Parameters(p): Parameters<CommitGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, commit_get, p, "commit")
+    }
+
+    #[tool(
+        description = "Create a commit in a GitLab project with one or more file actions (create, update, delete, move, chmod). Required: project_id, branch, commit_message, actions[]. Optional: start_branch, start_sha, start_project, author_name, author_email, force, allow_empty, stats."
+    )]
+    async fn gitlab_commits_create(
+        &self,
+        Parameters(p): Parameters<CommitCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, commit_create, p, "commit")
+    }
+
+    #[tool(
+        description = "List all branches and tags that contain a specific commit. Optional: type (\"branch\", \"tag\", or \"all\"), page, per_page."
+    )]
+    async fn gitlab_commits_refs(
+        &self,
+        Parameters(p): Parameters<CommitRefsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, commit_refs, p, "commit refs")
+    }
+
+    #[tool(
+        description = "Get the sequence number of a commit (number of ancestors by following parent links). Optional: first_parent."
+    )]
+    async fn gitlab_commits_sequence(
+        &self,
+        Parameters(p): Parameters<CommitSequenceParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, commit_sequence, p, "commit sequence")
+    }
+
+    #[tool(
+        description = "Cherry-pick a commit into a target branch. Required: project_id, sha, branch. Optional: dry_run (simulate without committing), message (custom commit message)."
+    )]
+    async fn gitlab_commits_cherry_pick(
+        &self,
+        Parameters(p): Parameters<CommitCherryPickParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, commit_cherry_pick, p, "cherry-pick")
+    }
+
+    #[tool(
+        description = "Revert a commit by creating a new revert commit on the target branch. Required: project_id, sha, branch. Optional: dry_run (simulate without committing)."
+    )]
+    async fn gitlab_commits_revert(
+        &self,
+        Parameters(p): Parameters<CommitRevertParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, commit_revert, p, "revert")
+    }
+
+    #[tool(
+        description = "Get the diff introduced by a specific commit. Optional: unidiff (use unified diff format, default false), page, per_page."
+    )]
+    async fn gitlab_commits_diff(
+        &self,
+        Parameters(p): Parameters<CommitDiffParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, commit_diff, p, "commit diff")
+    }
+
+    #[tool(description = "List all comments on a commit. Paginate with page and per_page.")]
+    async fn gitlab_commits_comments_list(
+        &self,
+        Parameters(p): Parameters<CommitCommentsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, commit_comments_list, p, "commit comments")
+    }
+
+    #[tool(
+        description = "Post a comment on a commit. Required: project_id, sha, note. Optional: path (file path for inline comment), line (line number), line_type (\"new\" or \"old\")."
+    )]
+    async fn gitlab_commits_comment_create(
+        &self,
+        Parameters(p): Parameters<CommitCommentCreateParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, commit_comment_create, p, "commit comment")
+    }
+
+    #[tool(
+        description = "List comment threads (discussions) on a commit. Paginate with page and per_page."
+    )]
+    async fn gitlab_commits_discussions_list(
+        &self,
+        Parameters(p): Parameters<CommitDiscussionsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, commit_discussions_list, p, "commit discussions")
+    }
+
+    #[tool(
+        description = "List CI/CD pipeline statuses for a commit. Optional: ref (branch/tag), name (job name filter), stage, all (include non-latest), pipeline_id, order_by (id/pipeline_id), sort (asc/desc), page, per_page."
+    )]
+    async fn gitlab_commits_statuses_list(
+        &self,
+        Parameters(p): Parameters<CommitStatusesListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, commit_statuses_list, p, "commit statuses")
+    }
+
+    #[tool(
+        description = "Set a pipeline status on a commit (for external CI systems). Required: project_id, sha, state (pending/running/success/failed/canceled/skipped). Optional: name/context, ref, description, target_url, coverage, pipeline_id."
+    )]
+    async fn gitlab_commits_status_set(
+        &self,
+        Parameters(p): Parameters<CommitStatusSetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, commit_status_set, p, "commit status")
+    }
+
+    #[tool(
+        description = "List merge requests that introduced a specific commit. Optional: state (opened/closed/locked/merged), page, per_page."
+    )]
+    async fn gitlab_commits_merge_requests(
+        &self,
+        Parameters(p): Parameters<CommitMergeRequestsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, commit_merge_requests, p, "commit merge requests")
+    }
+
+    #[tool(
+        description = "Get the GPG, SSH, or X.509 signature for a signed commit. Returns 404 for unsigned commits."
+    )]
+    async fn gitlab_commits_signature(
+        &self,
+        Parameters(p): Parameters<CommitSignatureParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, commit_signature, p, "commit signature")
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -590,11 +745,7 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{CommitAction, CommitCreateParams, commit_create};
-    use crate::client::GitlabClient;
-
-    fn mock_client(server: &MockServer) -> GitlabClient {
-        GitlabClient::new(server.uri(), "test-token").unwrap()
-    }
+    use crate::test_util::mock_client;
 
     fn captured_post_body(reqs: &[wiremock::Request]) -> serde_json::Value {
         reqs.iter()

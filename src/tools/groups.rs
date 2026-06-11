@@ -1,8 +1,8 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::client::{GitlabClient, GitlabError, PaginationMeta};
-use crate::tools::{PaginationParams, QueryBuilder, encode_namespace_id, list_paginated};
+use crate::client::{GitlabClient, GitlabError, ListResult};
+use crate::tools::{PaginationParams, QueryBuilder, group_path, list_paginated};
 
 // --------------------------------------------------------------------------
 // List groups
@@ -34,10 +34,7 @@ pub struct GroupsListParams {
     pub pagination: PaginationParams,
 }
 
-pub async fn groups_list(
-    client: &GitlabClient,
-    p: GroupsListParams,
-) -> Result<(Value, PaginationMeta), GitlabError> {
+pub async fn groups_list(client: &GitlabClient, p: GroupsListParams) -> ListResult {
     let qb = QueryBuilder::new()
         .opt("search", p.search)
         .opt("all_available", p.all_available)
@@ -66,16 +63,48 @@ pub struct GroupGetParams {
 }
 
 pub async fn group_get(client: &GitlabClient, p: GroupGetParams) -> Result<Value, GitlabError> {
-    let gid = encode_namespace_id(&p.group_id);
+    let grp = group_path(&p.group_id);
     // GitLab's upstream default for `with_projects` is true (deprecated but still functional),
     // which would embed up to 100 projects on every group fetch. Send it explicitly so the
     // tool default stays compact and matches the schemars description.
     let params = QueryBuilder::new()
         .opt("with_projects", Some(p.with_projects.unwrap_or(false)))
         .into_params();
-    client
-        .get_with_params(&format!("/api/v4/groups/{gid}"), &params)
-        .await
+    client.get_with_params(&grp, &params).await
+}
+
+// --------------------------------------------------------------------------
+// MCP tool shims
+// --------------------------------------------------------------------------
+
+use rmcp::{
+    ErrorData as McpError, handler::server::wrapper::Parameters, model::CallToolResult, tool,
+    tool_router,
+};
+
+use crate::tools::GitlabMcpServer;
+
+#[tool_router(router = tool_router_groups, vis = "pub(crate)")]
+impl GitlabMcpServer {
+    #[tool(
+        description = "List GitLab groups accessible to the current user. Optional filters: search (by name or path), all_available (true to include all accessible groups, not just member groups), owned (limit to owned groups), min_access_level (10=Guest, 20=Reporter, 30=Developer, 40=Maintainer, 50=Owner), top_level_only (exclude subgroups). Sort with order_by (name/path/id/similarity) and sort (asc/desc). Paginate with page and per_page."
+    )]
+    async fn gitlab_groups_list(
+        &self,
+        Parameters(p): Parameters<GroupsListParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_list!(self, groups_list, p, "groups")
+    }
+
+    #[tool(
+        description = "Get details of a GitLab group by ID or full namespace path (e.g. \"mygroup\" or \"mygroup/subgroup\"). Returns id, name, path, full_path, description, visibility, web_url, parent_id, and created_at. Set with_projects=true to include the group's projects (max 100) in the response."
+    )]
+    async fn gitlab_groups_get(
+        &self,
+        Parameters(p): Parameters<GroupGetParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_get!(self, group_get, p, "group")
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -88,12 +117,8 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{GroupGetParams, GroupsListParams, group_get, groups_list};
-    use crate::client::GitlabClient;
+    use crate::test_util::mock_client;
     use crate::tools::PaginationParams;
-
-    fn mock_client(server: &MockServer) -> GitlabClient {
-        GitlabClient::new(server.uri(), "test-token").unwrap()
-    }
 
     fn group_json(id: u64, name: &str, path: &str) -> serde_json::Value {
         serde_json::json!({
