@@ -46,6 +46,7 @@ MCP client → rmcp transport (stdio)
 - `PaginationParams` — shared `page`/`per_page` struct flattened into list param structs
 - `project_path()` / `group_path()` — build the `/api/v4/projects/{id}` / `/api/v4/groups/{id}` prefix every scoped endpoint starts from (callers append their suffix)
 - `unwrap_404_as_empty_array()` — turns a 404 from a supplemental embedded fetch into `[]` while propagating every other error (used when a `get` embeds related sub-resources); `unwrap_404_or_403_as_empty_array()` additionally swallows 403 for tier-gated embeds
+- `call_tool` override — wraps router dispatch in the `PROGRESS_CTX` task-local scope (per-page progress notifications during `fetch_all`), and enriches invalid-params errors via `enrich_invalid_params()`: when parameter deserialization fails, the tool's accepted fields (required first, from its input schema) are appended to the error message so an LLM caller can self-correct without a schema lookup
 
 **`src/tools/slim.rs`** — response slimming, applied to every tool result before serialization. `slim_get` (single-get/create/update) removes `null` fields, strips `_links`/`references`, and collapses user objects to `id`/`username`/`name`. `slim_list` additionally strips bulk-expensive fields from each list item (`description`, `pipeline`, `assignees`, vote counts, …) — they remain available via the single-get tools. **Tests that assert on response contents must account for this**: a field present in the GitLab fixture may be absent from the tool output by design.
 
@@ -61,6 +62,8 @@ The remaining domain modules (`commits.rs`, `pipelines.rs`, `pipeline_schedules.
 
 **`src/tools/issue_notes.rs`** — Issue Notes domain module. Implements list, get, create, update, and delete for notes on issues.
 
+**`src/tools/metadata.rs`** — instance metadata plus `gitlab_tool_schema_get`, a per-tool schema introspection tool: given a tool name it returns the description and parameter JSON Schema straight from `self.tool_router` (serialized directly, bypassing `slim`); unknown names get token-based "similarly named tools" suggestions.
+
 **`src/tools/epics.rs`** — Epics domain module. Hits the REST Epics API (`/api/v4/groups/:id/epics[/:iid]`) — deprecated since GitLab 17.0 but still fully functional on EE 18.x, where epics haven't been migrated to work items and the work-items GraphQL API rejects epic GIDs. Each operation has a `*Params` struct and an `async fn` mirroring the issues pattern; `group_id: String` accepts a numeric ID or full namespace path, `epic_iid: u64` is the per-group IID from the URL. Two module-local helpers reduce duplication between create and update: `resolve_epic_id()` converts a `parent_epic_iid` to the numeric global ID the REST `parent_id` field expects (an extra GET); `apply_epic_dates()` appends the `*_is_fixed` + `*_fixed` widget pair when a start/due date is set. `parent_epic_iid = 0` on update clears the existing parent. `epic_get` enriches the response with `issues` (child issues of the epic from `/epics/:iid/issues`) via `unwrap_404_as_empty_array`.
 
 **`src/config.rs`** — loads `~/.gitlab_mcp.json`; env vars `GITLAB_URL` / `GITLAB_TOKEN` take precedence. Rejects world-readable config files on Unix. Enforces HTTPS (localhost/127.0.0.1 exempted).
@@ -69,7 +72,7 @@ The remaining domain modules (`commits.rs`, `pipelines.rs`, `pipeline_schedules.
 
 ### Adding a new API domain
 
-1. Create `src/tools/<domain>.rs` with `*Params` structs and `async fn` domain functions following the pattern in `issues.rs`.
+1. Create `src/tools/<domain>.rs` with `*Params` structs and `async fn` domain functions following the pattern in `issues.rs`. Name identifier params `<resource>_iid` (per-project/group numbers visible in URLs) or `<resource>_id` (globally unique IDs) — never bare `id`, so a name learned on one tool transfers to every other (issue #10; the `initialize` instructions in `get_info` document this convention to clients).
 2. Add `pub mod <domain>;` to `src/tools/mod.rs`.
 3. At the bottom of the new module, add the `#[tool(...)]` shim methods in a `#[tool_router(router = tool_router_<domain>, vis = "pub(crate)")] impl GitlabMcpServer` block, each calling the appropriate delegation macro (see the tail of `issues.rs`).
 4. Add `+ Self::tool_router_<domain>()` to `tool_router()` in `src/tools/mod.rs` and bump the count in the `combined_router_exposes_every_tool` test — it fails until both are done.

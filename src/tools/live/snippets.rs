@@ -23,7 +23,7 @@ fn assert_snippet_invariants(snip: &Value) {
 
 async fn get_snippet_slimmed(env: &LiveEnv, id: u64) -> Value {
     slim::slim_get(
-        snippets::snippet_get(&env.client, snippets::SnippetGetParams { id })
+        snippets::snippet_get(&env.client, snippets::SnippetGetParams { snippet_id: id })
             .await
             .expect("snippet_get"),
     )
@@ -31,7 +31,7 @@ async fn get_snippet_slimmed(env: &LiveEnv, id: u64) -> Value {
 
 /// Raw content of a single-file snippet (the tool wraps it as `{ "content": … }`).
 async fn snippet_raw_content(env: &LiveEnv, id: u64) -> String {
-    let v = snippets::snippet_raw(&env.client, snippets::SnippetRawParams { id })
+    let v = snippets::snippet_raw(&env.client, snippets::SnippetRawParams { snippet_id: id })
         .await
         .expect("snippet_raw");
     v["content"].as_str().unwrap_or_default().to_string()
@@ -84,7 +84,7 @@ async fn snippet_crud_raw_and_list() {
     match snippets::snippet_file_raw(
         &env.client,
         snippets::SnippetFileRawParams {
-            id,
+            snippet_id: id,
             ref_name: "main".into(),
             file_path: file_path.clone(),
         },
@@ -131,7 +131,7 @@ async fn snippet_crud_raw_and_list() {
         snippets::snippet_update(
             &env.client,
             snippets::SnippetUpdateParams {
-                id,
+                snippet_id: id,
                 title: Some(format!("{tag} updated")),
                 description: None,
                 visibility: None,
@@ -150,10 +150,13 @@ async fn snippet_crud_raw_and_list() {
     assert_eq!(snippet_raw_content(&env, id).await, "v2 content\n");
 
     // Delete; a follow-up get must 404.
-    snippets::snippet_delete(&env.client, snippets::SnippetDeleteParams { id })
-        .await
-        .expect("snippet_delete");
-    let err = snippets::snippet_get(&env.client, snippets::SnippetGetParams { id })
+    snippets::snippet_delete(
+        &env.client,
+        snippets::SnippetDeleteParams { snippet_id: id },
+    )
+    .await
+    .expect("snippet_delete");
+    let err = snippets::snippet_get(&env.client, snippets::SnippetGetParams { snippet_id: id })
         .await
         .expect_err("get after delete must 404");
     assert!(

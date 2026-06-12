@@ -94,12 +94,13 @@ pub async fn runners_all_list(client: &GitlabClient, p: RunnersAllListParams) ->
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RunnerGetParams {
+    #[serde(alias = "id")]
     #[schemars(description = "Runner ID")]
-    pub id: u64,
+    pub runner_id: u64,
 }
 
 pub async fn runner_get(client: &GitlabClient, p: RunnerGetParams) -> Result<Value, GitlabError> {
-    let path = format!("/api/v4/runners/{}", p.id);
+    let path = format!("/api/v4/runners/{}", p.runner_id);
     client.get(&path).await
 }
 
@@ -109,8 +110,9 @@ pub async fn runner_get(client: &GitlabClient, p: RunnerGetParams) -> Result<Val
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RunnerJobsListParams {
+    #[serde(alias = "id")]
     #[schemars(description = "Runner ID")]
-    pub id: u64,
+    pub runner_id: u64,
     #[schemars(description = "Machine system ID used to filter to a specific runner manager")]
     pub system_id: Option<String>,
     #[schemars(
@@ -124,7 +126,7 @@ pub struct RunnerJobsListParams {
 }
 
 pub async fn runner_jobs_list(client: &GitlabClient, p: RunnerJobsListParams) -> ListResult {
-    let path = format!("/api/v4/runners/{}/jobs", p.id);
+    let path = format!("/api/v4/runners/{}/jobs", p.runner_id);
     let qb = QueryBuilder::new()
         .opt("system_id", p.system_id)
         .opt("status", p.status)
@@ -138,8 +140,9 @@ pub async fn runner_jobs_list(client: &GitlabClient, p: RunnerJobsListParams) ->
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RunnerManagersListParams {
+    #[serde(alias = "id")]
     #[schemars(description = "Runner ID")]
-    pub id: u64,
+    pub runner_id: u64,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -148,7 +151,7 @@ pub async fn runner_managers_list(
     client: &GitlabClient,
     p: RunnerManagersListParams,
 ) -> ListResult {
-    let path = format!("/api/v4/runners/{}/managers", p.id);
+    let path = format!("/api/v4/runners/{}/managers", p.runner_id);
     list_paginated(client, &path, QueryBuilder::new(), p.pagination).await
 }
 
@@ -369,7 +372,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let runner = runner_get(&mock_client(&server), RunnerGetParams { id: 42 })
+        let runner = runner_get(&mock_client(&server), RunnerGetParams { runner_id: 42 })
             .await
             .unwrap();
         assert_eq!(runner["id"], 42);
@@ -387,7 +390,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let err = runner_get(&mock_client(&server), RunnerGetParams { id: 99 })
+        let err = runner_get(&mock_client(&server), RunnerGetParams { runner_id: 99 })
             .await
             .unwrap_err();
         assert!(matches!(
@@ -412,7 +415,7 @@ mod tests {
         let (items, _) = runner_jobs_list(
             &mock_client(&server),
             RunnerJobsListParams {
-                id: 7,
+                runner_id: 7,
                 system_id: None,
                 status: Some("running".into()),
                 sort: None,
@@ -443,7 +446,7 @@ mod tests {
         let (items, _) = runner_managers_list(
             &mock_client(&server),
             RunnerManagersListParams {
-                id: 42,
+                runner_id: 42,
                 pagination: PaginationParams {
                     page: None,
                     per_page: None,

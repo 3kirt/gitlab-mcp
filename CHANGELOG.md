@@ -4,6 +4,33 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [Unreleased]
+
+LLM-interaction reliability improvements from issue #10.
+
+### Added
+- **`gitlab_tool_schema_get`** — lightweight per-tool schema introspection. Pass
+  a tool name and get back its description and parameter JSON Schema (with
+  required fields marked) without a full `tools/list` round-trip. Unknown names
+  return suggestions of similarly named tools.
+- **Expected fields in invalid-params errors** — when tool parameters fail to
+  deserialize (e.g. a missing or misnamed field), the error now appends the
+  tool's accepted fields, required ones first, so a caller can self-correct in
+  the same turn: `... missing field 'issue_iid'. Expected fields: issue_iid
+  (required), project_id (required), ...`.
+- **Server instructions** — `initialize` now returns instructions documenting
+  the parameter naming conventions (`project_id`/`group_id` accept ID or path;
+  `<resource>_iid` for URL-visible numbers vs `<resource>_id` for global IDs).
+
+### Changed
+- **Consistent identifier parameter names** — the runner tools now take
+  `runner_id` (was `id`) and the snippet tools `snippet_id` (was `id`), matching
+  the `<resource>_id` convention used everywhere else (e.g. the emoji-reaction
+  snippet tools already said `snippet_id`). The old `id` spelling is still
+  accepted as a deserialization alias, so existing callers keep working.
+
+---
+
 ## [0.24.0] — 2026-06-11
 
 ### Fixed

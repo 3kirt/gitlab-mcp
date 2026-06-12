@@ -581,17 +581,64 @@ impl GitlabMcpServer {}
 // ServerHandler
 // --------------------------------------------------------------------------
 
+/// Render a tool's input schema as a one-line field list, required fields
+/// first: `project_id (required), issue_iid (required), page, per_page`.
+/// Returns `None` when the schema has no properties to describe.
+fn expected_fields_summary(schema: &JsonObject) -> Option<String> {
+    let props = schema.get("properties")?.as_object()?;
+    let required: Vec<&str> = schema
+        .get("required")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let (req, opt): (Vec<&String>, Vec<&String>) =
+        props.keys().partition(|k| required.contains(&k.as_str()));
+    let fields: Vec<String> = req
+        .into_iter()
+        .map(|k| format!("{k} (required)"))
+        .chain(opt.into_iter().cloned())
+        .collect();
+    if fields.is_empty() {
+        None
+    } else {
+        Some(fields.join(", "))
+    }
+}
+
+/// Append the tool's accepted fields to an invalid-params error so a caller
+/// that guessed a wrong or missing parameter name can self-correct from the
+/// error alone, without a separate schema-lookup round-trip.
+fn enrich_invalid_params(error: McpError, tool: Option<&Tool>) -> McpError {
+    let Some(summary) = tool.and_then(|t| expected_fields_summary(&t.input_schema)) else {
+        return error;
+    };
+    McpError::invalid_params(
+        format!("{}. Expected fields: {}", error.message, summary),
+        error.data,
+    )
+}
+
 #[tool_handler]
 #[prompt_handler]
 impl ServerHandler for GitlabMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(
+        let mut info = ServerInfo::new(
             ServerCapabilities::builder()
                 .enable_tools()
                 .enable_logging()
                 .build(),
         )
-        .with_server_info(Implementation::new("gitlab-mcp", env!("CARGO_PKG_VERSION")))
+        .with_server_info(Implementation::new("gitlab-mcp", env!("CARGO_PKG_VERSION")));
+        info.instructions = Some(
+            "Parameter naming conventions: project_id and group_id accept a numeric ID or a \
+             namespace path (e.g. \"mygroup/myproject\"). Resources addressed by the number in \
+             their URL use <resource>_iid (issue_iid, merge_request_iid, epic_iid); resources \
+             addressed by a globally unique ID use <resource>_id (note_id, pipeline_id, \
+             snippet_id, runner_id, job_id, discussion_id). When unsure of a tool's exact \
+             parameter names, call gitlab_tool_schema_get with the tool name first."
+                .to_string(),
+        );
+        info
     }
 
     async fn on_initialized(&self, context: NotificationContext<RoleServer>) {
@@ -611,12 +658,19 @@ impl ServerHandler for GitlabMcpServer {
             peer: context.peer.clone(),
             token,
         });
-        PROGRESS_CTX
+        let tool_name = request.name.clone();
+        let result = PROGRESS_CTX
             .scope(progress_ctx, async move {
                 let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
                 self.tool_router.call(tcc).await
             })
-            .await
+            .await;
+        match result {
+            Err(e) if e.code == ErrorCode::INVALID_PARAMS => {
+                Err(enrich_invalid_params(e, self.tool_router.get(&tool_name)))
+            }
+            other => other,
+        }
     }
 
     async fn set_level(
@@ -644,7 +698,52 @@ mod tests {
         // count catches both a forgotten `+ Self::tool_router_<domain>()`
         // and a name collision. Update it when adding or removing tools.
         let tools = GitlabMcpServer::tool_router().list_all();
-        assert_eq!(tools.len(), 157);
+        assert_eq!(tools.len(), 158);
+    }
+
+    // Invalid-params error enrichment
+
+    #[test]
+    fn expected_fields_summary_lists_required_first() {
+        let router = GitlabMcpServer::tool_router();
+        let tool = router.get("gitlab_issues_get").unwrap();
+        let summary = expected_fields_summary(&tool.input_schema).unwrap();
+        let required_part = summary.split(',').next().unwrap();
+        assert!(
+            required_part.contains("(required)"),
+            "required fields must come first: {summary}"
+        );
+        assert!(summary.contains("project_id (required)"), "{summary}");
+        assert!(summary.contains("issue_iid (required)"), "{summary}");
+    }
+
+    #[test]
+    fn enrich_invalid_params_appends_expected_fields() {
+        let router = GitlabMcpServer::tool_router();
+        let err = McpError::invalid_params(
+            "failed to deserialize parameters: missing field `issue_iid`",
+            None,
+        );
+        let enriched = enrich_invalid_params(err, router.get("gitlab_issues_get"));
+        assert!(
+            enriched.message.contains("missing field `issue_iid`"),
+            "{}",
+            enriched.message
+        );
+        assert!(
+            enriched.message.contains("Expected fields: ")
+                && enriched.message.contains("project_id (required)")
+                && enriched.message.contains("issue_iid (required)"),
+            "{}",
+            enriched.message
+        );
+    }
+
+    #[test]
+    fn enrich_invalid_params_without_tool_keeps_error_unchanged() {
+        let err = McpError::invalid_params("failed to deserialize parameters", None);
+        let enriched = enrich_invalid_params(err, None);
+        assert_eq!(enriched.message, "failed to deserialize parameters");
     }
 
     // unwrap_404_as_empty_array / unwrap_404_or_403_as_empty_array

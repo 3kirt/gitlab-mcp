@@ -89,12 +89,15 @@ pub async fn snippets_all_list(client: &GitlabClient, p: SnippetsAllListParams) 
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetGetParams {
+    #[serde(alias = "id")]
     #[schemars(description = "ID of the snippet")]
-    pub id: u64,
+    pub snippet_id: u64,
 }
 
 pub async fn snippet_get(client: &GitlabClient, p: SnippetGetParams) -> Result<Value, GitlabError> {
-    client.get(&format!("/api/v4/snippets/{}", p.id)).await
+    client
+        .get(&format!("/api/v4/snippets/{}", p.snippet_id))
+        .await
 }
 
 // --------------------------------------------------------------------------
@@ -103,13 +106,14 @@ pub async fn snippet_get(client: &GitlabClient, p: SnippetGetParams) -> Result<V
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetRawParams {
+    #[serde(alias = "id")]
     #[schemars(description = "ID of the snippet")]
-    pub id: u64,
+    pub snippet_id: u64,
 }
 
 pub async fn snippet_raw(client: &GitlabClient, p: SnippetRawParams) -> Result<Value, GitlabError> {
     let content = client
-        .get_text(&format!("/api/v4/snippets/{}/raw", p.id), &[])
+        .get_text(&format!("/api/v4/snippets/{}/raw", p.snippet_id), &[])
         .await?;
     Ok(json!({"content": content}))
 }
@@ -120,8 +124,9 @@ pub async fn snippet_raw(client: &GitlabClient, p: SnippetRawParams) -> Result<V
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetFileRawParams {
+    #[serde(alias = "id")]
     #[schemars(description = "ID of the snippet")]
-    pub id: u64,
+    pub snippet_id: u64,
     #[schemars(description = "Branch, tag, or commit reference")]
     pub ref_name: String,
     #[schemars(description = "URL-encoded path to the file within the snippet repository")]
@@ -134,7 +139,7 @@ pub async fn snippet_file_raw(
 ) -> Result<Value, GitlabError> {
     let path = format!(
         "/api/v4/snippets/{}/files/{}/{}/raw",
-        p.id,
+        p.snippet_id,
         p.ref_name,
         encode_path_segment(&p.file_path),
     );
@@ -205,8 +210,9 @@ pub struct SnippetFileUpdateInput {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetUpdateParams {
+    #[serde(alias = "id")]
     #[schemars(description = "ID of the snippet to update")]
-    pub id: u64,
+    pub snippet_id: u64,
     #[schemars(description = "New title for the snippet")]
     pub title: Option<String>,
     #[schemars(description = "New description for the snippet")]
@@ -248,7 +254,7 @@ pub async fn snippet_update(
         .opt("files", files)
         .build();
     client
-        .put(&format!("/api/v4/snippets/{}", p.id), &body)
+        .put(&format!("/api/v4/snippets/{}", p.snippet_id), &body)
         .await
 }
 
@@ -258,15 +264,18 @@ pub async fn snippet_update(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetDeleteParams {
+    #[serde(alias = "id")]
     #[schemars(description = "ID of the snippet to delete")]
-    pub id: u64,
+    pub snippet_id: u64,
 }
 
 pub async fn snippet_delete(
     client: &GitlabClient,
     p: SnippetDeleteParams,
 ) -> Result<(), GitlabError> {
-    client.delete(&format!("/api/v4/snippets/{}", p.id)).await
+    client
+        .delete(&format!("/api/v4/snippets/{}", p.snippet_id))
+        .await
 }
 
 // --------------------------------------------------------------------------
@@ -275,8 +284,9 @@ pub async fn snippet_delete(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetUserAgentDetailParams {
+    #[serde(alias = "id")]
     #[schemars(description = "ID of the snippet")]
-    pub id: u64,
+    pub snippet_id: u64,
 }
 
 pub async fn snippet_user_agent_detail(
@@ -284,7 +294,10 @@ pub async fn snippet_user_agent_detail(
     p: SnippetUserAgentDetailParams,
 ) -> Result<Value, GitlabError> {
     client
-        .get(&format!("/api/v4/snippets/{}/user_agent_detail", p.id))
+        .get(&format!(
+            "/api/v4/snippets/{}/user_agent_detail",
+            p.snippet_id
+        ))
         .await
 }
 
@@ -348,7 +361,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get the raw content of a specific file in a GitLab snippet repository. Required: id, ref_name (branch/tag/commit), file_path (URL-encoded). Returns {\"content\": \"...\"}."
+        description = "Get the raw content of a specific file in a GitLab snippet repository. Required: snippet_id, ref_name (branch/tag/commit), file_path (URL-encoded). Returns {\"content\": \"...\"}."
     )]
     async fn gitlab_snippets_file_raw(
         &self,
@@ -368,7 +381,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update an existing GitLab snippet. Required: id. Optional: title, description, visibility, files (array of {action, file_path, previous_path, content}; action must be \"create\", \"update\", \"delete\", or \"move\")."
+        description = "Update an existing GitLab snippet. Required: snippet_id. Optional: title, description, visibility, files (array of {action, file_path, previous_path, content}; action must be \"create\", \"update\", \"delete\", or \"move\")."
     )]
     async fn gitlab_snippets_update(
         &self,
@@ -423,7 +436,7 @@ mod tests {
         let result = snippet_file_raw(
             &mock_client(&server),
             SnippetFileRawParams {
-                id: 5,
+                snippet_id: 5,
                 ref_name: "main".into(),
                 file_path: "src/main.rs".into(),
             },
@@ -446,7 +459,7 @@ mod tests {
         let result = snippet_file_raw(
             &mock_client(&server),
             SnippetFileRawParams {
-                id: 3,
+                snippet_id: 3,
                 ref_name: "main".into(),
                 file_path: "README.md".into(),
             },
