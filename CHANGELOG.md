@@ -4,7 +4,7 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
-## [Unreleased]
+## [0.25.0] — 2026-06-11
 
 LLM-interaction reliability improvements from issue #10.
 
