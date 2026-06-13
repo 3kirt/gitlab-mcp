@@ -27,7 +27,7 @@ would have happily accepted `"blocks"` — because the mock was our assumption.
 
 ## Layer 1 — Unit tests
 
-155 tests today, run by default with `cargo test`. Two flavors:
+191 tests today, run by default with `cargo test`. Two flavors:
 
 **Pure-logic tests** — no HTTP. Cover the transform/builder helpers directly:
 `src/tools/slim.rs` (field stripping, user collapsing), `src/config.rs` (config
@@ -80,10 +80,23 @@ module's `mod tests`.
 A deterministic suite that verifies the tools against a real GitLab instance —
 the one risk the unit tests structurally cannot cover. Covers the **Issues**
 (plus issue links, notes, and discussions), **Merge Requests**, **MR
-Discussions**, **Branches**, **Repository Files**, **Emoji Reactions**, and
-**Snippets** domains so far. The suite lives under
+Discussions**, **Branches**, **Repository Files**, **Emoji Reactions**,
+**Snippets**, and **Work Items** domains so far. The suite lives under
 [`src/tools/live/`](../src/tools/live/), one module per API area plus a shared
 `harness`.
+
+The **Work Items** module is a different shape from the others: rather than a
+self-contained lifecycle test, it's a *cross-API equivalence* check. Work Items
+is the only GraphQL-backed domain, and an issue in GitLab *is* a work item with
+the same project-scoped IID — so the module seeds an issue over REST, reads it
+back through both `issues` (REST) and `work_items` (GraphQL), and asserts the
+overlapping fields agree, reconciling the known representation differences
+(snake_case vs camelCase keys, `opened`/`closed` vs `OPEN`/`CLOSED` state,
+numeric vs `gid://` ids, u64 vs string iid). This is the primary verification
+that the GraphQL queries and widget-flattening in `work_items.rs` are correct
+against a real instance — and it earned its keep: it caught a wrong GraphQL
+argument type (`[IssuableType!]` where the schema wants `[IssueType!]`) that a
+wiremock test, asserting against our own assumed response, never could.
 
 The MR tests also exercise the seed pattern for resources that need git state:
 `file_create` with `start_branch` creates a source branch *and* a
@@ -152,9 +165,11 @@ GITLAB_TEST_PROJECT=3kirt1/gitlab-mcp-testing \
 
 The live suite is being grown domain-by-domain. Covered today: Issues (including
 issue links, issue notes, and issue discussions), Merge Requests, MR Discussions,
-Branches, Repository Files, Snippets (personal snippets), and Emoji Reactions
+Branches, Repository Files, Snippets (personal snippets), Emoji Reactions
 (the issue, issue-note, and MR awardable types — MR-note and snippet awardables
-remain). Not yet automated: pipeline schedules and the read-only families
+remain), and Work Items (full CRUD, verified by REST↔GraphQL
+equivalence — the mutation test creates an Issue work item over GraphQL and
+confirms each create/update/delete step is visible through the REST issues API). Not yet automated: pipeline schedules and the read-only families
 (commits, repository tree/compare, search, runners, jobs, pipelines).
 
 **Epics** are Premium/Ultimate-only. The standing test token is on a Free-tier

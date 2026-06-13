@@ -159,6 +159,34 @@ impl GitlabClient {
         self.handle_response(resp).await
     }
 
+    /// POST a GraphQL query to {base_url}/api/graphql — returns the `data` object.
+    ///
+    /// Unlike the REST endpoints, GitLab's GraphQL endpoint returns HTTP 200 even
+    /// when a query fails, signalling failure via a top-level `errors` array. We
+    /// surface a non-empty `errors` array as [`GitlabError::Api`] (with a 200
+    /// status, since that is what GitLab actually returned) and otherwise unwrap
+    /// and return the `data` object so callers see the same shape as REST tools.
+    pub async fn graphql(&self, query: &str, variables: Value) -> Result<Value, GitlabError> {
+        let url = self.url("/api/graphql");
+        let body = serde_json::json!({ "query": query, "variables": variables });
+        let resp = self.http.post(&url).json(&body).send().await?;
+        let resp = check_status(resp).await?;
+        let mut json: Value = resp.json().await?;
+
+        let has_errors = json
+            .get("errors")
+            .and_then(Value::as_array)
+            .is_some_and(|errs| !errs.is_empty());
+        if has_errors {
+            return Err(GitlabError::Api {
+                status: StatusCode::OK,
+                body: json["errors"].to_string(),
+            });
+        }
+
+        Ok(json.get_mut("data").map(Value::take).unwrap_or(Value::Null))
+    }
+
     /// GET {base_url}{path}?{params} — returns the raw text response body (for non-JSON endpoints).
     pub async fn get_text(
         &self,
@@ -565,6 +593,114 @@ mod tests {
             }
             other => panic!("expected GitlabError::Api, got {other}"),
         }
+    }
+
+    #[tokio::test]
+    async fn graphql_sends_query_and_returns_data() {
+        let server = MockServer::start().await;
+        let req_body = serde_json::json!({
+            "query": "query($id: ID!) { issue(id: $id) { title } }",
+            "variables": { "id": "gid://gitlab/Issue/1" }
+        });
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(header("PRIVATE-TOKEN", "test-token"))
+            .and(body_json(req_body.clone()))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(
+                    serde_json::json!({ "data": { "issue": { "title": "Hello" } } }),
+                ),
+            )
+            .mount(&server)
+            .await;
+
+        let result = mock_client(&server)
+            .graphql(
+                "query($id: ID!) { issue(id: $id) { title } }",
+                serde_json::json!({ "id": "gid://gitlab/Issue/1" }),
+            )
+            .await
+            .unwrap();
+        // The `data` envelope is unwrapped.
+        assert_eq!(result, serde_json::json!({ "issue": { "title": "Hello" } }));
+    }
+
+    #[tokio::test]
+    async fn graphql_surfaces_errors_array_despite_200() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "errors": [{ "message": "Field 'bogus' doesn't exist on type 'Query'" }],
+                "data": null
+            })))
+            .mount(&server)
+            .await;
+
+        let err = mock_client(&server)
+            .graphql("query { bogus }", serde_json::json!({}))
+            .await
+            .unwrap_err();
+        match err {
+            GitlabError::Api { status, body } => {
+                assert_eq!(status, StatusCode::OK);
+                assert!(body.contains("doesn't exist"));
+            }
+            other => panic!("expected GitlabError::Api, got {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn graphql_empty_errors_array_is_not_an_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({ "errors": [], "data": { "ok": true } })),
+            )
+            .mount(&server)
+            .await;
+
+        let result = mock_client(&server)
+            .graphql("query { ok }", serde_json::json!({}))
+            .await
+            .unwrap();
+        assert_eq!(result, serde_json::json!({ "ok": true }));
+    }
+
+    #[tokio::test]
+    async fn graphql_missing_data_returns_null() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .mount(&server)
+            .await;
+
+        let result = mock_client(&server)
+            .graphql("query { whatever }", serde_json::json!({}))
+            .await
+            .unwrap();
+        assert_eq!(result, Value::Null);
+    }
+
+    #[tokio::test]
+    async fn graphql_http_error_returns_api_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .respond_with(ResponseTemplate::new(401).set_body_string("unauthorized"))
+            .mount(&server)
+            .await;
+
+        let err = mock_client(&server)
+            .graphql("query { ok }", serde_json::json!({}))
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, GitlabError::Api { status, .. } if status == StatusCode::UNAUTHORIZED)
+        );
     }
 
     #[tokio::test]
