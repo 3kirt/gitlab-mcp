@@ -78,8 +78,7 @@ fn note_path(parent_path: &str, note_id: u64) -> String {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueEmojiListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[serde(flatten)]
@@ -97,8 +96,7 @@ pub async fn issue_emoji_list(client: &GitlabClient, p: IssueEmojiListParams) ->
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueEmojiGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Award emoji ID")]
@@ -114,8 +112,7 @@ pub async fn issue_emoji_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueEmojiCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Emoji name without colons (e.g. \"thumbsup\")")]
@@ -131,8 +128,7 @@ pub async fn issue_emoji_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueEmojiDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Award emoji ID")]
@@ -152,8 +148,7 @@ pub async fn issue_emoji_delete(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrEmojiListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID) within the project")]
     pub merge_request_iid: u64,
     #[serde(flatten)]
@@ -171,8 +166,7 @@ pub async fn mr_emoji_list(client: &GitlabClient, p: MrEmojiListParams) -> ListR
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrEmojiGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID) within the project")]
     pub merge_request_iid: u64,
     #[schemars(description = "Award emoji ID")]
@@ -193,8 +187,7 @@ pub async fn mr_emoji_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrEmojiCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID) within the project")]
     pub merge_request_iid: u64,
     #[schemars(description = "Emoji name without colons (e.g. \"thumbsup\")")]
@@ -215,8 +208,7 @@ pub async fn mr_emoji_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrEmojiDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID) within the project")]
     pub merge_request_iid: u64,
     #[schemars(description = "Award emoji ID")]
@@ -241,8 +233,7 @@ pub async fn mr_emoji_delete(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetEmojiListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Snippet ID")]
     pub snippet_id: u64,
     #[serde(flatten)]
@@ -260,8 +251,7 @@ pub async fn snippet_emoji_list(client: &GitlabClient, p: SnippetEmojiListParams
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetEmojiGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Snippet ID")]
     pub snippet_id: u64,
     #[schemars(description = "Award emoji ID")]
@@ -282,8 +272,7 @@ pub async fn snippet_emoji_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetEmojiCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Snippet ID")]
     pub snippet_id: u64,
     #[schemars(description = "Emoji name without colons (e.g. \"thumbsup\")")]
@@ -299,8 +288,7 @@ pub async fn snippet_emoji_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetEmojiDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Snippet ID")]
     pub snippet_id: u64,
     #[schemars(description = "Award emoji ID")]
@@ -325,8 +313,7 @@ pub async fn snippet_emoji_delete(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteEmojiListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Note ID")]
@@ -345,8 +332,7 @@ pub async fn issue_note_emoji_list(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteEmojiGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Note ID")]
@@ -365,8 +351,7 @@ pub async fn issue_note_emoji_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteEmojiCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Note ID")]
@@ -385,8 +370,7 @@ pub async fn issue_note_emoji_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteEmojiDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Note ID")]
@@ -409,8 +393,7 @@ pub async fn issue_note_emoji_delete(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrNoteEmojiListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID) within the project")]
     pub merge_request_iid: u64,
     #[schemars(description = "Note ID")]
@@ -426,8 +409,7 @@ pub async fn mr_note_emoji_list(client: &GitlabClient, p: MrNoteEmojiListParams)
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrNoteEmojiGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID) within the project")]
     pub merge_request_iid: u64,
     #[schemars(description = "Note ID")]
@@ -446,8 +428,7 @@ pub async fn mr_note_emoji_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrNoteEmojiCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID) within the project")]
     pub merge_request_iid: u64,
     #[schemars(description = "Note ID")]
@@ -466,8 +447,7 @@ pub async fn mr_note_emoji_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrNoteEmojiDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID) within the project")]
     pub merge_request_iid: u64,
     #[schemars(description = "Note ID")]
@@ -490,8 +470,7 @@ pub async fn mr_note_emoji_delete(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetNoteEmojiListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Snippet ID")]
     pub snippet_id: u64,
     #[schemars(description = "Note ID")]
@@ -510,8 +489,7 @@ pub async fn snippet_note_emoji_list(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetNoteEmojiGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Snippet ID")]
     pub snippet_id: u64,
     #[schemars(description = "Note ID")]
@@ -530,8 +508,7 @@ pub async fn snippet_note_emoji_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetNoteEmojiCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Snippet ID")]
     pub snippet_id: u64,
     #[schemars(description = "Note ID")]
@@ -550,8 +527,7 @@ pub async fn snippet_note_emoji_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct SnippetNoteEmojiDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Snippet ID")]
     pub snippet_id: u64,
     #[schemars(description = "Note ID")]

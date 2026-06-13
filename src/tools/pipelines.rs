@@ -10,8 +10,7 @@ use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, 
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Filter by scope: \"created\", \"pending\", \"running\", \"failed\", \"success\", \"canceled\", \"skipped\", \"waiting_for_resource\", or \"manual\""
     )]
@@ -85,8 +84,7 @@ pub async fn pipeline_list(client: &GitlabClient, p: PipelineListParams) -> List
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline ID")]
     pub pipeline_id: u64,
 }
@@ -109,8 +107,7 @@ pub async fn pipeline_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineGetLatestParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[serde(rename = "ref")]
     #[schemars(description = "Branch or tag name (defaults to the project default branch)")]
     pub ref_: Option<String>,
@@ -131,8 +128,7 @@ pub async fn pipeline_get_latest(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineGetVariablesParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline ID")]
     pub pipeline_id: u64,
     #[serde(flatten)]
@@ -157,8 +153,7 @@ pub async fn pipeline_get_variables(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineGetTestReportParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline ID")]
     pub pipeline_id: u64,
 }
@@ -181,8 +176,7 @@ pub async fn pipeline_get_test_report(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineGetTestReportSummaryParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline ID")]
     pub pipeline_id: u64,
 }
@@ -205,8 +199,7 @@ pub async fn pipeline_get_test_report_summary(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[serde(rename = "ref")]
     #[schemars(description = "Branch name, tag, or commit SHA to run the pipeline on")]
     pub ref_: String,
@@ -237,8 +230,7 @@ pub async fn pipeline_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineRetryParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline ID")]
     pub pipeline_id: u64,
 }
@@ -261,8 +253,7 @@ pub async fn pipeline_retry(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineCancelParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline ID")]
     pub pipeline_id: u64,
 }
@@ -285,8 +276,7 @@ pub async fn pipeline_cancel(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline ID")]
     pub pipeline_id: u64,
 }
@@ -309,8 +299,7 @@ pub async fn pipeline_delete(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineUpdateMetadataParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline ID")]
     pub pipeline_id: u64,
     #[schemars(description = "New pipeline name")]

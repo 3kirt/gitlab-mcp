@@ -10,10 +10,7 @@ use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, 
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RepoTreeListParams {
-    #[schemars(
-        description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")"
-    )]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Subdirectory path to list (default: repository root)")]
     pub path: Option<String>,
     #[serde(rename = "ref")]
@@ -55,8 +52,7 @@ pub async fn repo_tree_list(client: &GitlabClient, p: RepoTreeListParams) -> Lis
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RepoBlobGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Blob SHA to retrieve; returns content (Base64 encoded), encoding, sha, and size"
     )]
@@ -77,8 +73,7 @@ pub async fn repo_blob_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RepoBlobRawParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Blob SHA to retrieve; returns raw content (best for text files)")]
     pub sha: String,
 }
@@ -102,8 +97,7 @@ pub async fn repo_blob_raw(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RepoCompareParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Starting commit SHA or branch/tag name")]
     pub from: String,
     #[schemars(description = "Ending commit SHA or branch/tag name")]
@@ -137,8 +131,7 @@ pub async fn repo_compare(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RepoContributorsListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Order by: \"name\", \"email\", or \"commits\" (default: commits)")]
     pub order_by: Option<String>,
     #[schemars(description = "Sort direction: \"asc\" or \"desc\" (default: asc)")]
@@ -171,8 +164,7 @@ pub async fn repo_contributors_list(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RepoMergeBaseParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Two or more refs (commit SHAs, branch names, or tag names) to find the common ancestor of"
     )]
@@ -194,8 +186,7 @@ pub async fn repo_merge_base(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RepoChangelogGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Semantic version string for the changelog (e.g. \"1.0.0\")")]
     pub version: String,
     #[schemars(
@@ -239,8 +230,7 @@ pub async fn repo_changelog_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RepoChangelogAddParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Semantic version string for the changelog (e.g. \"1.0.0\")")]
     pub version: String,
     #[schemars(description = "Target branch to commit the changelog to (default: default branch)")]
@@ -293,8 +283,7 @@ pub async fn repo_changelog_add(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct RepoHealthParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Generate a new health report if one does not already exist (default: false)"
     )]

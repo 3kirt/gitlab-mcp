@@ -31,7 +31,7 @@ async fn delete_mr(env: &LiveEnv, iid: u64) {
     let _ = merge_requests::mr_delete(
         &env.client,
         merge_requests::MrDeleteParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             merge_request_iid: iid,
         },
     )
@@ -47,7 +47,7 @@ fn mr_create_params(
     title: &str,
 ) -> merge_requests::MrCreateParams {
     merge_requests::MrCreateParams {
-        project_id: env.project.clone(),
+        project_id: env.project.clone().into(),
         source_branch: source_branch.to_string(),
         target_branch: target_branch.to_string(),
         title: title.to_string(),
@@ -65,7 +65,7 @@ fn mr_create_params(
 /// `MrUpdateParams` with everything defaulted; callers set the fields under test.
 fn mr_update_params(env: &LiveEnv, iid: u64) -> merge_requests::MrUpdateParams {
     merge_requests::MrUpdateParams {
-        project_id: env.project.clone(),
+        project_id: env.project.clone().into(),
         merge_request_iid: iid,
         title: None,
         description: None,
@@ -83,7 +83,7 @@ fn mr_update_params(env: &LiveEnv, iid: u64) -> merge_requests::MrUpdateParams {
 /// `MrsListParams` with everything defaulted; callers set the fields under test.
 fn mrs_list_params(project: &str) -> merge_requests::MrsListParams {
     merge_requests::MrsListParams {
-        project_id: project.to_string(),
+        project_id: project.to_string().into(),
         state: None,
         source_branch: None,
         target_branch: None,
@@ -117,7 +117,7 @@ async fn merge_when_ready(env: &LiveEnv, iid: u64) -> Value {
         let mr = merge_requests::mr_get(
             &env.client,
             merge_requests::MrGetParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 merge_request_iid: iid,
             },
         )
@@ -133,7 +133,7 @@ async fn merge_when_ready(env: &LiveEnv, iid: u64) -> Value {
             match merge_requests::mr_merge(
                 &env.client,
                 merge_requests::MrMergeParams {
-                    project_id: env.project.clone(),
+                    project_id: env.project.clone().into(),
                     merge_request_iid: iid,
                     merge_commit_message: None,
                     squash: None,
@@ -158,7 +158,7 @@ async fn get_mr_slimmed(env: &LiveEnv, iid: u64) -> Value {
     let raw = merge_requests::mr_get(
         &env.client,
         merge_requests::MrGetParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             merge_request_iid: iid,
         },
     )
@@ -297,7 +297,7 @@ async fn mrs_create_get_update_delete_lifecycle() {
     let err = merge_requests::mr_get(
         &env.client,
         merge_requests::MrGetParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             merge_request_iid: iid,
         },
     )
@@ -473,7 +473,7 @@ async fn mr_closes_issue_embeds() {
             issues::issue_get(
                 &env.client,
                 issues::IssueGetParams {
-                    project_id: env.project.clone(),
+                    project_id: env.project.clone().into(),
                     issue_iid,
                 },
             )

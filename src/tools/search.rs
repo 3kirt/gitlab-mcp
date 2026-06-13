@@ -67,8 +67,7 @@ pub async fn global_search(client: &GitlabClient, p: GlobalSearchParams) -> List
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GroupSearchParams {
-    #[schemars(description = "Group ID or URL-encoded path")]
-    pub group_id: String,
+    pub group_id: crate::tools::GroupId,
     #[serde(flatten)]
     pub filters: SearchFilters,
 }
@@ -85,8 +84,7 @@ pub async fn group_search(client: &GitlabClient, p: GroupSearchParams) -> ListRe
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ProjectSearchParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[serde(flatten)]
     pub filters: SearchFilters,
 }

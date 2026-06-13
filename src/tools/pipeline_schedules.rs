@@ -12,8 +12,7 @@ use crate::tools::{
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineSchedulesListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Filter by scope: \"active\" or \"inactive\"")]
     pub scope: Option<String>,
     #[serde(flatten)]
@@ -35,8 +34,7 @@ pub async fn pipeline_schedules_list(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineScheduleGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline schedule ID")]
     pub pipeline_schedule_id: u64,
 }
@@ -59,8 +57,7 @@ pub async fn pipeline_schedule_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineSchedulePipelinesListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline schedule ID")]
     pub pipeline_schedule_id: u64,
     #[schemars(
@@ -109,8 +106,7 @@ pub async fn pipeline_schedule_pipelines_list(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineScheduleCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Cron expression (e.g., \"0 0 * * *\")")]
     pub cron: String,
     #[schemars(description = "Schedule description")]
@@ -148,8 +144,7 @@ pub async fn pipeline_schedule_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineScheduleUpdateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline schedule ID")]
     pub pipeline_schedule_id: u64,
     #[schemars(description = "Cron expression")]
@@ -190,8 +185,7 @@ pub async fn pipeline_schedule_update(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineScheduleTakeOwnershipParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline schedule ID")]
     pub pipeline_schedule_id: u64,
 }
@@ -214,8 +208,7 @@ pub async fn pipeline_schedule_take_ownership(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineSchedulePlayParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline schedule ID")]
     pub pipeline_schedule_id: u64,
 }
@@ -238,8 +231,7 @@ pub async fn pipeline_schedule_play(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineScheduleDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline schedule ID")]
     pub pipeline_schedule_id: u64,
 }
@@ -262,8 +254,7 @@ pub async fn pipeline_schedule_delete(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineScheduleVariableCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline schedule ID")]
     pub pipeline_schedule_id: u64,
     #[schemars(description = "Variable key")]
@@ -293,8 +284,7 @@ pub async fn pipeline_schedule_variable_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineScheduleVariableGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline schedule ID")]
     pub pipeline_schedule_id: u64,
     #[schemars(description = "Variable key")]
@@ -316,8 +306,7 @@ pub async fn pipeline_schedule_variable_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineScheduleVariableUpdateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline schedule ID")]
     pub pipeline_schedule_id: u64,
     #[schemars(description = "Variable key")]
@@ -347,8 +336,7 @@ pub async fn pipeline_schedule_variable_update(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct PipelineScheduleVariableDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline schedule ID")]
     pub pipeline_schedule_id: u64,
     #[schemars(description = "Variable key")]

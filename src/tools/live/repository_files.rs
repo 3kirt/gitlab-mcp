@@ -22,7 +22,7 @@ async fn get_file_slimmed(env: &LiveEnv, file_path: &str, ref_name: &str) -> Val
     let raw = repository_files::file_get(
         &env.client,
         repository_files::FileGetParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             file_path: file_path.to_string(),
             ref_name: ref_name.to_string(),
         },
@@ -37,7 +37,7 @@ async fn raw_file(env: &LiveEnv, file_path: &str, ref_name: &str) -> Value {
     let raw = repository_files::file_raw(
         &env.client,
         repository_files::FileRawParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             file_path: file_path.to_string(),
             ref_name: Some(ref_name.to_string()),
             lfs: None,
@@ -78,7 +78,7 @@ async fn files_crud_raw_blame_lifecycle() {
     let created = repository_files::file_create(
         &env.client,
         repository_files::FileCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             file_path: file_path.clone(),
             branch: branch.clone(),
             commit_message: format!("{tag} create"),
@@ -107,7 +107,7 @@ async fn files_crud_raw_blame_lifecycle() {
     repository_files::file_update(
         &env.client,
         repository_files::FileUpdateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             file_path: file_path.clone(),
             branch: branch.clone(),
             commit_message: format!("{tag} update"),
@@ -130,7 +130,7 @@ async fn files_crud_raw_blame_lifecycle() {
         repository_files::file_blame(
             &env.client,
             repository_files::FileBlameParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 file_path: file_path.clone(),
                 ref_name: branch.clone(),
                 range_start: None,
@@ -153,7 +153,7 @@ async fn files_crud_raw_blame_lifecycle() {
     repository_files::file_delete(
         &env.client,
         repository_files::FileDeleteParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             file_path: file_path.clone(),
             branch: branch.clone(),
             commit_message: format!("{tag} delete"),
@@ -169,7 +169,7 @@ async fn files_crud_raw_blame_lifecycle() {
     let err = repository_files::file_get(
         &env.client,
         repository_files::FileGetParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             file_path: file_path.clone(),
             ref_name: branch.clone(),
         },

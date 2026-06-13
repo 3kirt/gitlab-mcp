@@ -19,7 +19,7 @@ async fn create_branch(env: &LiveEnv, name: &str, source_ref: &str) -> Value {
     branches::branch_create(
         &env.client,
         branches::BranchCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             branch: name.to_string(),
             source_ref: source_ref.to_string(),
         },
@@ -33,7 +33,7 @@ async fn get_branch_slimmed(env: &LiveEnv, name: &str) -> Value {
     let raw = branches::branch_get(
         &env.client,
         branches::BranchGetParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             branch: name.to_string(),
         },
     )
@@ -52,7 +52,7 @@ async fn list_branches_slimmed(env: &LiveEnv, p: branches::BranchesListParams) -
 /// `BranchesListParams` with everything defaulted; callers set the fields under test.
 fn branches_list_params(project: &str) -> branches::BranchesListParams {
     branches::BranchesListParams {
-        project_id: project.to_string(),
+        project_id: project.to_string().into(),
         regex: None,
         search: None,
         pagination: pg(None, None),
@@ -96,7 +96,7 @@ async fn branches_create_get_delete_lifecycle() {
     branches::branch_delete(
         &env.client,
         branches::BranchDeleteParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             branch: name.clone(),
         },
     )
@@ -106,7 +106,7 @@ async fn branches_create_get_delete_lifecycle() {
     let err = branches::branch_get(
         &env.client,
         branches::BranchGetParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             branch: name.clone(),
         },
     )

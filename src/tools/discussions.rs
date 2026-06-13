@@ -10,8 +10,7 @@ use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, 
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDiscussionsListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID)")]
     pub merge_request_iid: u64,
     #[serde(flatten)]
@@ -33,8 +32,7 @@ pub async fn mr_discussions_list(client: &GitlabClient, p: MrDiscussionsListPara
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDiscussionGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID)")]
     pub merge_request_iid: u64,
     #[schemars(description = "Discussion ID (hex string)")]
@@ -60,8 +58,7 @@ pub async fn mr_discussion_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDiscussionCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID)")]
     pub merge_request_iid: u64,
     #[schemars(description = "Content of the discussion thread starter comment")]
@@ -146,8 +143,7 @@ pub async fn mr_discussion_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDiscussionResolveParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID)")]
     pub merge_request_iid: u64,
     #[schemars(description = "Discussion ID (hex string)")]
@@ -176,8 +172,7 @@ pub async fn mr_discussion_resolve(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDiscussionNoteCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID)")]
     pub merge_request_iid: u64,
     #[schemars(description = "Discussion ID (hex string)")]
@@ -213,8 +208,7 @@ pub async fn mr_discussion_note_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDiscussionNoteUpdateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID)")]
     pub merge_request_iid: u64,
     #[schemars(description = "Discussion ID (hex string)")]
@@ -253,8 +247,7 @@ pub async fn mr_discussion_note_update(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDiscussionNoteDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID)")]
     pub merge_request_iid: u64,
     #[schemars(description = "Discussion ID (hex string)")]

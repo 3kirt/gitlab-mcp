@@ -40,7 +40,7 @@ async fn seed_issue_full(
     let created = issues::issue_create(
         &env.client,
         issues::IssueCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             title,
             description,
             labels,
@@ -59,7 +59,7 @@ async fn seed_issue_full(
 /// server would run.
 fn issues_list_params(project: &str, search: &str) -> issues::IssuesListParams {
     issues::IssuesListParams {
-        project_id: project.to_string(),
+        project_id: project.to_string().into(),
         state: None,
         labels: None,
         search: Some(search.to_string()),
@@ -81,7 +81,7 @@ async fn rest_issue_get(env: &LiveEnv, iid: u64) -> Value {
     let raw = issues::issue_get(
         &env.client,
         issues::IssueGetParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: iid,
         },
     )
@@ -377,7 +377,7 @@ async fn work_item_mutation_lifecycle_visible_via_rest() {
     let err = issues::issue_get(
         &env.client,
         issues::IssueGetParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: iid,
         },
     )
@@ -594,7 +594,7 @@ async fn work_item_notes_lifecycle_visible_via_rest() {
         issue_notes::issue_notes_list(
             &env.client,
             issue_notes::IssueNotesListParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 issue_iid: iid,
                 order_by: None,
                 sort: None,

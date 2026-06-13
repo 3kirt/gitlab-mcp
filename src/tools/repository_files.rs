@@ -10,10 +10,7 @@ use crate::tools::{BodyBuilder, QueryBuilder, encode_path_segment, project_path}
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FileGetParams {
-    #[schemars(
-        description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")"
-    )]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Full path to the file (e.g. \"src/main.rs\"); slashes are encoded automatically"
     )]
@@ -42,8 +39,7 @@ pub async fn file_get(client: &GitlabClient, p: FileGetParams) -> Result<Value, 
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FileRawParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Full path to the file (e.g. \"src/main.rs\"); slashes are encoded automatically"
     )]
@@ -76,8 +72,7 @@ pub async fn file_raw(client: &GitlabClient, p: FileRawParams) -> Result<Value, 
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FileBlameParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Full path to the file (e.g. \"src/main.rs\"); slashes are encoded automatically"
     )]
@@ -112,8 +107,7 @@ pub async fn file_blame(client: &GitlabClient, p: FileBlameParams) -> Result<Val
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FileCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Full path to the new file (e.g. \"src/main.rs\"); slashes are encoded automatically"
     )]
@@ -163,8 +157,7 @@ pub async fn file_create(client: &GitlabClient, p: FileCreateParams) -> Result<V
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FileUpdateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Full path to the file (e.g. \"src/main.rs\"); slashes are encoded automatically"
     )]
@@ -219,8 +212,7 @@ pub async fn file_update(client: &GitlabClient, p: FileUpdateParams) -> Result<V
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FileDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Full path to the file to delete (e.g. \"src/main.rs\"); slashes are encoded automatically"
     )]

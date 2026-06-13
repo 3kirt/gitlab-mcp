@@ -161,10 +161,7 @@ pub async fn runner_managers_list(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ProjectRunnersListParams {
-    #[schemars(
-        description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")"
-    )]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[serde(rename = "type")]
     #[schemars(
         rename = "type",
@@ -190,8 +187,7 @@ pub async fn project_runners_list(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GroupRunnersListParams {
-    #[schemars(description = "Group ID or URL-encoded path (e.g. 5 or \"mygroup\")")]
-    pub group_id: String,
+    pub group_id: crate::tools::GroupId,
     #[serde(flatten)]
     pub filters: RunnerListFilters,
 }

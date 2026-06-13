@@ -20,7 +20,7 @@ use super::harness::{
 /// case exercises. Saves repeating ~12 `None`s per test.
 fn list_params(project: &str) -> issues::IssuesListParams {
     issues::IssuesListParams {
-        project_id: project.to_string(),
+        project_id: project.to_string().into(),
         state: None,
         labels: None,
         search: None,
@@ -53,7 +53,7 @@ async fn get_issue_slimmed(env: &LiveEnv, iid: u64) -> Value {
     let raw = issues::issue_get(
         &env.client,
         issues::IssueGetParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: iid,
         },
     )
@@ -112,7 +112,7 @@ async fn issues_create_get_update_delete_lifecycle() {
     let (iid, created) = create_issue(
         &env,
         issues::IssueCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             title: format!("{tag} title-only"),
             description: None,
             labels: None,
@@ -129,7 +129,7 @@ async fn issues_create_get_update_delete_lifecycle() {
     let (iid_full, created_full) = create_issue(
         &env,
         issues::IssueCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             title: format!("{tag} full"),
             description: Some("**bold** body".into()),
             labels: Some(format!("{tag}-a,{tag}-b")),
@@ -153,7 +153,7 @@ async fn issues_create_get_update_delete_lifecycle() {
     let updated = issues::issue_update(
         &env.client,
         issues::IssueUpdateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: iid,
             title: Some(format!("{tag} retitled")),
             description: None,
@@ -173,7 +173,7 @@ async fn issues_create_get_update_delete_lifecycle() {
     let relabeled = issues::issue_update(
         &env.client,
         issues::IssueUpdateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: iid_full,
             title: None,
             description: None,
@@ -195,7 +195,7 @@ async fn issues_create_get_update_delete_lifecycle() {
     let closed = issues::issue_update(
         &env.client,
         issues::IssueUpdateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: iid,
             title: None,
             description: None,
@@ -218,7 +218,7 @@ async fn issues_create_get_update_delete_lifecycle() {
     let err = issues::issue_get(
         &env.client,
         issues::IssueGetParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: iid,
         },
     )
@@ -246,7 +246,7 @@ async fn issues_list_filters_search_sort_pagination() {
         let (iid, _) = create_issue(
             &env,
             issues::IssueCreateParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 title: format!("{tag} item {n}"),
                 description: None,
                 labels: Some(label.clone()),
@@ -329,7 +329,7 @@ async fn issue_get_embeds_linked_issues() {
     let (src, _) = create_issue(
         &env,
         issues::IssueCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             title: format!("{tag} source"),
             description: None,
             labels: None,
@@ -343,7 +343,7 @@ async fn issue_get_embeds_linked_issues() {
     let (dst, _) = create_issue(
         &env,
         issues::IssueCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             title: format!("{tag} target"),
             description: None,
             labels: None,
@@ -366,7 +366,7 @@ async fn issue_get_embeds_linked_issues() {
     issues::issue_link_create(
         &env.client,
         issues::IssueLinkCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: src,
             target_project_id: env.project.clone(),
             target_issue_iid: dst,
@@ -403,7 +403,7 @@ async fn issue_links_crud() {
     let (src, _) = create_issue(
         &env,
         issues::IssueCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             title: format!("{tag} link source"),
             description: None,
             labels: None,
@@ -417,7 +417,7 @@ async fn issue_links_crud() {
     let (dst, _) = create_issue(
         &env,
         issues::IssueCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             title: format!("{tag} link target"),
             description: None,
             labels: None,
@@ -435,7 +435,7 @@ async fn issue_links_crud() {
         issues::issue_link_create(
             &env.client,
             issues::IssueLinkCreateParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 issue_iid: src,
                 target_project_id: env.project.clone(),
                 target_issue_iid: dst,
@@ -454,7 +454,7 @@ async fn issue_links_crud() {
     let (body, _) = issues::issue_links_list(
         &env.client,
         issues::IssueLinksListParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: src,
         },
     )
@@ -472,7 +472,7 @@ async fn issue_links_crud() {
         issues::issue_link_get(
             &env.client,
             issues::IssueLinkGetParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 issue_iid: src,
                 issue_link_id,
             },
@@ -489,7 +489,7 @@ async fn issue_links_crud() {
         issues::issue_link_delete(
             &env.client,
             issues::IssueLinkDeleteParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 issue_iid: src,
                 issue_link_id,
             },
@@ -502,7 +502,7 @@ async fn issue_links_crud() {
     let (body, _) = issues::issue_links_list(
         &env.client,
         issues::IssueLinksListParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: src,
         },
     )
@@ -529,7 +529,7 @@ async fn issue_notes_crud() {
     let (iid, _) = create_issue(
         &env,
         issues::IssueCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             title: format!("{tag} notes"),
             description: None,
             labels: None,
@@ -546,7 +546,7 @@ async fn issue_notes_crud() {
         issue_notes::issue_note_create(
             &env.client,
             issue_notes::IssueNoteCreateParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 issue_iid: iid,
                 body: format!("{tag} first comment"),
                 created_at: None,
@@ -564,7 +564,7 @@ async fn issue_notes_crud() {
         issue_notes::issue_note_get(
             &env.client,
             issue_notes::IssueNoteGetParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 issue_iid: iid,
                 note_id,
             },
@@ -579,7 +579,7 @@ async fn issue_notes_crud() {
     let (body, _) = issue_notes::issue_notes_list(
         &env.client,
         issue_notes::IssueNotesListParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: iid,
             order_by: None,
             sort: None,
@@ -603,7 +603,7 @@ async fn issue_notes_crud() {
         issue_notes::issue_note_update(
             &env.client,
             issue_notes::IssueNoteUpdateParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 issue_iid: iid,
                 note_id,
                 body: format!("{tag} edited comment"),
@@ -618,7 +618,7 @@ async fn issue_notes_crud() {
     issue_notes::issue_note_delete(
         &env.client,
         issue_notes::IssueNoteDeleteParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: iid,
             note_id,
         },
@@ -628,7 +628,7 @@ async fn issue_notes_crud() {
     let err = issue_notes::issue_note_get(
         &env.client,
         issue_notes::IssueNoteGetParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: iid,
             note_id,
         },
@@ -655,7 +655,7 @@ async fn issue_discussions_crud() {
     let (iid, _) = create_issue(
         &env,
         issues::IssueCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             title: format!("{tag} discussions"),
             description: None,
             labels: None,
@@ -672,7 +672,7 @@ async fn issue_discussions_crud() {
         issue_discussions::issue_discussion_create(
             &env.client,
             issue_discussions::IssueDiscussionCreateParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 issue_iid: iid,
                 body: format!("{tag} thread root"),
                 created_at: None,
@@ -693,7 +693,7 @@ async fn issue_discussions_crud() {
         issue_discussions::issue_discussion_note_create(
             &env.client,
             issue_discussions::IssueDiscussionNoteCreateParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 issue_iid: iid,
                 discussion_id: discussion_id.clone(),
                 body: format!("{tag} reply"),
@@ -711,7 +711,7 @@ async fn issue_discussions_crud() {
         issue_discussions::issue_discussion_get(
             &env.client,
             issue_discussions::IssueDiscussionGetParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 issue_iid: iid,
                 discussion_id: discussion_id.clone(),
             },
@@ -729,7 +729,7 @@ async fn issue_discussions_crud() {
     let (body, _) = issue_discussions::issue_discussions_list(
         &env.client,
         issue_discussions::IssueDiscussionsListParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: iid,
             pagination: pg(None, None),
         },
@@ -751,7 +751,7 @@ async fn issue_discussions_crud() {
         issue_discussions::issue_discussion_note_update(
             &env.client,
             issue_discussions::IssueDiscussionNoteUpdateParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 issue_iid: iid,
                 discussion_id: discussion_id.clone(),
                 note_id: reply_id,
@@ -767,7 +767,7 @@ async fn issue_discussions_crud() {
     issue_discussions::issue_discussion_note_delete(
         &env.client,
         issue_discussions::IssueDiscussionNoteDeleteParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: iid,
             discussion_id: discussion_id.clone(),
             note_id: reply_id,
@@ -779,7 +779,7 @@ async fn issue_discussions_crud() {
         issue_discussions::issue_discussion_get(
             &env.client,
             issue_discussions::IssueDiscussionGetParams {
-                project_id: env.project.clone(),
+                project_id: env.project.clone().into(),
                 issue_iid: iid,
                 discussion_id: discussion_id.clone(),
             },

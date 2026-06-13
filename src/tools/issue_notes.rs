@@ -10,8 +10,7 @@ use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, 
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNotesListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(
@@ -42,8 +41,7 @@ pub async fn issue_notes_list(client: &GitlabClient, p: IssueNotesListParams) ->
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Note ID (integer)")]
@@ -69,8 +67,7 @@ pub async fn issue_note_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Content of the note (Markdown supported)")]
@@ -103,8 +100,7 @@ pub async fn issue_note_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteUpdateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Note ID (integer)")]
@@ -133,8 +129,7 @@ pub async fn issue_note_update(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Note ID (integer)")]

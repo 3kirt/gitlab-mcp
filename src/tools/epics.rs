@@ -59,10 +59,7 @@ fn apply_epic_dates(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct EpicsListParams {
-    #[schemars(
-        description = "Group ID (numeric) or full namespace path (e.g. \"mygroup\" or \"mygroup/subgroup\")"
-    )]
-    pub group_id: String,
+    pub group_id: crate::tools::GroupId,
     #[schemars(description = "Filter by state: \"opened\", \"closed\", or \"all\"")]
     pub state: Option<String>,
     #[schemars(description = "Search in title and description")]
@@ -101,8 +98,7 @@ pub async fn epics_list(client: &GitlabClient, p: EpicsListParams) -> ListResult
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct EpicGetParams {
-    #[schemars(description = "Group ID (numeric) or full namespace path")]
-    pub group_id: String,
+    pub group_id: crate::tools::GroupId,
     #[schemars(description = "Epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`)")]
     pub epic_iid: u64,
 }
@@ -124,8 +120,7 @@ pub async fn epic_get(client: &GitlabClient, p: EpicGetParams) -> Result<Value, 
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct EpicCreateParams {
-    #[schemars(description = "Group ID (numeric) or full namespace path")]
-    pub group_id: String,
+    pub group_id: crate::tools::GroupId,
     #[schemars(description = "Epic title")]
     pub title: String,
     #[schemars(description = "Epic description (Markdown)")]
@@ -173,8 +168,7 @@ pub async fn epic_create(client: &GitlabClient, p: EpicCreateParams) -> Result<V
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct EpicUpdateParams {
-    #[schemars(description = "Group ID (numeric) or full namespace path")]
-    pub group_id: String,
+    pub group_id: crate::tools::GroupId,
     #[schemars(description = "Epic IID (the number from the URL)")]
     pub epic_iid: u64,
     #[schemars(description = "New title")]
@@ -232,8 +226,7 @@ pub async fn epic_update(client: &GitlabClient, p: EpicUpdateParams) -> Result<V
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct EpicIssueAssignParams {
-    #[schemars(description = "Group ID (numeric) or full namespace path")]
-    pub group_id: String,
+    pub group_id: crate::tools::GroupId,
     #[schemars(description = "Epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`)")]
     pub epic_iid: u64,
     #[schemars(
@@ -263,8 +256,7 @@ pub async fn epic_issue_assign(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct EpicIssueRemoveParams {
-    #[schemars(description = "Group ID (numeric) or full namespace path")]
-    pub group_id: String,
+    pub group_id: crate::tools::GroupId,
     #[schemars(description = "Epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`)")]
     pub epic_iid: u64,
     #[schemars(
@@ -291,8 +283,7 @@ pub async fn epic_issue_remove(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct EpicDeleteParams {
-    #[schemars(description = "Group ID (numeric) or full namespace path")]
-    pub group_id: String,
+    pub group_id: crate::tools::GroupId,
     #[schemars(description = "Epic IID (the number from the URL)")]
     pub epic_iid: u64,
 }

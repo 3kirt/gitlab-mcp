@@ -12,10 +12,7 @@ use crate::tools::{
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct BranchesListParams {
-    #[schemars(
-        description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")"
-    )]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Return branches with names matching this re2 regular expression")]
     pub regex: Option<String>,
     #[schemars(description = "Return branches whose names contain the search string")]
@@ -38,8 +35,7 @@ pub async fn branches_list(client: &GitlabClient, p: BranchesListParams) -> List
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct BranchGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Branch name (slashes are URL-encoded automatically)")]
     pub branch: String,
 }
@@ -59,8 +55,7 @@ pub async fn branch_get(client: &GitlabClient, p: BranchGetParams) -> Result<Val
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct BranchCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "New branch name")]
     pub branch: String,
     #[serde(rename = "ref")]
@@ -89,8 +84,7 @@ pub async fn branch_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct BranchDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Branch name to delete (cannot delete default or protected branches)"
     )]
@@ -115,8 +109,7 @@ pub async fn branch_delete(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct BranchesDeleteMergedParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
 }
 
 pub async fn branches_delete_merged(

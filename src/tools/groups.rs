@@ -52,10 +52,7 @@ pub async fn groups_list(client: &GitlabClient, p: GroupsListParams) -> ListResu
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct GroupGetParams {
-    #[schemars(
-        description = "Group ID (numeric) or full namespace path (e.g. \"mygroup\" or \"mygroup/subgroup\")"
-    )]
-    pub group_id: String,
+    pub group_id: crate::tools::GroupId,
     #[schemars(
         description = "Include the group's projects in the response (max 100). Defaults to false to keep the response compact."
     )]

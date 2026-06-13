@@ -10,8 +10,7 @@ use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, 
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueDiscussionsListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[serde(flatten)]
@@ -36,8 +35,7 @@ pub async fn issue_discussions_list(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueDiscussionGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Discussion ID (hex string)")]
@@ -63,8 +61,7 @@ pub async fn issue_discussion_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueDiscussionCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(
@@ -99,8 +96,7 @@ pub async fn issue_discussion_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueDiscussionNoteCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Discussion ID (hex string)")]
@@ -136,8 +132,7 @@ pub async fn issue_discussion_note_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueDiscussionNoteUpdateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Discussion ID (hex string)")]
@@ -169,8 +164,7 @@ pub async fn issue_discussion_note_update(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueDiscussionNoteDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Discussion ID (hex string)")]

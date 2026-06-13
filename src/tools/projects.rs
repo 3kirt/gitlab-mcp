@@ -10,10 +10,7 @@ use crate::tools::{QueryBuilder, project_path};
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct ProjectGetParams {
-    #[schemars(
-        description = "Project ID (numeric) or URL-encoded namespace path (e.g. \"mygroup/myrepo\")"
-    )]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Include project statistics (requires Reporter role or higher)")]
     pub statistics: Option<bool>,
 }

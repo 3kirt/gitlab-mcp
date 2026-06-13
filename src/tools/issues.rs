@@ -13,10 +13,7 @@ use crate::tools::{
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssuesListParams {
-    #[schemars(
-        description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")"
-    )]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Filter by state: \"opened\", \"closed\", or \"all\" (default: \"all\" — GitLab returns all issues when omitted)"
     )]
@@ -77,8 +74,7 @@ pub async fn issues_list(client: &GitlabClient, p: IssuesListParams) -> ListResu
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
 }
@@ -105,8 +101,7 @@ pub async fn issue_get(client: &GitlabClient, p: IssueGetParams) -> Result<Value
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue title")]
     pub title: String,
     #[schemars(description = "Issue description (Markdown supported)")]
@@ -146,8 +141,7 @@ pub async fn issue_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueUpdateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "New issue title")]
@@ -192,8 +186,7 @@ pub async fn issue_update(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
 }
@@ -209,8 +202,7 @@ pub async fn issue_delete(client: &GitlabClient, p: IssueDeleteParams) -> Result
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueLinksListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
 }
@@ -230,8 +222,7 @@ pub async fn issue_links_list(client: &GitlabClient, p: IssueLinksListParams) ->
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueLinkGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Issue link relationship ID (issue_link_id from the list response)")]
@@ -257,8 +248,7 @@ pub async fn issue_link_get(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueLinkCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path of the source issue")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Source issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Target project ID or URL-encoded path")]
@@ -294,8 +284,7 @@ pub async fn issue_link_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueLinkDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Issue internal ID (IID) within the project")]
     pub issue_iid: u64,
     #[schemars(description = "Issue link relationship ID (issue_link_id from the list response)")]

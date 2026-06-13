@@ -10,8 +10,7 @@ use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, 
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct JobListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Filter by one or more job states: \"created\", \"pending\", \"running\", \"failed\", \"success\", \"canceled\", \"skipped\", \"waiting_for_resource\", \"manual\""
     )]
@@ -41,8 +40,7 @@ pub async fn job_list(client: &GitlabClient, p: JobListParams) -> ListResult {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct JobListForPipelineParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline ID")]
     pub pipeline_id: u64,
     #[schemars(
@@ -76,8 +74,7 @@ pub async fn job_list_for_pipeline(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct JobListBridgesParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Pipeline ID")]
     pub pipeline_id: u64,
     #[schemars(
@@ -104,8 +101,7 @@ pub async fn job_list_bridges(client: &GitlabClient, p: JobListBridgesParams) ->
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct JobGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Job ID")]
     pub job_id: u64,
 }
@@ -121,8 +117,7 @@ pub async fn job_get(client: &GitlabClient, p: JobGetParams) -> Result<Value, Gi
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct JobGetTraceParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Job ID")]
     pub job_id: u64,
 }
@@ -141,8 +136,7 @@ pub async fn job_get_trace(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct JobCancelParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Job ID")]
     pub job_id: u64,
     #[schemars(
@@ -163,8 +157,7 @@ pub async fn job_cancel(client: &GitlabClient, p: JobCancelParams) -> Result<Val
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct JobRetryParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Job ID")]
     pub job_id: u64,
 }
@@ -180,8 +173,7 @@ pub async fn job_retry(client: &GitlabClient, p: JobRetryParams) -> Result<Value
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct JobEraseParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Job ID")]
     pub job_id: u64,
 }
@@ -197,8 +189,7 @@ pub async fn job_erase(client: &GitlabClient, p: JobEraseParams) -> Result<Value
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct JobPlayParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Job ID")]
     pub job_id: u64,
     #[schemars(

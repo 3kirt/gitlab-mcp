@@ -69,7 +69,7 @@ pub(super) async fn delete_branch(env: &LiveEnv, branch: &str) {
     let _ = branches::branch_delete(
         &env.client,
         branches::BranchDeleteParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             branch: branch.to_string(),
         },
     )
@@ -83,7 +83,7 @@ pub(super) async fn seed_branch_with_file(env: &LiveEnv, branch: &str, source_re
     repository_files::file_create(
         &env.client,
         repository_files::FileCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             file_path: format!("livetest/{branch}.txt"),
             branch: branch.to_string(),
             commit_message: format!("seed {branch}"),
@@ -108,7 +108,7 @@ pub(super) async fn seed_issue(env: &LiveEnv, title: &str) -> u64 {
     let created = issues::issue_create(
         &env.client,
         issues::IssueCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             title: title.to_string(),
             description: None,
             labels: None,
@@ -127,7 +127,7 @@ pub(super) async fn delete_issue(env: &LiveEnv, iid: u64) {
     let _ = issues::issue_delete(
         &env.client,
         issues::IssueDeleteParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             issue_iid: iid,
         },
     )
@@ -142,7 +142,7 @@ pub(super) async fn seed_mr(env: &LiveEnv, tag: &str) -> (u64, String) {
     let created = merge_requests::mr_create(
         &env.client,
         merge_requests::MrCreateParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             source_branch: branch.clone(),
             target_branch: "main".into(),
             title: format!("{tag} mr"),
@@ -166,7 +166,7 @@ pub(super) async fn delete_mr(env: &LiveEnv, iid: u64) {
     let _ = merge_requests::mr_delete(
         &env.client,
         merge_requests::MrDeleteParams {
-            project_id: env.project.clone(),
+            project_id: env.project.clone().into(),
             merge_request_iid: iid,
         },
     )

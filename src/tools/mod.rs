@@ -364,6 +364,70 @@ pub(crate) fn encode_path_segment(s: &str) -> String {
     percent_encoding::utf8_percent_encode(s, PATH_SEGMENT_ENCODE_SET).to_string()
 }
 
+/// A GitLab **project** identifier accepted by project-scoped tools: a numeric
+/// ID or a URL-encoded namespace path. This newtype exists so the parameter
+/// description — otherwise duplicated across ~130 `*Params` structs — lives in
+/// exactly one place: its [`schemars::JsonSchema`] impl below. It is
+/// `#[serde(transparent)]` over a plain string (wire shape unchanged) and
+/// `Deref`s to `str`, so existing `project_path(&p.project_id)` call sites keep
+/// working unchanged via deref coercion.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(transparent)]
+pub struct ProjectId(String);
+
+/// A GitLab **group** identifier: a numeric ID or full namespace path. The
+/// group-scoped counterpart of [`ProjectId`].
+#[derive(Debug, Clone, Deserialize)]
+#[serde(transparent)]
+pub struct GroupId(String);
+
+/// Implement the shared plumbing (Deref/From + the single-source-of-truth
+/// `JsonSchema` description) for a namespace-id newtype.
+macro_rules! namespace_id_newtype {
+    ($ty:ty, $name:literal, $desc:literal) => {
+        impl std::ops::Deref for $ty {
+            type Target = str;
+            fn deref(&self) -> &str {
+                &self.0
+            }
+        }
+        impl From<String> for $ty {
+            fn from(s: String) -> Self {
+                Self(s)
+            }
+        }
+        impl From<&str> for $ty {
+            fn from(s: &str) -> Self {
+                Self(s.to_string())
+            }
+        }
+        impl schemars::JsonSchema for $ty {
+            // Inline the schema at each use site so the description renders on the
+            // field itself rather than behind a `$ref`.
+            fn inline_schema() -> bool {
+                true
+            }
+            fn schema_name() -> std::borrow::Cow<'static, str> {
+                $name.into()
+            }
+            fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+                schemars::json_schema!({ "type": "string", "description": $desc })
+            }
+        }
+    };
+}
+
+namespace_id_newtype!(
+    ProjectId,
+    "ProjectId",
+    "Project ID (numeric) or URL-encoded namespace path (e.g. \"42\" or \"mygroup/myproject\")"
+);
+namespace_id_newtype!(
+    GroupId,
+    "GroupId",
+    "Group ID (numeric) or full namespace path (e.g. \"42\" or \"mygroup/subgroup\")"
+);
+
 /// `/api/v4/projects/{id}` — the prefix shared by every project-scoped
 /// endpoint. Domain functions append their own suffix:
 /// `format!("{}/issues/{}", project_path(&p.project_id), p.issue_iid)`.
@@ -717,6 +781,53 @@ mod tests {
         );
         assert!(summary.contains("project_id (required)"), "{summary}");
         assert!(summary.contains("issue_iid (required)"), "{summary}");
+    }
+
+    #[test]
+    fn project_id_newtype_renders_description_inline() {
+        // The ProjectId/GroupId newtypes carry the parameter description in one
+        // place; verify it actually reaches the per-tool input schema inline
+        // (not behind a `$ref`, which inline_schema() prevents) so LLM callers
+        // still see it.
+        let router = GitlabMcpServer::tool_router();
+
+        let issue_get = router.get("gitlab_issues_get").unwrap();
+        let pid = &issue_get.input_schema["properties"]["project_id"];
+        assert!(
+            pid.get("$ref").is_none(),
+            "project_id must be inlined, not a $ref: {pid}"
+        );
+        assert_eq!(pid["type"], "string");
+        assert!(
+            pid["description"]
+                .as_str()
+                .unwrap()
+                .contains("URL-encoded namespace path"),
+            "project_id description missing: {pid}"
+        );
+
+        let epic_get = router.get("gitlab_epics_get").unwrap();
+        let gid = &epic_get.input_schema["properties"]["group_id"];
+        assert!(
+            gid["description"]
+                .as_str()
+                .unwrap()
+                .contains("full namespace path"),
+            "group_id description missing: {gid}"
+        );
+    }
+
+    #[test]
+    fn project_id_deserializes_transparently_from_string() {
+        // The wire contract is unchanged: a plain JSON string still deserializes
+        // into the newtype, and it derefs back to that string.
+        let id: ProjectId = serde_json::from_value(json!("mygroup/myproject")).unwrap();
+        assert_eq!(&*id, "mygroup/myproject");
+        // And inside a params struct.
+        let p: issues::IssueGetParams =
+            serde_json::from_value(json!({"project_id": "42", "issue_iid": 7})).unwrap();
+        assert_eq!(&*p.project_id, "42");
+        assert_eq!(project_path(&p.project_id), "/api/v4/projects/42");
     }
 
     #[test]

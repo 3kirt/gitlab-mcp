@@ -12,8 +12,7 @@ use crate::tools::{
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitsListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Branch name, tag, or revision range to list commits from")]
     pub ref_name: Option<String>,
     #[schemars(
@@ -93,8 +92,7 @@ pub struct CommitAction {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Target branch name for the commit")]
     pub branch: String,
     #[schemars(description = "Commit message")]
@@ -163,8 +161,7 @@ pub async fn commit_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Commit SHA, branch name, or tag name")]
     pub sha: String,
     #[schemars(description = "If true, include commit statistics (default: true)")]
@@ -187,8 +184,7 @@ pub async fn commit_get(client: &GitlabClient, p: CommitGetParams) -> Result<Val
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitRefsParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Commit SHA")]
     pub sha: String,
     #[schemars(description = "Filter by type: \"branch\", \"tag\", or \"all\" (default: \"all\")")]
@@ -213,8 +209,7 @@ pub async fn commit_refs(client: &GitlabClient, p: CommitRefsParams) -> ListResu
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitSequenceParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Commit SHA")]
     pub sha: String,
     #[schemars(description = "If true, follow only the first parent on merge commits")]
@@ -242,8 +237,7 @@ pub async fn commit_sequence(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitCherryPickParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Commit SHA to cherry-pick")]
     pub sha: String,
     #[schemars(description = "Target branch to cherry-pick into")]
@@ -277,8 +271,7 @@ pub async fn commit_cherry_pick(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitRevertParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Commit SHA to revert")]
     pub sha: String,
     #[schemars(description = "Target branch to apply the revert to")]
@@ -309,8 +302,7 @@ pub async fn commit_revert(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitDiffParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Commit SHA, branch name, or tag name")]
     pub sha: String,
     #[schemars(description = "If true, use unified diff format (default: false)")]
@@ -335,8 +327,7 @@ pub async fn commit_diff(client: &GitlabClient, p: CommitDiffParams) -> ListResu
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitCommentsListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Commit SHA, branch name, or tag name")]
     pub sha: String,
     #[serde(flatten)]
@@ -361,8 +352,7 @@ pub async fn commit_comments_list(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitCommentCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Commit SHA, branch name, or tag name")]
     pub sha: String,
     #[schemars(description = "Comment text")]
@@ -399,8 +389,7 @@ pub async fn commit_comment_create(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitDiscussionsListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Commit SHA, branch name, or tag name")]
     pub sha: String,
     #[serde(flatten)]
@@ -425,8 +414,7 @@ pub async fn commit_discussions_list(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitStatusesListParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Commit SHA")]
     pub sha: String,
     #[schemars(
@@ -477,8 +465,7 @@ pub async fn commit_statuses_list(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitStatusSetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Commit SHA")]
     pub sha: String,
     #[schemars(
@@ -526,8 +513,7 @@ pub async fn commit_status_set(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitMergeRequestsParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Commit SHA")]
     pub sha: String,
     #[schemars(description = "Filter by state: \"opened\", \"closed\", \"locked\", or \"merged\"")]
@@ -555,8 +541,7 @@ pub async fn commit_merge_requests(
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct CommitSignatureParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Commit SHA, branch name, or tag name")]
     pub sha: String,
 }

@@ -17,10 +17,7 @@ fn default_true() -> bool {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrsListParams {
-    #[schemars(
-        description = "Project ID or URL-encoded path (e.g. 42 or \"mygroup%2Fmyproject\")"
-    )]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Filter by state: \"opened\", \"closed\", \"merged\", \"locked\", or \"all\" (default: \"all\")"
     )]
@@ -93,8 +90,7 @@ pub async fn mrs_list(client: &GitlabClient, p: MrsListParams) -> ListResult {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrGetParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(
         description = "Merge request internal ID (IID) — the number shown in the GitLab UI"
     )]
@@ -123,8 +119,7 @@ pub async fn mr_get(client: &GitlabClient, p: MrGetParams) -> Result<Value, Gitl
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrCreateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Name of the source branch")]
     pub source_branch: String,
     #[schemars(description = "Name of the target branch")]
@@ -181,8 +176,7 @@ pub async fn mr_create(client: &GitlabClient, p: MrCreateParams) -> Result<Value
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrUpdateParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID)")]
     pub merge_request_iid: u64,
     #[schemars(description = "New title")]
@@ -261,8 +255,7 @@ pub async fn mr_update(client: &GitlabClient, p: MrUpdateParams) -> Result<Value
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDeleteParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID)")]
     pub merge_request_iid: u64,
 }
@@ -282,8 +275,7 @@ pub async fn mr_delete(client: &GitlabClient, p: MrDeleteParams) -> Result<(), G
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrMergeParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID)")]
     pub merge_request_iid: u64,
     #[schemars(description = "Custom merge commit message")]
@@ -320,8 +312,7 @@ pub async fn mr_merge(client: &GitlabClient, p: MrMergeParams) -> Result<Value, 
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrApproveParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID)")]
     pub merge_request_iid: u64,
     #[schemars(
@@ -353,8 +344,7 @@ pub async fn mr_approve(client: &GitlabClient, p: MrApproveParams) -> Result<Val
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrUnapproveParams {
-    #[schemars(description = "Project ID or URL-encoded path")]
-    pub project_id: String,
+    pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Merge request internal ID (IID)")]
     pub merge_request_iid: u64,
 }
