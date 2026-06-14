@@ -64,6 +64,14 @@ const WORK_ITEM_FIELDS: &str = r#"
         ... on WorkItemWidgetStartAndDueDate { startDate dueDate }
         ... on WorkItemWidgetMilestone { milestone { id iid title } }
         ... on WorkItemWidgetWeight { weight }
+        ... on WorkItemWidgetLinkedItems {
+            blocked blockingCount blockedByCount
+            linkedItems { nodes { linkId linkType workItem { id iid title state } } }
+        }
+        ... on WorkItemWidgetAwardEmoji {
+            upvotes downvotes
+            awardEmoji { nodes { name user { id username name } } }
+        }
     }
 "#;
 
@@ -162,6 +170,26 @@ fn flatten_work_item(mut node: Value) -> Value {
             Some("WEIGHT") => {
                 if let Some(weight) = w.get("weight") {
                     obj.insert("weight".into(), weight.clone());
+                }
+            }
+            Some("LINKED_ITEMS") => {
+                for k in ["blocked", "blockingCount", "blockedByCount"] {
+                    if let Some(v) = w.get(k) {
+                        obj.insert(k.into(), v.clone());
+                    }
+                }
+                if let Some(nodes) = w.get("linkedItems").and_then(|l| l.get("nodes")) {
+                    obj.insert("linkedItems".into(), nodes.clone());
+                }
+            }
+            Some("AWARD_EMOJI") => {
+                for k in ["upvotes", "downvotes"] {
+                    if let Some(v) = w.get(k) {
+                        obj.insert(k.into(), v.clone());
+                    }
+                }
+                if let Some(nodes) = w.get("awardEmoji").and_then(|a| a.get("nodes")) {
+                    obj.insert("awardEmoji".into(), nodes.clone());
                 }
             }
             _ => {}
@@ -357,6 +385,10 @@ fn slim_list_node(mut node: Value) -> Value {
     if let Some(obj) = node.as_object_mut() {
         obj.remove("description");
         obj.remove("children");
+        // Bulk relation arrays — the cheap scalar signals (childrenCount,
+        // blocked/blockingCount, upvotes/downvotes) are kept.
+        obj.remove("linkedItems");
+        obj.remove("awardEmoji");
     }
     node
 }
@@ -475,6 +507,49 @@ async fn resolve_work_item_gid(
         .and_then(Value::as_str)
         .map(String::from)
         .ok_or_else(|| GitlabError::Other(format!("work item not found: {namespace_path} #{iid}")))
+}
+
+/// Resolve several work-item IIDs to their global IDs in one query, preserving
+/// the caller's order. Used for linked-item targets.
+async fn resolve_work_item_gids(
+    client: &GitlabClient,
+    namespace_path: &str,
+    iids: &[u64],
+) -> Result<Vec<String>, GitlabError> {
+    if iids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let iid_strs: Vec<String> = iids.iter().map(u64::to_string).collect();
+    let query = "query($p: ID!, $iids: [String!]) { namespace(fullPath: $p) { workItems(iids: $iids, first: 100) { nodes { id iid } } } }";
+    let data = client
+        .graphql(query, json!({ "p": namespace_path, "iids": iid_strs }))
+        .await?;
+    let mut by_iid: HashMap<String, String> = HashMap::new();
+    if let Some(nodes) = data
+        .pointer("/namespace/workItems/nodes")
+        .and_then(Value::as_array)
+    {
+        for n in nodes {
+            if let (Some(iid), Some(id)) = (n["iid"].as_str(), n["id"].as_str()) {
+                by_iid.insert(iid.to_string(), id.to_string());
+            }
+        }
+    }
+    let mut ids = Vec::with_capacity(iids.len());
+    let mut missing = Vec::new();
+    for iid in iids {
+        match by_iid.get(&iid.to_string()) {
+            Some(id) => ids.push(id.clone()),
+            None => missing.push(iid.to_string()),
+        }
+    }
+    if !missing.is_empty() {
+        return Err(GitlabError::Other(format!(
+            "work item(s) not found in {namespace_path}: {}",
+            missing.join(", ")
+        )));
+    }
+    Ok(ids)
 }
 
 /// Resolve assignee *usernames* to `gid://gitlab/User/N` global IDs (one query
@@ -1020,6 +1095,161 @@ pub async fn work_item_note_delete(
 }
 
 // --------------------------------------------------------------------------
+// Linked items (relates to / blocks / is blocked by)
+// --------------------------------------------------------------------------
+
+/// Map a REST-style link type to the GraphQL `WorkItemRelatedLinkType` enum.
+fn link_type_enum(link_type: Option<&str>) -> Result<&'static str, GitlabError> {
+    match link_type {
+        None => Ok("RELATED"),
+        Some(s) if s.eq_ignore_ascii_case("relates_to") || s.eq_ignore_ascii_case("related") => {
+            Ok("RELATED")
+        }
+        Some(s) if s.eq_ignore_ascii_case("blocks") => Ok("BLOCKS"),
+        Some(s)
+            if s.eq_ignore_ascii_case("is_blocked_by") || s.eq_ignore_ascii_case("blocked_by") =>
+        {
+            Ok("BLOCKED_BY")
+        }
+        Some(other) => Err(GitlabError::Other(format!(
+            "invalid link_type {other:?}; use \"relates_to\", \"blocks\", or \"is_blocked_by\""
+        ))),
+    }
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct WorkItemLinkAddParams {
+    #[schemars(description = "Full path of the project or group the work item belongs to.")]
+    pub namespace_path: String,
+    #[schemars(description = "IID of the work item to link from.")]
+    pub work_item_iid: u64,
+    #[schemars(description = "IID(s) of the work item(s) in the same namespace to link to.")]
+    pub target_work_item_iids: Vec<u64>,
+    #[schemars(
+        description = "Link type: \"relates_to\" (default), \"blocks\", or \"is_blocked_by\"."
+    )]
+    pub link_type: Option<String>,
+}
+
+pub async fn work_item_link_add(
+    client: &GitlabClient,
+    p: WorkItemLinkAddParams,
+) -> Result<Value, GitlabError> {
+    let gid = resolve_work_item_gid(client, &p.namespace_path, p.work_item_iid).await?;
+    let target_gids =
+        resolve_work_item_gids(client, &p.namespace_path, &p.target_work_item_iids).await?;
+    let link_type = link_type_enum(p.link_type.as_deref())?;
+
+    let mutation = format!(
+        "mutation($input: WorkItemAddLinkedItemsInput!) {{ \
+            workItemAddLinkedItems(input: $input) {{ errors workItem {{ {WORK_ITEM_FIELDS} }} }} \
+        }}"
+    );
+    let data = client
+        .graphql(
+            &mutation,
+            json!({ "input": { "id": gid, "linkType": link_type, "workItemsIds": target_gids } }),
+        )
+        .await?;
+    check_mutation_errors(&data, "workItemAddLinkedItems")?;
+    data.pointer("/workItemAddLinkedItems/workItem")
+        .cloned()
+        .map(flatten_work_item)
+        .ok_or_else(|| GitlabError::Other("workItemAddLinkedItems returned no work item".into()))
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct WorkItemLinkRemoveParams {
+    #[schemars(description = "Full path of the project or group the work item belongs to.")]
+    pub namespace_path: String,
+    #[schemars(description = "IID of the work item to unlink from.")]
+    pub work_item_iid: u64,
+    #[schemars(description = "IID(s) of the linked work item(s) to remove.")]
+    pub target_work_item_iids: Vec<u64>,
+}
+
+pub async fn work_item_link_remove(
+    client: &GitlabClient,
+    p: WorkItemLinkRemoveParams,
+) -> Result<Value, GitlabError> {
+    let gid = resolve_work_item_gid(client, &p.namespace_path, p.work_item_iid).await?;
+    let target_gids =
+        resolve_work_item_gids(client, &p.namespace_path, &p.target_work_item_iids).await?;
+
+    let mutation = format!(
+        "mutation($input: WorkItemRemoveLinkedItemsInput!) {{ \
+            workItemRemoveLinkedItems(input: $input) {{ errors workItem {{ {WORK_ITEM_FIELDS} }} }} \
+        }}"
+    );
+    let data = client
+        .graphql(
+            &mutation,
+            json!({ "input": { "id": gid, "workItemsIds": target_gids } }),
+        )
+        .await?;
+    check_mutation_errors(&data, "workItemRemoveLinkedItems")?;
+    data.pointer("/workItemRemoveLinkedItems/workItem")
+        .cloned()
+        .map(flatten_work_item)
+        .ok_or_else(|| GitlabError::Other("workItemRemoveLinkedItems returned no work item".into()))
+}
+
+// --------------------------------------------------------------------------
+// Emoji reactions
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct WorkItemEmojiParams {
+    #[schemars(description = "Full path of the project or group the work item belongs to.")]
+    pub namespace_path: String,
+    #[schemars(description = "Work item IID (the number from its URL/reference, e.g. #42).")]
+    pub work_item_iid: u64,
+    #[schemars(description = "Emoji name, e.g. \"thumbsup\", \"rocket\", \"eyes\".")]
+    pub name: String,
+}
+
+/// Shared add/remove on a work item's award-emoji widget. `mutation_field` is
+/// `awardEmojiAdd` or `awardEmojiRemove`.
+async fn work_item_emoji_mutate(
+    client: &GitlabClient,
+    p: WorkItemEmojiParams,
+    mutation_field: &str,
+    input_type: &str,
+) -> Result<Value, GitlabError> {
+    let gid = resolve_work_item_gid(client, &p.namespace_path, p.work_item_iid).await?;
+    let mutation = format!(
+        "mutation($input: {input_type}!) {{ \
+            {mutation_field}(input: $input) {{ errors awardEmoji {{ name user {{ id username name }} }} }} \
+        }}"
+    );
+    let data = client
+        .graphql(
+            &mutation,
+            json!({ "input": { "awardableId": gid, "name": p.name } }),
+        )
+        .await?;
+    check_mutation_errors(&data, mutation_field)?;
+    Ok(data
+        .pointer(&format!("/{mutation_field}/awardEmoji"))
+        .cloned()
+        .unwrap_or(Value::Null))
+}
+
+pub async fn work_item_emoji_add(
+    client: &GitlabClient,
+    p: WorkItemEmojiParams,
+) -> Result<Value, GitlabError> {
+    work_item_emoji_mutate(client, p, "awardEmojiAdd", "AwardEmojiAddInput").await
+}
+
+pub async fn work_item_emoji_remove(
+    client: &GitlabClient,
+    p: WorkItemEmojiParams,
+) -> Result<Value, GitlabError> {
+    work_item_emoji_mutate(client, p, "awardEmojiRemove", "AwardEmojiRemoveInput").await
+}
+
+// --------------------------------------------------------------------------
 // MCP tool shims
 // --------------------------------------------------------------------------
 
@@ -1121,6 +1351,52 @@ impl GitlabMcpServer {
     ) -> Result<CallToolResult, McpError> {
         delegate_delete!(self, work_item_note_delete, p, "work item note")
     }
+
+    #[tool(
+        description = "Link a GitLab work item to other work item(s) (relates-to / blocks / is-blocked-by — the work-item equivalent of issue links). Required: namespace_path (full project or group path), work_item_iid (the item to link from), target_work_item_iids (array of IIDs in the same namespace to link to). Optional: link_type — \"relates_to\" (default), \"blocks\", or \"is_blocked_by\". Returns the updated work item with its linkedItems. For classic project issues you can also use gitlab_issues_links_create."
+    )]
+    async fn gitlab_work_items_link_add(
+        &self,
+        Parameters(p): Parameters<WorkItemLinkAddParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, work_item_link_add, p, "work item link")
+    }
+
+    #[tool(
+        description = "Remove a link between a GitLab work item and other work item(s). Required: namespace_path (full project or group path), work_item_iid, target_work_item_iids (array of linked IIDs to unlink). Returns the updated work item."
+    )]
+    async fn gitlab_work_items_link_remove(
+        &self,
+        Parameters(p): Parameters<WorkItemLinkRemoveParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_update!(self, work_item_link_remove, p, "work item link")
+    }
+
+    #[tool(
+        description = "Add an emoji reaction (award emoji) to a GitLab work item. Required: namespace_path (full project or group path), work_item_iid, and name (emoji name, e.g. \"thumbsup\", \"rocket\", \"eyes\"). Returns the created award emoji. For classic project issues you can also use gitlab_emoji_reactions_issues_create."
+    )]
+    async fn gitlab_work_items_emoji_add(
+        &self,
+        Parameters(p): Parameters<WorkItemEmojiParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(self, work_item_emoji_add, p, "work item emoji reaction")
+    }
+
+    #[tool(
+        description = "Remove an emoji reaction (award emoji) from a GitLab work item. Required: namespace_path (full project or group path), work_item_iid, and name (the emoji name to remove). Returns the removed award emoji."
+    )]
+    async fn gitlab_work_items_emoji_remove(
+        &self,
+        Parameters(p): Parameters<WorkItemEmojiParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(
+            self,
+            work_item_emoji_remove,
+            p,
+            "removing",
+            "work item emoji reaction"
+        )
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -1133,11 +1409,12 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{
-        WorkItemCreateParams, WorkItemDeleteParams, WorkItemGetParams, WorkItemNoteCreateParams,
-        WorkItemNoteDeleteParams, WorkItemNoteUpdateParams, WorkItemNotesListParams,
-        WorkItemUpdateParams, WorkItemsListParams, work_item_create, work_item_delete,
-        work_item_get, work_item_note_create, work_item_note_delete, work_item_note_update,
-        work_item_notes_list, work_item_update, work_items_list,
+        WorkItemCreateParams, WorkItemDeleteParams, WorkItemEmojiParams, WorkItemGetParams,
+        WorkItemLinkAddParams, WorkItemNoteCreateParams, WorkItemNoteDeleteParams,
+        WorkItemNoteUpdateParams, WorkItemNotesListParams, WorkItemUpdateParams,
+        WorkItemsListParams, work_item_create, work_item_delete, work_item_emoji_add,
+        work_item_get, work_item_link_add, work_item_note_create, work_item_note_delete,
+        work_item_note_update, work_item_notes_list, work_item_update, work_items_list,
     };
     use crate::test_util::mock_client;
 
@@ -1176,7 +1453,16 @@ mod tests {
                   ] } },
                 { "type": "START_AND_DUE_DATE", "startDate": "2026-01-01", "dueDate": null },
                 { "type": "MILESTONE", "milestone": { "id": "gid://gitlab/Milestone/3", "iid": "1", "title": "v1.0" } },
-                { "type": "WEIGHT", "weight": 5 }
+                { "type": "WEIGHT", "weight": 5 },
+                { "type": "LINKED_ITEMS", "blocked": false, "blockingCount": 1, "blockedByCount": 0,
+                  "linkedItems": { "nodes": [
+                      { "linkId": "gid://gitlab/WorkItems::RelatedWorkItemLink/1", "linkType": "blocks",
+                        "workItem": { "id": "gid://gitlab/WorkItem/50", "iid": "8", "title": "Blocked one", "state": "OPEN" } }
+                  ] } },
+                { "type": "AWARD_EMOJI", "upvotes": 2, "downvotes": 0,
+                  "awardEmoji": { "nodes": [
+                      { "name": "thumbsup", "user": { "id": "gid://gitlab/User/3", "username": "carol", "name": "Carol" } }
+                  ] } }
             ]
         })
     }
@@ -1232,6 +1518,14 @@ mod tests {
         assert_eq!(item["startDate"], "2026-01-01");
         assert_eq!(item["milestone"]["title"], "v1.0");
         assert_eq!(item["weight"], 5);
+        // Linked items + emoji reactions lifted (arrays + cheap scalar signals).
+        assert_eq!(item["blocked"], false);
+        assert_eq!(item["blockingCount"], 1);
+        assert_eq!(item["linkedItems"][0]["linkType"], "blocks");
+        assert_eq!(item["linkedItems"][0]["workItem"]["iid"], "8");
+        assert_eq!(item["upvotes"], 2);
+        assert_eq!(item["awardEmoji"][0]["name"], "thumbsup");
+        assert_eq!(item["awardEmoji"][0]["user"]["username"], "carol");
     }
 
     #[tokio::test]
@@ -1343,6 +1637,14 @@ mod tests {
             nodes[0]["userDiscussionsCount"], 4,
             "comment count retained"
         );
+        // Relation arrays dropped from list; cheap scalar signals kept.
+        assert!(
+            nodes[0].get("linkedItems").is_none(),
+            "linkedItems stripped"
+        );
+        assert!(nodes[0].get("awardEmoji").is_none(), "awardEmoji stripped");
+        assert_eq!(nodes[0]["upvotes"], 2, "upvote count retained");
+        assert_eq!(nodes[0]["blockingCount"], 1, "blocking count retained");
         // Cursor surfaced for the caller to paginate.
         assert_eq!(result["pageInfo"]["hasNextPage"], true);
         assert_eq!(result["pageInfo"]["endCursor"], "CURSOR123");
@@ -2022,6 +2324,140 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(item["title"], "Updated");
+    }
+
+    // ------------------------------------------------------------------
+    // linked items + emoji reactions
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn work_item_link_add_resolves_source_and_targets() {
+        let server = MockServer::start().await;
+        // Resolve the source iid (42) -> GID.
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(body_partial_json(serde_json::json!({
+                "variables": { "iids": ["42"] }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "namespace": { "workItems": { "nodes": [
+                    { "id": "gid://gitlab/WorkItem/420" }
+                ] } } }
+            })))
+            .mount(&server)
+            .await;
+        // Resolve the target iids (7, 8) -> GIDs.
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(body_partial_json(serde_json::json!({
+                "variables": { "iids": ["7", "8"] }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "namespace": { "workItems": { "nodes": [
+                    { "id": "gid://gitlab/WorkItem/70", "iid": "7" },
+                    { "id": "gid://gitlab/WorkItem/80", "iid": "8" }
+                ] } } }
+            })))
+            .mount(&server)
+            .await;
+        // Mutation matches only with the mapped link type + resolved target GIDs.
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(body_partial_json(serde_json::json!({
+                "variables": { "input": {
+                    "id": "gid://gitlab/WorkItem/420",
+                    "linkType": "BLOCKS",
+                    "workItemsIds": ["gid://gitlab/WorkItem/70", "gid://gitlab/WorkItem/80"]
+                } }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "workItemAddLinkedItems": {
+                    "errors": [],
+                    "workItem": work_item_node(42, "Linker")
+                } }
+            })))
+            .mount(&server)
+            .await;
+
+        let item = work_item_link_add(
+            &mock_client(&server),
+            WorkItemLinkAddParams {
+                namespace_path: "mygroup/myproject".into(),
+                work_item_iid: 42,
+                target_work_item_iids: vec![7, 8],
+                link_type: Some("blocks".into()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(item["title"], "Linker");
+    }
+
+    #[tokio::test]
+    async fn work_item_link_add_rejects_invalid_link_type() {
+        let server = MockServer::start().await;
+        mount_gid_resolution(&server, "gid://gitlab/WorkItem/420").await;
+        // Targets resolve (the call happens before link_type validation).
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(body_partial_json(serde_json::json!({
+                "variables": { "iids": ["7"] }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "namespace": { "workItems": { "nodes": [
+                    { "id": "gid://gitlab/WorkItem/70", "iid": "7" }
+                ] } } }
+            })))
+            .mount(&server)
+            .await;
+
+        let err = work_item_link_add(
+            &mock_client(&server),
+            WorkItemLinkAddParams {
+                namespace_path: "mygroup/myproject".into(),
+                work_item_iid: 42,
+                target_work_item_iids: vec![7],
+                link_type: Some("supersedes".into()),
+            },
+        )
+        .await
+        .unwrap_err();
+        match err {
+            crate::client::GitlabError::Other(msg) => assert!(msg.contains("invalid link_type")),
+            other => panic!("expected Other error, got {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn work_item_emoji_add_resolves_gid_and_returns_award() {
+        let server = MockServer::start().await;
+        mount_gid_resolution(&server, "gid://gitlab/WorkItem/420").await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(body_partial_json(serde_json::json!({
+                "variables": { "input": { "awardableId": "gid://gitlab/WorkItem/420", "name": "rocket" } }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "awardEmojiAdd": {
+                    "errors": [],
+                    "awardEmoji": { "name": "rocket", "user": { "id": "gid://gitlab/User/1", "username": "alice", "name": "Alice" } }
+                } }
+            })))
+            .mount(&server)
+            .await;
+
+        let award = work_item_emoji_add(
+            &mock_client(&server),
+            WorkItemEmojiParams {
+                namespace_path: "mygroup/myproject".into(),
+                work_item_iid: 42,
+                name: "rocket".into(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(award["name"], "rocket");
+        assert_eq!(award["user"]["username"], "alice");
     }
 
     // ------------------------------------------------------------------

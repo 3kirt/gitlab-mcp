@@ -746,6 +746,120 @@ async fn work_item_dates_and_milestone_visible_via_rest() {
 }
 
 // --------------------------------------------------------------------------
+// Linked items + emoji reactions
+// --------------------------------------------------------------------------
+
+#[tokio::test]
+async fn work_item_links_and_emoji_live() {
+    let env = skip_unless_live!();
+    let tag = run_tag();
+
+    // Two issue work items: link A -> B with "relates_to" (blocks/is_blocked_by
+    // are Premium-gated on the Free test instance, like REST issue links).
+    let a = seed_issue_full(&env, format!("{tag} link-a"), None, None).await;
+    let b = seed_issue_full(&env, format!("{tag} link-b"), None, None).await;
+
+    let linked = work_items::work_item_link_add(
+        &env.client,
+        work_items::WorkItemLinkAddParams {
+            namespace_path: env.project.clone(),
+            work_item_iid: a,
+            target_work_item_iids: vec![b],
+            link_type: Some("relates_to".into()),
+        },
+    )
+    .await
+    .expect("link add");
+    // The mutation returns the updated item with its linked items.
+    assert!(
+        linked["linkedItems"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l["workItem"]["iid"] == serde_json::json!(b.to_string())),
+        "A links to B"
+    );
+
+    // Read-back confirms it landed.
+    let a_get = gql_work_item_get(&env, a).await;
+    assert!(
+        a_get["linkedItems"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l["workItem"]["iid"] == serde_json::json!(b.to_string())),
+        "GraphQL get sees the link"
+    );
+
+    // Unlink, and confirm it's gone.
+    let unlinked = work_items::work_item_link_remove(
+        &env.client,
+        work_items::WorkItemLinkRemoveParams {
+            namespace_path: env.project.clone(),
+            work_item_iid: a,
+            target_work_item_iids: vec![b],
+        },
+    )
+    .await
+    .expect("link remove");
+    assert!(
+        unlinked["linkedItems"]
+            .as_array()
+            .map(Vec::is_empty)
+            .unwrap_or(true),
+        "link removed"
+    );
+
+    // Emoji: add a reaction, confirm via read-back, then remove.
+    let award = work_items::work_item_emoji_add(
+        &env.client,
+        work_items::WorkItemEmojiParams {
+            namespace_path: env.project.clone(),
+            work_item_iid: a,
+            name: "thumbsup".into(),
+        },
+    )
+    .await
+    .expect("emoji add");
+    assert_eq!(award["name"], "thumbsup");
+
+    let a_react = gql_work_item_get(&env, a).await;
+    assert!(
+        a_react["awardEmoji"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["name"] == serde_json::json!("thumbsup")),
+        "GraphQL get sees the reaction"
+    );
+
+    work_items::work_item_emoji_remove(
+        &env.client,
+        work_items::WorkItemEmojiParams {
+            namespace_path: env.project.clone(),
+            work_item_iid: a,
+            name: "thumbsup".into(),
+        },
+    )
+    .await
+    .expect("emoji remove");
+
+    let a_unreact = gql_work_item_get(&env, a).await;
+    assert!(
+        a_unreact["awardEmoji"]
+            .as_array()
+            .map(|arr| arr
+                .iter()
+                .all(|e| e["name"] != serde_json::json!("thumbsup")))
+            .unwrap_or(true),
+        "reaction removed"
+    );
+
+    delete_issue(&env, a).await;
+    delete_issue(&env, b).await;
+}
+
+// --------------------------------------------------------------------------
 // List filters + fetch_all
 // --------------------------------------------------------------------------
 
