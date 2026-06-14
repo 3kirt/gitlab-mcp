@@ -451,13 +451,15 @@ fn flatten_nodes(conn: &Value) -> Vec<Value> {
 /// sub-items.
 fn slim_list_node(mut node: Value) -> Value {
     if let Some(obj) = node.as_object_mut() {
+        // Keys are already snake_case here: `flatten_work_item` runs
+        // `snake_case_keys` before this, so remove the snake_case names.
         obj.remove("description");
         obj.remove("children");
-        // Bulk relation arrays — the cheap scalar signals (childrenCount,
-        // blocked/blockingCount, upvotes/downvotes) are kept.
-        obj.remove("linkedItems");
-        obj.remove("awardEmoji");
-        obj.remove("closingMergeRequests");
+        // Bulk relation arrays — the cheap scalar signals (children_count,
+        // blocked/blocking_count, upvotes/downvotes) are kept.
+        obj.remove("linked_items");
+        obj.remove("award_emoji");
+        obj.remove("closing_merge_requests");
     }
     node
 }
@@ -1833,13 +1835,16 @@ mod tests {
         );
         // Relation arrays dropped from list; cheap scalar signals kept.
         assert!(
-            nodes[0].get("linkedItems").is_none(),
-            "linkedItems stripped"
+            nodes[0].get("linked_items").is_none(),
+            "linked_items stripped"
         );
-        assert!(nodes[0].get("awardEmoji").is_none(), "awardEmoji stripped");
         assert!(
-            nodes[0].get("closingMergeRequests").is_none(),
-            "closingMergeRequests stripped"
+            nodes[0].get("award_emoji").is_none(),
+            "award_emoji stripped"
+        );
+        assert!(
+            nodes[0].get("closing_merge_requests").is_none(),
+            "closing_merge_requests stripped"
         );
         assert_eq!(nodes[0]["upvotes"], 2, "upvote count retained");
         assert_eq!(nodes[0]["blocking_count"], 1, "blocking count retained");
