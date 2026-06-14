@@ -140,6 +140,13 @@ ready.
   `assert_issue_list_item_invariants` encode each resource type's expected shape
   (the "universal invariants": identifying fields present, stripped keys absent,
   users collapsed, …) as reusable assertions instead of prose a human eyeballs.
+- **Resilient to rate limits.** The full suite makes ~200+ sequential calls
+  against gitlab.com, which can trip GitLab's per-endpoint rate limits (notably
+  on rapid issue/note creation). `GitlabClient` retries any `429 Too Many
+  Requests` honoring the `Retry-After` header (bounded: 4 retries, 60s cap), so
+  the suite waits out a limit rather than failing. Read-after-write lag (a
+  separate transient) is handled per-test by the `poll_until`/`poll_for_iids`
+  helpers.
 - **Skips without credentials.** `skip_unless_live!` returns early (printing a
   notice) when `GITLAB_URL`/`GITLAB_TOKEN` are absent, so the feature is safe to
   enable in CI without secrets — supply credentials in a dedicated job to

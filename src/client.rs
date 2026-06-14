@@ -29,6 +29,12 @@ pub type ListResult = Result<(Value, PaginationMeta), GitlabError>;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Max times to retry a request GitLab rejects with 429 Too Many Requests.
+const MAX_RETRIES: u32 = 4;
+/// Upper bound on how long to wait between 429 retries (honors `Retry-After`
+/// up to this, then caps).
+const MAX_RETRY_WAIT: Duration = Duration::from_secs(60);
+
 /// Upper bound on pages fetched in a single `fetch_all` request, guarding
 /// against runaway loops when an endpoint never signals the last page.
 /// At 100 items/page this caps a merged response at 20,000 items.
@@ -105,7 +111,7 @@ impl GitlabClient {
     /// GET {base_url}{path} — returns the JSON response body.
     pub async fn get(&self, path: &str) -> Result<Value, GitlabError> {
         let url = self.url(path);
-        let resp = self.http.get(&url).send().await?;
+        let resp = self.send(self.http.get(&url)).await?;
         self.handle_response(resp).await
     }
 
@@ -116,7 +122,7 @@ impl GitlabClient {
         params: &[(&str, String)],
     ) -> Result<Value, GitlabError> {
         let url = self.url(path);
-        let resp = self.http.get(&url).query(params).send().await?;
+        let resp = self.send(self.http.get(&url).query(params)).await?;
         self.handle_response(resp).await
     }
 
@@ -124,7 +130,7 @@ impl GitlabClient {
     /// together with pagination metadata extracted from the `X-*` response headers.
     pub async fn list(&self, path: &str, params: &[(&str, String)]) -> ListResult {
         let url = self.url(path);
-        let resp = self.http.get(&url).query(params).send().await?;
+        let resp = self.send(self.http.get(&url).query(params)).await?;
         let resp = check_status(resp).await?;
         let meta = PaginationMeta {
             page: parse_pagination_header(resp.headers(), "x-page"),
@@ -140,14 +146,14 @@ impl GitlabClient {
     /// POST {base_url}{path} with a JSON body — returns the JSON response body.
     pub async fn post(&self, path: &str, body: &Value) -> Result<Value, GitlabError> {
         let url = self.url(path);
-        let resp = self.http.post(&url).json(body).send().await?;
+        let resp = self.send(self.http.post(&url).json(body)).await?;
         self.handle_response(resp).await
     }
 
     /// POST {base_url}{path} with a JSON body — returns () on success (no response body expected).
     pub async fn post_void(&self, path: &str, body: &Value) -> Result<(), GitlabError> {
         let url = self.url(path);
-        let resp = self.http.post(&url).json(body).send().await?;
+        let resp = self.send(self.http.post(&url).json(body)).await?;
         check_status(resp).await?;
         Ok(())
     }
@@ -155,7 +161,7 @@ impl GitlabClient {
     /// PUT {base_url}{path} with a JSON body — returns the JSON response body.
     pub async fn put(&self, path: &str, body: &Value) -> Result<Value, GitlabError> {
         let url = self.url(path);
-        let resp = self.http.put(&url).json(body).send().await?;
+        let resp = self.send(self.http.put(&url).json(body)).await?;
         self.handle_response(resp).await
     }
 
@@ -169,7 +175,7 @@ impl GitlabClient {
     pub async fn graphql(&self, query: &str, variables: Value) -> Result<Value, GitlabError> {
         let url = self.url("/api/graphql");
         let body = serde_json::json!({ "query": query, "variables": variables });
-        let resp = self.http.post(&url).json(&body).send().await?;
+        let resp = self.send(self.http.post(&url).json(&body)).await?;
         let resp = check_status(resp).await?;
         let mut json: Value = resp.json().await?;
 
@@ -194,7 +200,7 @@ impl GitlabClient {
         params: &[(&str, String)],
     ) -> Result<String, GitlabError> {
         let url = self.url(path);
-        let resp = self.http.get(&url).query(params).send().await?;
+        let resp = self.send(self.http.get(&url).query(params)).await?;
         let resp = check_status(resp).await?;
         Ok(resp.text().await?)
     }
@@ -202,23 +208,51 @@ impl GitlabClient {
     /// DELETE {base_url}{path} with a JSON body — returns the JSON response body.
     pub async fn delete_with_body(&self, path: &str, body: &Value) -> Result<Value, GitlabError> {
         let url = self.url(path);
-        let resp = self.http.delete(&url).json(body).send().await?;
+        let resp = self.send(self.http.delete(&url).json(body)).await?;
         self.handle_response(resp).await
     }
 
     /// DELETE {base_url}{path} — returns the JSON response body.
     pub async fn delete_json(&self, path: &str) -> Result<Value, GitlabError> {
         let url = self.url(path);
-        let resp = self.http.delete(&url).send().await?;
+        let resp = self.send(self.http.delete(&url)).await?;
         self.handle_response(resp).await
     }
 
     /// DELETE {base_url}{path} — returns () on success (204 No Content expected).
     pub async fn delete(&self, path: &str) -> Result<(), GitlabError> {
         let url = self.url(path);
-        let resp = self.http.delete(&url).send().await?;
+        let resp = self.send(self.http.delete(&url)).await?;
         check_status(resp).await?;
         Ok(())
+    }
+
+    /// Send a request, retrying on HTTP 429 (Too Many Requests). A 429 is a
+    /// pre-processing rejection, so retrying is safe even for mutating methods
+    /// (POST/PUT/DELETE) — the rejected request never reached the resource.
+    /// Honors GitLab's `Retry-After` header (seconds), falling back to
+    /// exponential backoff; both are capped at [`MAX_RETRY_WAIT`].
+    async fn send(
+        &self,
+        builder: reqwest::RequestBuilder,
+    ) -> Result<reqwest::Response, GitlabError> {
+        let mut attempt: u32 = 0;
+        loop {
+            // Clone per attempt; our bodies are in-memory JSON, so this is `Some`.
+            let attempt_builder = builder
+                .try_clone()
+                .ok_or_else(|| GitlabError::Other("request body is not retryable".into()))?;
+            let resp = attempt_builder.send().await?;
+            if resp.status() == StatusCode::TOO_MANY_REQUESTS && attempt < MAX_RETRIES {
+                let wait = retry_after(resp.headers())
+                    .unwrap_or_else(|| backoff(attempt))
+                    .min(MAX_RETRY_WAIT);
+                attempt += 1;
+                tokio::time::sleep(wait).await;
+                continue;
+            }
+            return Ok(resp);
+        }
     }
 
     fn url(&self, path: &str) -> String {
@@ -243,6 +277,23 @@ async fn check_status(resp: reqwest::Response) -> Result<reqwest::Response, Gitl
         return Err(GitlabError::Api { status, body });
     }
     Ok(resp)
+}
+
+/// Parse a `Retry-After` header (delay in whole seconds) into a `Duration`.
+fn retry_after(headers: &header::HeaderMap) -> Option<Duration> {
+    headers
+        .get(header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(Duration::from_secs)
+}
+
+/// Exponential backoff for retry `attempt` (0-based): 0.5s, 1s, 2s, 4s, …
+fn backoff(attempt: u32) -> Duration {
+    Duration::from_millis(500u64.saturating_mul(2u64.saturating_pow(attempt)))
 }
 
 fn parse_pagination_header(headers: &header::HeaderMap, name: &str) -> Option<u64> {
@@ -700,6 +751,71 @@ mod tests {
             .unwrap_err();
         assert!(
             matches!(err, GitlabError::Api { status, .. } if status == StatusCode::UNAUTHORIZED)
+        );
+    }
+
+    // --- 429 retry behaviour ---
+
+    #[test]
+    fn retry_after_parses_seconds() {
+        let mut h = reqwest::header::HeaderMap::new();
+        h.insert(
+            reqwest::header::RETRY_AFTER,
+            reqwest::header::HeaderValue::from_static("3"),
+        );
+        assert_eq!(retry_after(&h), Some(Duration::from_secs(3)));
+        assert_eq!(retry_after(&reqwest::header::HeaderMap::new()), None);
+    }
+
+    #[test]
+    fn backoff_is_exponential() {
+        assert_eq!(backoff(0), Duration::from_millis(500));
+        assert_eq!(backoff(1), Duration::from_millis(1000));
+        assert_eq!(backoff(3), Duration::from_millis(4000));
+    }
+
+    #[tokio::test]
+    async fn send_retries_on_429_then_succeeds() {
+        let server = MockServer::start().await;
+        // First call gets 429 (Retry-After: 0 so the test doesn't actually sleep);
+        // `up_to_n_times(1)` + higher priority makes it answer only the first call.
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects"))
+            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "0"))
+            .up_to_n_times(1)
+            .with_priority(1)
+            .expect(1)
+            .mount(&server)
+            .await;
+        // The retry succeeds.
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([{"id": 1}])))
+            .with_priority(2)
+            .mount(&server)
+            .await;
+
+        let result = mock_client(&server).get("/api/v4/projects").await.unwrap();
+        assert_eq!(result[0]["id"], 1);
+    }
+
+    #[tokio::test]
+    async fn send_gives_up_after_max_retries_returning_429() {
+        let server = MockServer::start().await;
+        // Always 429: after MAX_RETRIES the 429 is returned and mapped to Api.
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects"))
+            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "0"))
+            .expect(MAX_RETRIES as u64 + 1) // initial attempt + MAX_RETRIES
+            .mount(&server)
+            .await;
+
+        let err = mock_client(&server)
+            .get("/api/v4/projects")
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, GitlabError::Api { status, .. } if status == StatusCode::TOO_MANY_REQUESTS)
         );
     }
 
