@@ -14,9 +14,10 @@
 //! * **Addressing.** GraphQL addresses namespaces by full path string, so this
 //!   module takes `namespace_path` (a project *or* group full path, e.g.
 //!   "mygroup/myproject" or "mygroup/subgroup") rather than the numeric-or-path
-//!   `project_id`/`group_id` the REST modules accept. Field names in the
-//!   response are GraphQL camelCase (`createdAt`, `webUrl`, `workItemType`),
-//!   not the REST snake_case, since they pass through verbatim.
+//!   `project_id`/`group_id` the REST modules accept. The GraphQL queries,
+//!   response reads, and mutation inputs are all camelCase (the wire format),
+//!   but **output keys are converted to snake_case** (`createdAt` → `created_at`)
+//!   by [`snake_case_keys`] at the output boundary so they match the REST tools.
 //!
 //! Covers get, list, create, update, and delete. The mutations carry the extra
 //! GraphQL machinery the REST modules don't need: [`resolve_work_item_type_id`]
@@ -75,14 +76,53 @@ const WORK_ITEM_FIELDS: &str = r#"
         ... on WorkItemWidgetDevelopment {
             closingMergeRequests { nodes { mergeRequest { iid title webUrl state } } }
         }
+        ... on WorkItemWidgetIteration { iteration { id iid title startDate dueDate } }
+        ... on WorkItemWidgetHealthStatus { healthStatus }
     }
 "#;
+
+/// Convert a single camelCase identifier to snake_case (`webUrl` → `web_url`,
+/// `closingMergeRequests` → `closing_merge_requests`). The keys are simple
+/// camelCase (no consecutive capitals), so an underscore-before-each-capital
+/// pass is sufficient.
+fn to_snake_case(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 4);
+    for (i, ch) in s.char_indices() {
+        if ch.is_ascii_uppercase() {
+            if i != 0 {
+                out.push('_');
+            }
+            out.push(ch.to_ascii_lowercase());
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
+/// Recursively rename every object key from GraphQL camelCase to snake_case, so
+/// work-item output matches the REST tools (`createdAt` → `created_at`). Applied
+/// at the output boundary — the GraphQL queries, response reads, and mutation
+/// inputs all stay camelCase. Idempotent (snake keys are unchanged).
+fn snake_case_keys(v: Value) -> Value {
+    match v {
+        Value::Object(map) => Value::Object(
+            map.into_iter()
+                .map(|(k, val)| (to_snake_case(&k), snake_case_keys(val)))
+                .collect(),
+        ),
+        Value::Array(arr) => Value::Array(arr.into_iter().map(snake_case_keys).collect()),
+        other => other,
+    }
+}
 
 /// Collapse a raw work-item node into a flat object: replace `workItemType`
 /// with its name string and lift the widgets we surface (description,
 /// assignees, labels, hierarchy, dates) to the top level, dropping the
 /// `widgets` envelope. Unknown widget types are discarded. Null fields left
 /// behind (e.g. an unset `dueDate`) are removed later by `slim_get`.
+///
+/// Output keys are snake_case (via [`snake_case_keys`]) to match the REST tools.
 ///
 /// Output casing is normalized to match the *input* conventions so a caller can
 /// round-trip / client-filter returned values: `workItemType` to the UPPER_SNAKE
@@ -210,11 +250,21 @@ fn flatten_work_item(mut node: Value) -> Value {
                     obj.insert("closingMergeRequests".into(), Value::Array(mrs));
                 }
             }
+            Some("ITERATION") => {
+                if let Some(it) = w.get("iteration") {
+                    obj.insert("iteration".into(), it.clone());
+                }
+            }
+            Some("HEALTH_STATUS") => {
+                if let Some(h) = w.get("healthStatus") {
+                    obj.insert("healthStatus".into(), h.clone());
+                }
+            }
             _ => {}
         }
     }
 
-    node
+    snake_case_keys(node)
 }
 
 // --------------------------------------------------------------------------
@@ -427,10 +477,10 @@ pub async fn work_items_list(
         vars.insert("after".into(), json!(p.after));
         let data = client.graphql(&query, Value::Object(vars)).await?;
         let conn = data.pointer("/namespace/workItems").ok_or_else(not_found)?;
-        return Ok(json!({
+        return Ok(snake_case_keys(json!({
             "nodes": flatten_nodes(conn),
             "pageInfo": conn.get("pageInfo").cloned().unwrap_or(Value::Null),
-        }));
+        })));
     }
 
     // fetch_all: walk pages at MAX_FIRST each until there is no next page,
@@ -462,10 +512,10 @@ pub async fn work_items_list(
             None => break,
         }
     }
-    Ok(json!({
+    Ok(snake_case_keys(json!({
         "nodes": all,
         "pageInfo": { "hasNextPage": false, "endCursor": Value::Null },
-    }))
+    })))
 }
 
 // --------------------------------------------------------------------------
@@ -1029,10 +1079,10 @@ pub async fn work_item_notes_list(
         .find(|w| w.get("type").and_then(Value::as_str) == Some("NOTES"))
         .and_then(|w| w.get("notes"));
 
-    Ok(json!({
+    Ok(snake_case_keys(json!({
         "nodes": notes.and_then(|n| n.get("nodes")).cloned().unwrap_or(json!([])),
         "pageInfo": notes.and_then(|n| n.get("pageInfo")).cloned().unwrap_or(Value::Null),
-    }))
+    })))
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -1076,6 +1126,7 @@ pub async fn work_item_note_create(
     check_mutation_errors(&data, "createNote")?;
     data.pointer("/createNote/note")
         .cloned()
+        .map(snake_case_keys)
         .ok_or_else(|| GitlabError::Other("createNote returned no note".into()))
 }
 
@@ -1105,6 +1156,7 @@ pub async fn work_item_note_update(
     check_mutation_errors(&data, "updateNote")?;
     data.pointer("/updateNote/note")
         .cloned()
+        .map(snake_case_keys)
         .ok_or_else(|| GitlabError::Other("updateNote returned no note".into()))
 }
 
@@ -1265,6 +1317,7 @@ async fn award_emoji_mutate(
     Ok(data
         .pointer(&format!("/{mutation_field}/awardEmoji"))
         .cloned()
+        .map(snake_case_keys)
         .unwrap_or(Value::Null))
 }
 
@@ -1343,7 +1396,7 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_work_items, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "Get a single GitLab work item (issue, task, epic, incident, objective/OKR, key result) by namespace path and IID. Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID) and work_item_iid (the number from the URL/reference, e.g. #42). Returns a flattened object with id (global ID), iid, title, state, workItemType, author, userDiscussionsCount (number of comment threads), and lifted widget data: description, assignees, labels, parent/children + childrenCount (hierarchy), startDate/dueDate, milestone, and weight. Field names are GraphQL camelCase; values are normalized to match inputs — state is \"opened\"/\"closed\" and workItemType is UPPER_SNAKE (e.g. \"ISSUE\", \"KEY_RESULT\"). For classic project issues you can also use gitlab_issues_get."
+        description = "Get a single GitLab work item (issue, task, epic, incident, objective/OKR, key result) by namespace path and IID. Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID) and work_item_iid (the number from the URL/reference, e.g. #42). Returns a flattened object with id (global ID), iid, title, state, work_item_type, author, user_discussions_count (number of comment threads), and lifted widget data: description, assignees, labels, parent/children + children_count (hierarchy), start_date/due_date, milestone, weight, linked_items, award_emoji, closing_merge_requests (MRs that close it), iteration, and health_status. Field names are snake_case (matching the REST tools); values are normalized to match inputs too — state is \"opened\"/\"closed\" and work_item_type is UPPER_SNAKE (e.g. \"ISSUE\", \"KEY_RESULT\"). For classic project issues you can also use gitlab_issues_get."
     )]
     async fn gitlab_work_items_get(
         &self,
@@ -1353,7 +1406,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List GitLab work items (issues, tasks, epics, incidents, objectives/OKRs, key results) in a project or group. Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID). Optional filters: types (array of ISSUE/TASK/EPIC/INCIDENT/OBJECTIVE/KEY_RESULT/...), state (opened/closed/all), search (title + description), author_username, assignee_usernames, labels (names), milestone_title, confidential, and date ranges created_after/before, updated_after/before, due_after/before (ISO 8601). sort takes a WorkItemSort value (e.g. CREATED_DESC, UPDATED_DESC, DUE_DATE_ASC, TITLE_ASC). Pagination is cursor-based: first sets the page size (default 20, max 100) and after takes a cursor from the previous response; or pass fetch_all=true to merge every page into one nodes array. Returns { nodes: [...flattened work items...], pageInfo: { hasNextPage, endCursor } }. List nodes omit `description` and the `children` array to save tokens (kept on the single-item get; `childrenCount` and `userDiscussionsCount` remain). Values are normalized like get (state \"opened\"/\"closed\", workItemType UPPER_SNAKE). For classic project issues you can also use gitlab_issues_list."
+        description = "List GitLab work items (issues, tasks, epics, incidents, objectives/OKRs, key results) in a project or group. Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID). Optional filters: types (array of ISSUE/TASK/EPIC/INCIDENT/OBJECTIVE/KEY_RESULT/...), state (opened/closed/all), search (title + description), author_username, assignee_usernames, labels (names), milestone_title, confidential, and date ranges created_after/before, updated_after/before, due_after/before (ISO 8601). sort takes a WorkItemSort value (e.g. CREATED_DESC, UPDATED_DESC, DUE_DATE_ASC, TITLE_ASC). Pagination is cursor-based: first sets the page size (default 20, max 100) and after takes a cursor from the previous response; or pass fetch_all=true to merge every page into one nodes array. Returns { nodes: [...flattened work items...], page_info: { has_next_page, end_cursor } }. Output keys are snake_case (matching the REST tools). List nodes omit the bulk arrays (description, children, linked_items, award_emoji, closing_merge_requests) to save tokens — all kept on the single-item get — while the cheap scalar signals (children_count, user_discussions_count, etc.) remain. Values are normalized like get (state \"opened\"/\"closed\", work_item_type UPPER_SNAKE). For classic project issues you can also use gitlab_issues_list."
     )]
     async fn gitlab_work_items_list(
         &self,
@@ -1577,9 +1630,23 @@ mod tests {
                   ] } },
                 { "type": "DEVELOPMENT", "closingMergeRequests": { "nodes": [
                     { "mergeRequest": { "iid": "12", "title": "Fix it", "webUrl": "https://gitlab.example.com/mr/12", "state": "opened" } }
-                ] } }
+                ] } },
+                { "type": "ITERATION", "iteration": { "id": "gid://gitlab/Iteration/4", "iid": "2", "title": "Sprint 4", "startDate": "2026-02-01", "dueDate": "2026-02-14" } },
+                { "type": "HEALTH_STATUS", "healthStatus": "onTrack" }
             ]
         })
+    }
+
+    #[test]
+    fn to_snake_case_converts_camel() {
+        assert_eq!(super::to_snake_case("webUrl"), "web_url");
+        assert_eq!(super::to_snake_case("workItemType"), "work_item_type");
+        assert_eq!(
+            super::to_snake_case("closingMergeRequests"),
+            "closing_merge_requests"
+        );
+        assert_eq!(super::to_snake_case("iid"), "iid"); // no change
+        assert_eq!(super::to_snake_case("_links"), "_links"); // leading underscore kept
     }
 
     // ------------------------------------------------------------------
@@ -1616,10 +1683,10 @@ mod tests {
         assert_eq!(item["title"], "Do the thing");
         assert_eq!(item["iid"], "42");
         // Casing normalized to match inputs.
-        assert_eq!(item["workItemType"], "TASK");
+        assert_eq!(item["work_item_type"], "TASK");
         assert_eq!(item["state"], "opened");
         // Comment-thread count surfaced.
-        assert_eq!(item["userDiscussionsCount"], 4);
+        assert_eq!(item["user_discussions_count"], 4);
         // Widgets lifted to the top level, `widgets` envelope gone.
         assert!(item.get("widgets").is_none());
         assert_eq!(item["description"], "the body");
@@ -1629,21 +1696,30 @@ mod tests {
         assert_eq!(item["parent"]["title"], "Parent");
         // get keeps the full children array AND the count.
         assert_eq!(item["children"][0]["iid"], "3");
-        assert_eq!(item["childrenCount"], 1);
-        assert_eq!(item["startDate"], "2026-01-01");
+        assert_eq!(item["children_count"], 1);
+        assert_eq!(item["start_date"], "2026-01-01");
         assert_eq!(item["milestone"]["title"], "v1.0");
         assert_eq!(item["weight"], 5);
         // Linked items + emoji reactions lifted (arrays + cheap scalar signals).
         assert_eq!(item["blocked"], false);
-        assert_eq!(item["blockingCount"], 1);
-        assert_eq!(item["linkedItems"][0]["linkType"], "blocks");
-        assert_eq!(item["linkedItems"][0]["workItem"]["iid"], "8");
+        assert_eq!(item["blocking_count"], 1);
+        assert_eq!(item["linked_items"][0]["link_type"], "blocks");
+        assert_eq!(item["linked_items"][0]["work_item"]["iid"], "8");
         assert_eq!(item["upvotes"], 2);
-        assert_eq!(item["awardEmoji"][0]["name"], "thumbsup");
-        assert_eq!(item["awardEmoji"][0]["user"]["username"], "carol");
+        assert_eq!(item["award_emoji"][0]["name"], "thumbsup");
+        assert_eq!(item["award_emoji"][0]["user"]["username"], "carol");
         // closingMergeRequests (the closed_by equivalent) flattened to the MRs.
-        assert_eq!(item["closingMergeRequests"][0]["iid"], "12");
-        assert_eq!(item["closingMergeRequests"][0]["title"], "Fix it");
+        assert_eq!(item["closing_merge_requests"][0]["iid"], "12");
+        assert_eq!(item["closing_merge_requests"][0]["title"], "Fix it");
+        // iteration + health status (Premium), and snake_case output keys.
+        assert_eq!(item["iteration"]["title"], "Sprint 4");
+        assert_eq!(item["iteration"]["start_date"], "2026-02-01");
+        assert_eq!(item["health_status"], "onTrack");
+        // Nested camelCase keys converted too.
+        assert_eq!(
+            item["closing_merge_requests"][0]["web_url"],
+            "https://gitlab.example.com/mr/12"
+        );
     }
 
     #[tokio::test]
@@ -1750,9 +1826,9 @@ mod tests {
             nodes[0].get("children").is_none(),
             "children array stripped from list nodes"
         );
-        assert_eq!(nodes[0]["childrenCount"], 1, "child count retained");
+        assert_eq!(nodes[0]["children_count"], 1, "child count retained");
         assert_eq!(
-            nodes[0]["userDiscussionsCount"], 4,
+            nodes[0]["user_discussions_count"], 4,
             "comment count retained"
         );
         // Relation arrays dropped from list; cheap scalar signals kept.
@@ -1766,10 +1842,10 @@ mod tests {
             "closingMergeRequests stripped"
         );
         assert_eq!(nodes[0]["upvotes"], 2, "upvote count retained");
-        assert_eq!(nodes[0]["blockingCount"], 1, "blocking count retained");
+        assert_eq!(nodes[0]["blocking_count"], 1, "blocking count retained");
         // Cursor surfaced for the caller to paginate.
-        assert_eq!(result["pageInfo"]["hasNextPage"], true);
-        assert_eq!(result["pageInfo"]["endCursor"], "CURSOR123");
+        assert_eq!(result["page_info"]["has_next_page"], true);
+        assert_eq!(result["page_info"]["end_cursor"], "CURSOR123");
     }
 
     #[tokio::test]
@@ -1920,7 +1996,7 @@ mod tests {
         assert_eq!(nodes[0]["title"], "Page1");
         assert_eq!(nodes[1]["title"], "Page2");
         // Merged result is presented as a single complete page.
-        assert_eq!(result["pageInfo"]["hasNextPage"], false);
+        assert_eq!(result["page_info"]["has_next_page"], false);
     }
 
     // ------------------------------------------------------------------
@@ -1988,7 +2064,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(item["title"], "New task");
-        assert_eq!(item["workItemType"], "TASK");
+        assert_eq!(item["work_item_type"], "TASK");
         assert!(item.get("widgets").is_none());
     }
 
@@ -2665,7 +2741,7 @@ mod tests {
         let nodes = result["nodes"].as_array().unwrap();
         assert_eq!(nodes.len(), 2);
         assert_eq!(nodes[0]["body"], "first comment");
-        assert_eq!(result["pageInfo"]["endCursor"], "C1");
+        assert_eq!(result["page_info"]["end_cursor"], "C1");
     }
 
     #[tokio::test]

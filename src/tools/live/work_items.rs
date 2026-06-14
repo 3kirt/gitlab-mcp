@@ -199,7 +199,7 @@ async fn work_item_get_matches_rest_issue_get() {
     assert_eq!(gql["description"], rest["description"], "description");
 
     assert_eq!(
-        gql["webUrl"], rest["web_url"],
+        gql["web_url"], rest["web_url"],
         "web url (webUrl vs web_url)"
     );
 
@@ -216,7 +216,7 @@ async fn work_item_get_matches_rest_issue_get() {
     assert_eq!(gql["author"]["name"], rest["author"]["name"], "author name");
 
     // GraphQL-only enrichment: an issue's type, normalized to the input enum form.
-    assert_eq!(gql["workItemType"], "ISSUE", "workItemType");
+    assert_eq!(gql["work_item_type"], "ISSUE", "workItemType");
 
     delete_issue(&env, iid).await;
 }
@@ -320,7 +320,7 @@ async fn work_item_mutation_lifecycle_visible_via_rest() {
     .await
     .expect("work_item_create");
 
-    assert_eq!(created["workItemType"], "ISSUE", "created type");
+    assert_eq!(created["work_item_type"], "ISSUE", "created type");
     let iid = created["iid"]
         .as_str()
         .expect("created iid is a string")
@@ -752,8 +752,8 @@ async fn work_item_dates_and_milestone_visible_via_rest() {
 
     // start_date isn't a REST issue field; verify it (and the rest) via GraphQL.
     let gql = gql_work_item_get(&env, iid).await;
-    assert_eq!(gql["startDate"], "2026-03-01", "GraphQL startDate");
-    assert_eq!(gql["dueDate"], "2026-03-31", "GraphQL dueDate");
+    assert_eq!(gql["start_date"], "2026-03-01", "GraphQL startDate");
+    assert_eq!(gql["due_date"], "2026-03-31", "GraphQL dueDate");
     assert_eq!(
         gql["milestone"]["title"],
         format!("{tag}-ms"),
@@ -795,22 +795,22 @@ async fn work_item_links_and_emoji_live() {
     .expect("link add");
     // The mutation returns the updated item with its linked items.
     assert!(
-        linked["linkedItems"]
+        linked["linked_items"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|l| l["workItem"]["iid"] == serde_json::json!(b.to_string())),
+            .any(|l| l["work_item"]["iid"] == serde_json::json!(b.to_string())),
         "A links to B"
     );
 
     // Read-back confirms it landed.
     let a_get = gql_work_item_get(&env, a).await;
     assert!(
-        a_get["linkedItems"]
+        a_get["linked_items"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|l| l["workItem"]["iid"] == serde_json::json!(b.to_string())),
+            .any(|l| l["work_item"]["iid"] == serde_json::json!(b.to_string())),
         "GraphQL get sees the link"
     );
 
@@ -826,7 +826,7 @@ async fn work_item_links_and_emoji_live() {
     .await
     .expect("link remove");
     assert!(
-        unlinked["linkedItems"]
+        unlinked["linked_items"]
             .as_array()
             .map(Vec::is_empty)
             .unwrap_or(true),
@@ -848,7 +848,7 @@ async fn work_item_links_and_emoji_live() {
 
     let a_react = gql_work_item_get(&env, a).await;
     assert!(
-        a_react["awardEmoji"]
+        a_react["award_emoji"]
             .as_array()
             .unwrap()
             .iter()
@@ -869,7 +869,7 @@ async fn work_item_links_and_emoji_live() {
 
     let a_unreact = gql_work_item_get(&env, a).await;
     assert!(
-        a_unreact["awardEmoji"]
+        a_unreact["award_emoji"]
             .as_array()
             .map(|arr| arr
                 .iter()
@@ -918,7 +918,7 @@ async fn work_items_list_fetch_all_and_filters_live() {
         .await
         .expect("work_items_list fetch_all");
         // fetch_all collapses to a single complete page.
-        assert_eq!(r["pageInfo"]["hasNextPage"], serde_json::json!(false));
+        assert_eq!(r["page_info"]["has_next_page"], serde_json::json!(false));
         gql_list_iids(&r["nodes"])
     })
     .await;
@@ -1014,18 +1014,23 @@ async fn work_item_23_followups_live() {
         .as_str()
         .expect("discussion id")
         .to_string();
-    let n2 = work_items::work_item_note_create(
-        &env.client,
-        work_items::WorkItemNoteCreateParams {
-            namespace_path: env.project.clone(),
-            work_item_iid: child_iid,
-            body: "a reply".into(),
-            internal: None,
-            discussion_id: Some(discussion_id.clone()),
-        },
-    )
-    .await
-    .expect("note reply");
+    // The just-created discussion can lag on a read replica ("discussion does
+    // not exist"), so retry the reply until it resolves.
+    let n2 = poll_value("threaded reply", || async {
+        work_items::work_item_note_create(
+            &env.client,
+            work_items::WorkItemNoteCreateParams {
+                namespace_path: env.project.clone(),
+                work_item_iid: child_iid,
+                body: "a reply".into(),
+                internal: None,
+                discussion_id: Some(discussion_id.clone()),
+            },
+        )
+        .await
+        .ok()
+    })
+    .await;
     assert_eq!(
         n2["discussion"]["id"],
         serde_json::json!(discussion_id),
