@@ -562,7 +562,11 @@ pub struct GitlabMcpServer {
     // Used by the `call_tool` override below; reused per call rather than
     // rebuilt via `Self::tool_router()` each time.
     tool_router: ToolRouter<GitlabMcpServer>,
-    #[allow(dead_code)]
+    // Initialised by `new_stdio` but never read: `#[prompt_handler]` calls the
+    // `prompt_router()` *function*, not this field, and the prompt router is
+    // empty. `expect` (not `allow`) so that if a future rmcp starts reading the
+    // field, the unfulfilled-expectation lint flags this for removal.
+    #[expect(dead_code)]
     prompt_router: PromptRouter<GitlabMcpServer>,
     peer: Arc<OnceLock<Peer<RoleServer>>>,
     log_level: Arc<Mutex<LoggingLevel>>,
