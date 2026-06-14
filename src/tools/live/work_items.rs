@@ -6,8 +6,9 @@
 //! issue in GitLab *is* a work item (same project-scoped IID), so we seed an
 //! issue over REST and then read it back through both APIs and assert the
 //! overlapping fields match (modulo the known REST↔GraphQL representation
-//! differences: snake_case vs camelCase keys, "opened"/"closed" vs
-//! "OPEN"/"CLOSED" state, numeric vs `gid://` ids, u64 vs string iid).
+//! differences: snake_case vs camelCase keys, numeric vs `gid://` ids, u64 vs
+//! string iid — note state and workItemType casing are normalized by
+//! `flatten_work_item`, so those compare directly).
 //!
 //! Self-seeding and self-cleaning, like the rest of the suite. Skips without
 //! credentials.
@@ -105,15 +106,6 @@ async fn gql_work_item_get(env: &LiveEnv, iid: u64) -> Value {
     slim::slim_get(raw)
 }
 
-/// Map a GraphQL `WorkItemState` to the REST `state` spelling.
-fn graphql_state_to_rest(state: &str) -> &str {
-    match state {
-        "OPEN" => "opened",
-        "CLOSED" => "closed",
-        other => other,
-    }
-}
-
 /// Sorted label title strings from either an issue's or work item's `labels`.
 fn sorted_labels(v: &Value) -> Vec<String> {
     let mut labels: Vec<String> = v["labels"]
@@ -189,11 +181,8 @@ async fn work_item_get_matches_rest_issue_get() {
         "web url (webUrl vs web_url)"
     );
 
-    assert_eq!(
-        graphql_state_to_rest(gql["state"].as_str().expect("graphql state")),
-        rest["state"].as_str().expect("rest state"),
-        "state"
-    );
+    // State is normalized to the REST spelling, so it compares directly.
+    assert_eq!(gql["state"], rest["state"], "state");
 
     assert_eq!(sorted_labels(&gql), sorted_labels(&rest), "labels");
 
@@ -204,8 +193,8 @@ async fn work_item_get_matches_rest_issue_get() {
     );
     assert_eq!(gql["author"]["name"], rest["author"]["name"], "author name");
 
-    // GraphQL-only enrichment: an issue is a work item of type "Issue".
-    assert_eq!(gql["workItemType"], "Issue", "workItemType");
+    // GraphQL-only enrichment: an issue's type, normalized to the input enum form.
+    assert_eq!(gql["workItemType"], "ISSUE", "workItemType");
 
     delete_issue(&env, iid).await;
 }
@@ -309,7 +298,7 @@ async fn work_item_mutation_lifecycle_visible_via_rest() {
     .await
     .expect("work_item_create");
 
-    assert_eq!(created["workItemType"], "Issue", "created type");
+    assert_eq!(created["workItemType"], "ISSUE", "created type");
     let iid = created["iid"]
         .as_str()
         .expect("created iid is a string")
@@ -355,10 +344,7 @@ async fn work_item_mutation_lifecycle_visible_via_rest() {
         format!("{tag} wi-renamed"),
         "updated title"
     );
-    assert_eq!(
-        updated["state"], "CLOSED",
-        "updated state (GraphQL spelling)"
-    );
+    assert_eq!(updated["state"], "closed", "updated state (normalized)");
 
     // Verify the update is visible via REST.
     let rest2 = rest_issue_get(&env, iid).await;

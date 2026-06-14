@@ -49,6 +49,7 @@ const WORK_ITEM_FIELDS: &str = r#"
     createdAt
     updatedAt
     webUrl
+    userDiscussionsCount
     workItemType { name }
     author { id username name }
     widgets {
@@ -58,7 +59,7 @@ const WORK_ITEM_FIELDS: &str = r#"
         ... on WorkItemWidgetLabels { labels { nodes { id title color } } }
         ... on WorkItemWidgetHierarchy {
             parent { id iid title }
-            children { nodes { id iid title state } }
+            children { count nodes { id iid title state } }
         }
         ... on WorkItemWidgetStartAndDueDate { startDate dueDate }
         ... on WorkItemWidgetMilestone { milestone { id iid title } }
@@ -71,18 +72,34 @@ const WORK_ITEM_FIELDS: &str = r#"
 /// assignees, labels, hierarchy, dates) to the top level, dropping the
 /// `widgets` envelope. Unknown widget types are discarded. Null fields left
 /// behind (e.g. an unset `dueDate`) are removed later by `slim_get`.
+///
+/// Output casing is normalized to match the *input* conventions so a caller can
+/// round-trip / client-filter returned values: `workItemType` to the UPPER_SNAKE
+/// `IssueType` enum form (GraphQL returns "Issue"/"Key Result"), and `state` to
+/// the lowercase REST/`IssuableState` form (GraphQL returns "OPEN"/"CLOSED").
 fn flatten_work_item(mut node: Value) -> Value {
     let Some(obj) = node.as_object_mut() else {
         return node;
     };
 
-    // workItemType { name } -> "Task"
+    // workItemType { name } -> "ISSUE" (matches the `types: ["ISSUE"]` input).
     if let Some(name) = obj
         .get("workItemType")
         .and_then(|wt| wt.get("name"))
-        .cloned()
+        .and_then(Value::as_str)
     {
-        obj.insert("workItemType".into(), name);
+        let normalized = name.to_uppercase().replace(' ', "_");
+        obj.insert("workItemType".into(), json!(normalized));
+    }
+
+    // state "OPEN"/"CLOSED" -> "opened"/"closed" (matches the `state` input).
+    if let Some(state) = obj.get("state").and_then(Value::as_str) {
+        let normalized = match state {
+            "OPEN" => "opened",
+            "CLOSED" => "closed",
+            other => other,
+        };
+        obj.insert("state".into(), json!(normalized));
     }
 
     let Some(Value::Array(widgets)) = obj.remove("widgets") else {
@@ -120,8 +137,13 @@ fn flatten_work_item(mut node: Value) -> Value {
                 if let Some(parent) = w.get("parent") {
                     obj.insert("parent".into(), parent.clone());
                 }
-                if let Some(children) = w.get("children").and_then(|c| c.get("nodes")) {
-                    obj.insert("children".into(), children.clone());
+                if let Some(children) = w.get("children") {
+                    if let Some(nodes) = children.get("nodes") {
+                        obj.insert("children".into(), nodes.clone());
+                    }
+                    if let Some(count) = children.get("count") {
+                        obj.insert("childrenCount".into(), count.clone());
+                    }
                 }
             }
             Some("START_AND_DUE_DATE") => {
@@ -311,12 +333,32 @@ fn work_items_list_filters(p: &WorkItemsListParams) -> serde_json::Map<String, V
     v
 }
 
-/// Flatten a `workItems` connection's `nodes` array.
+/// Flatten a `workItems` connection's `nodes` array and slim each for list use.
 fn flatten_nodes(conn: &Value) -> Vec<Value> {
     conn.get("nodes")
         .and_then(Value::as_array)
-        .map(|nodes| nodes.iter().cloned().map(flatten_work_item).collect())
+        .map(|nodes| {
+            nodes
+                .iter()
+                .cloned()
+                .map(flatten_work_item)
+                .map(slim_list_node)
+                .collect()
+        })
         .unwrap_or_default()
+}
+
+/// Drop the bulk-expensive fields from a flattened work item for list responses
+/// (mirrors how `slim_list` strips `description` from REST list items). The full
+/// `description` and `children` remain available via the single-item get;
+/// `childrenCount` is kept so list callers still see whether an item has
+/// sub-items.
+fn slim_list_node(mut node: Value) -> Value {
+    if let Some(obj) = node.as_object_mut() {
+        obj.remove("description");
+        obj.remove("children");
+    }
+    node
 }
 
 pub async fn work_items_list(
@@ -991,7 +1033,7 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_work_items, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "Get a single GitLab work item (issue, task, epic, incident, objective/OKR, key result) by namespace path and IID. Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID) and work_item_iid (the number from the URL/reference, e.g. #42). Returns a flattened object with id (global ID), iid, title, state, workItemType, author, and lifted widget data: description, assignees, labels, parent/children (hierarchy), and startDate/dueDate. Field names are GraphQL camelCase. For classic project issues you can also use gitlab_issues_get."
+        description = "Get a single GitLab work item (issue, task, epic, incident, objective/OKR, key result) by namespace path and IID. Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID) and work_item_iid (the number from the URL/reference, e.g. #42). Returns a flattened object with id (global ID), iid, title, state, workItemType, author, userDiscussionsCount (number of comment threads), and lifted widget data: description, assignees, labels, parent/children + childrenCount (hierarchy), startDate/dueDate, milestone, and weight. Field names are GraphQL camelCase; values are normalized to match inputs — state is \"opened\"/\"closed\" and workItemType is UPPER_SNAKE (e.g. \"ISSUE\", \"KEY_RESULT\"). For classic project issues you can also use gitlab_issues_get."
     )]
     async fn gitlab_work_items_get(
         &self,
@@ -1001,7 +1043,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List GitLab work items (issues, tasks, epics, incidents, objectives/OKRs, key results) in a project or group. Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID). Optional filters: types (array of ISSUE/TASK/EPIC/INCIDENT/OBJECTIVE/KEY_RESULT/...), state (opened/closed/all), search (title + description), author_username, assignee_usernames, labels (names), milestone_title, confidential, and date ranges created_after/before, updated_after/before, due_after/before (ISO 8601). sort takes a WorkItemSort value (e.g. CREATED_DESC, UPDATED_DESC, DUE_DATE_ASC, TITLE_ASC). Pagination is cursor-based: first sets the page size (default 20, max 100) and after takes a cursor from the previous response; or pass fetch_all=true to merge every page into one nodes array. Returns { nodes: [...flattened work items...], pageInfo: { hasNextPage, endCursor } }. For classic project issues you can also use gitlab_issues_list."
+        description = "List GitLab work items (issues, tasks, epics, incidents, objectives/OKRs, key results) in a project or group. Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID). Optional filters: types (array of ISSUE/TASK/EPIC/INCIDENT/OBJECTIVE/KEY_RESULT/...), state (opened/closed/all), search (title + description), author_username, assignee_usernames, labels (names), milestone_title, confidential, and date ranges created_after/before, updated_after/before, due_after/before (ISO 8601). sort takes a WorkItemSort value (e.g. CREATED_DESC, UPDATED_DESC, DUE_DATE_ASC, TITLE_ASC). Pagination is cursor-based: first sets the page size (default 20, max 100) and after takes a cursor from the previous response; or pass fetch_all=true to merge every page into one nodes array. Returns { nodes: [...flattened work items...], pageInfo: { hasNextPage, endCursor } }. List nodes omit `description` and the `children` array to save tokens (kept on the single-item get; `childrenCount` and `userDiscussionsCount` remain). Values are normalized like get (state \"opened\"/\"closed\", workItemType UPPER_SNAKE). For classic project issues you can also use gitlab_issues_list."
     )]
     async fn gitlab_work_items_list(
         &self,
@@ -1110,6 +1152,7 @@ mod tests {
             "createdAt": "2026-01-01T00:00:00Z",
             "updatedAt": "2026-01-02T00:00:00Z",
             "webUrl": format!("https://gitlab.example.com/mygroup/myproject/-/work_items/{iid}"),
+            "userDiscussionsCount": 4,
             "workItemType": { "name": "Task" },
             "author": {
                 "id": "gid://gitlab/User/1",
@@ -1128,7 +1171,7 @@ mod tests {
                 ] } },
                 { "type": "HIERARCHY",
                   "parent": { "id": "gid://gitlab/WorkItem/9", "iid": "1", "title": "Parent" },
-                  "children": { "nodes": [
+                  "children": { "count": 1, "nodes": [
                       { "id": "gid://gitlab/WorkItem/11", "iid": "3", "title": "Child", "state": "OPEN" }
                   ] } },
                 { "type": "START_AND_DUE_DATE", "startDate": "2026-01-01", "dueDate": null },
@@ -1171,8 +1214,11 @@ mod tests {
         // Top-level fields preserved.
         assert_eq!(item["title"], "Do the thing");
         assert_eq!(item["iid"], "42");
-        // workItemType collapsed to its name.
-        assert_eq!(item["workItemType"], "Task");
+        // Casing normalized to match inputs.
+        assert_eq!(item["workItemType"], "TASK");
+        assert_eq!(item["state"], "opened");
+        // Comment-thread count surfaced.
+        assert_eq!(item["userDiscussionsCount"], 4);
         // Widgets lifted to the top level, `widgets` envelope gone.
         assert!(item.get("widgets").is_none());
         assert_eq!(item["description"], "the body");
@@ -1180,7 +1226,9 @@ mod tests {
         // Labels collapsed to title strings.
         assert_eq!(item["labels"], serde_json::json!(["bug", "p1"]));
         assert_eq!(item["parent"]["title"], "Parent");
+        // get keeps the full children array AND the count.
         assert_eq!(item["children"][0]["iid"], "3");
+        assert_eq!(item["childrenCount"], 1);
         assert_eq!(item["startDate"], "2026-01-01");
         assert_eq!(item["milestone"]["title"], "v1.0");
         assert_eq!(item["weight"], 5);
@@ -1281,6 +1329,20 @@ mod tests {
         assert_eq!(nodes[0]["title"], "Alpha");
         assert_eq!(nodes[0]["labels"], serde_json::json!(["bug", "p1"]));
         assert!(nodes[0].get("widgets").is_none());
+        // List slimming: bulk fields dropped, cheap signals kept.
+        assert!(
+            nodes[0].get("description").is_none(),
+            "description stripped from list nodes"
+        );
+        assert!(
+            nodes[0].get("children").is_none(),
+            "children array stripped from list nodes"
+        );
+        assert_eq!(nodes[0]["childrenCount"], 1, "child count retained");
+        assert_eq!(
+            nodes[0]["userDiscussionsCount"], 4,
+            "comment count retained"
+        );
         // Cursor surfaced for the caller to paginate.
         assert_eq!(result["pageInfo"]["hasNextPage"], true);
         assert_eq!(result["pageInfo"]["endCursor"], "CURSOR123");
@@ -1502,7 +1564,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(item["title"], "New task");
-        assert_eq!(item["workItemType"], "Task");
+        assert_eq!(item["workItemType"], "TASK");
         assert!(item.get("widgets").is_none());
     }
 
