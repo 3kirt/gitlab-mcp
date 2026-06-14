@@ -301,6 +301,10 @@ async fn work_item_mutation_lifecycle_visible_via_rest() {
             labels: None,
             assignees: None,
             parent_work_item_iid: None,
+            start_date: None,
+            due_date: None,
+            milestone_id: None,
+            weight: None,
         },
     )
     .await
@@ -339,6 +343,10 @@ async fn work_item_mutation_lifecycle_visible_via_rest() {
             remove_labels: None,
             assignees: None,
             parent_work_item_iid: None,
+            start_date: None,
+            due_date: None,
+            milestone_id: None,
+            weight: None,
         },
     )
     .await
@@ -425,6 +433,10 @@ async fn work_item_create_with_labels_and_assignee_visible_via_rest() {
             labels: Some(vec!["bug".into()]),
             assignees: Some(vec![username.clone()]),
             parent_work_item_iid: None,
+            start_date: None,
+            due_date: None,
+            milestone_id: None,
+            weight: None,
         },
     )
     .await
@@ -457,6 +469,10 @@ async fn work_item_create_with_labels_and_assignee_visible_via_rest() {
             remove_labels: Some(vec!["bug".into()]),
             assignees: None,
             parent_work_item_iid: None,
+            start_date: None,
+            due_date: None,
+            milestone_id: None,
+            weight: None,
         },
     )
     .await
@@ -486,6 +502,10 @@ async fn work_item_create_with_parent_sets_hierarchy() {
             labels: None,
             assignees: None,
             parent_work_item_iid: None,
+            start_date: None,
+            due_date: None,
+            milestone_id: None,
+            weight: None,
         },
     )
     .await
@@ -507,6 +527,10 @@ async fn work_item_create_with_parent_sets_hierarchy() {
             labels: None,
             assignees: None,
             parent_work_item_iid: Some(parent_iid_u64),
+            start_date: None,
+            due_date: None,
+            milestone_id: None,
+            weight: None,
         },
     )
     .await
@@ -662,6 +686,78 @@ async fn work_item_notes_lifecycle_visible_via_rest() {
     assert!(gone, "deleted note no longer in the list");
 
     delete_issue(&env, iid).await;
+}
+
+// --------------------------------------------------------------------------
+// Dates + milestone: set via GraphQL, verified via REST (and GraphQL read-back
+// for start_date, which is not a REST issue field). Weight is Premium-gated and
+// unsupported on the Free test instance, so it is wired but not exercised here.
+// --------------------------------------------------------------------------
+
+#[tokio::test]
+async fn work_item_dates_and_milestone_visible_via_rest() {
+    let env = skip_unless_live!();
+    let tag = run_tag();
+
+    // Self-seed a project milestone (the test project has none) via REST.
+    let proj = crate::tools::project_path(&env.project);
+    let milestone = env
+        .client
+        .post(
+            &format!("{proj}/milestones"),
+            &serde_json::json!({ "title": format!("{tag}-ms") }),
+        )
+        .await
+        .expect("create milestone");
+    let milestone_id = milestone["id"].as_u64().expect("milestone id");
+
+    // Create an Issue work item with start/due dates + the milestone.
+    let created = work_items::work_item_create(
+        &env.client,
+        work_items::WorkItemCreateParams {
+            namespace_path: env.project.clone(),
+            work_item_type: "ISSUE".into(),
+            title: format!("{tag} wi-scheduled"),
+            description: None,
+            confidential: None,
+            labels: None,
+            assignees: None,
+            parent_work_item_iid: None,
+            start_date: Some("2026-03-01".into()),
+            due_date: Some("2026-03-31".into()),
+            milestone_id: Some(milestone_id),
+            weight: None, // Premium-gated; not supported on the Free test instance.
+        },
+    )
+    .await
+    .expect("create with dates + milestone");
+    let iid = created["iid"].as_str().unwrap().parse::<u64>().unwrap();
+
+    // REST sees due_date and the milestone (an Issue work item is a REST issue).
+    let rest = rest_issue_get(&env, iid).await;
+    assert_eq!(rest["due_date"], "2026-03-31", "REST due_date");
+    assert_eq!(
+        rest["milestone"]["title"],
+        format!("{tag}-ms"),
+        "REST milestone"
+    );
+
+    // start_date isn't a REST issue field; verify it (and the rest) via GraphQL.
+    let gql = gql_work_item_get(&env, iid).await;
+    assert_eq!(gql["startDate"], "2026-03-01", "GraphQL startDate");
+    assert_eq!(gql["dueDate"], "2026-03-31", "GraphQL dueDate");
+    assert_eq!(
+        gql["milestone"]["title"],
+        format!("{tag}-ms"),
+        "GraphQL milestone"
+    );
+
+    // Cleanup (best-effort milestone delete).
+    delete_issue(&env, iid).await;
+    let _ = env
+        .client
+        .delete(&format!("{proj}/milestones/{milestone_id}"))
+        .await;
 }
 
 /// Re-run `check` (up to ~10s) until it returns true, tolerating read-after-write

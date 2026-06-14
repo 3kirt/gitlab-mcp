@@ -61,6 +61,8 @@ const WORK_ITEM_FIELDS: &str = r#"
             children { nodes { id iid title state } }
         }
         ... on WorkItemWidgetStartAndDueDate { startDate dueDate }
+        ... on WorkItemWidgetMilestone { milestone { id iid title } }
+        ... on WorkItemWidgetWeight { weight }
     }
 "#;
 
@@ -128,6 +130,16 @@ fn flatten_work_item(mut node: Value) -> Value {
                 }
                 if let Some(d) = w.get("dueDate") {
                     obj.insert("dueDate".into(), d.clone());
+                }
+            }
+            Some("MILESTONE") => {
+                if let Some(m) = w.get("milestone") {
+                    obj.insert("milestone".into(), m.clone());
+                }
+            }
+            Some("WEIGHT") => {
+                if let Some(weight) = w.get("weight") {
+                    obj.insert("weight".into(), weight.clone());
                 }
             }
             _ => {}
@@ -410,6 +422,42 @@ fn map_names_to_ids(
     Ok(ids)
 }
 
+/// Append the start/due-date, weight, and milestone widget inputs shared by
+/// create and update (both accept the same widget shapes). Each is added only
+/// when set. Setting a date sends `isFixed: true` — work items distinguish
+/// *fixed* dates from rolled-up/inherited ones (cf. the REST epics `*_is_fixed`
+/// pair). Milestone takes a numeric ID and builds the `Milestone` GID directly
+/// (no lookup). Weight needs Premium/Ultimate; on lower tiers the widget is
+/// absent and the mutation rejects it.
+fn apply_scalar_widgets(
+    input: &mut serde_json::Map<String, Value>,
+    start_date: Option<String>,
+    due_date: Option<String>,
+    weight: Option<u32>,
+    milestone_id: Option<u64>,
+) {
+    if start_date.is_some() || due_date.is_some() {
+        let mut w = serde_json::Map::new();
+        w.insert("isFixed".into(), json!(true));
+        if let Some(s) = start_date {
+            w.insert("startDate".into(), json!(s));
+        }
+        if let Some(d) = due_date {
+            w.insert("dueDate".into(), json!(d));
+        }
+        input.insert("startAndDueDateWidget".into(), Value::Object(w));
+    }
+    if let Some(weight) = weight {
+        input.insert("weightWidget".into(), json!({ "weight": weight }));
+    }
+    if let Some(mid) = milestone_id {
+        input.insert(
+            "milestoneWidget".into(),
+            json!({ "milestoneId": format!("gid://gitlab/Milestone/{mid}") }),
+        );
+    }
+}
+
 /// GitLab mutations report business-logic failures (e.g. "Title can't be blank")
 /// in a payload `errors` array while still returning HTTP 200 with no top-level
 /// `errors` — so `GitlabClient::graphql` cannot catch them. Every mutation must
@@ -460,6 +508,14 @@ pub struct WorkItemCreateParams {
         description = "IID of an existing work item in the same namespace to set as the hierarchy parent."
     )]
     pub parent_work_item_iid: Option<u64>,
+    #[schemars(description = "Start date (ISO 8601, e.g. \"2026-01-01\").")]
+    pub start_date: Option<String>,
+    #[schemars(description = "Due date (ISO 8601, e.g. \"2026-12-31\").")]
+    pub due_date: Option<String>,
+    #[schemars(description = "Numeric milestone ID to assign (not the title).")]
+    pub milestone_id: Option<u64>,
+    #[schemars(description = "Weight (non-negative integer). Requires Premium/Ultimate.")]
+    pub weight: Option<u32>,
 }
 
 pub async fn work_item_create(
@@ -490,6 +546,13 @@ pub async fn work_item_create(
         let parent_gid = resolve_work_item_gid(client, &p.namespace_path, parent_iid).await?;
         input.insert("hierarchyWidget".into(), json!({ "parentId": parent_gid }));
     }
+    apply_scalar_widgets(
+        &mut input,
+        p.start_date,
+        p.due_date,
+        p.weight,
+        p.milestone_id,
+    );
 
     let mutation = format!(
         "mutation($input: WorkItemCreateInput!) {{ \
@@ -537,6 +600,14 @@ pub struct WorkItemUpdateParams {
         description = "IID of an existing work item in the same namespace to set as the hierarchy parent."
     )]
     pub parent_work_item_iid: Option<u64>,
+    #[schemars(description = "Start date (ISO 8601, e.g. \"2026-01-01\").")]
+    pub start_date: Option<String>,
+    #[schemars(description = "Due date (ISO 8601, e.g. \"2026-12-31\").")]
+    pub due_date: Option<String>,
+    #[schemars(description = "Numeric milestone ID to assign (not the title).")]
+    pub milestone_id: Option<u64>,
+    #[schemars(description = "Weight (non-negative integer). Requires Premium/Ultimate.")]
+    pub weight: Option<u32>,
 }
 
 pub async fn work_item_update(
@@ -596,6 +667,13 @@ pub async fn work_item_update(
         let parent_gid = resolve_work_item_gid(client, &p.namespace_path, parent_iid).await?;
         input.insert("hierarchyWidget".into(), json!({ "parentId": parent_gid }));
     }
+    apply_scalar_widgets(
+        &mut input,
+        p.start_date,
+        p.due_date,
+        p.weight,
+        p.milestone_id,
+    );
 
     let mutation = format!(
         "mutation($input: WorkItemUpdateInput!) {{ \
@@ -829,7 +907,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create a GitLab work item (issue, task, epic, incident, objective/OKR, key result). Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID), work_item_type (ISSUE/TASK/EPIC/INCIDENT/OBJECTIVE/KEY_RESULT/TICKET — case-insensitive; EPIC/OBJECTIVE/KEY_RESULT need Premium/Ultimate), and title. Optional: description (Markdown), confidential. Returns the created work item (flattened, GraphQL camelCase fields). To create a classic project issue you can also use gitlab_issues_create."
+        description = "Create a GitLab work item (issue, task, epic, incident, objective/OKR, key result). Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID), work_item_type (ISSUE/TASK/EPIC/INCIDENT/OBJECTIVE/KEY_RESULT/TICKET — case-insensitive; EPIC/OBJECTIVE/KEY_RESULT need Premium/Ultimate), and title. Optional: description (Markdown), confidential, labels (names), assignees (usernames), parent_work_item_iid, start_date / due_date (ISO 8601), milestone_id (numeric), weight (Premium/Ultimate). Returns the created work item (flattened, GraphQL camelCase fields). To create a classic project issue you can also use gitlab_issues_create."
     )]
     async fn gitlab_work_items_create(
         &self,
@@ -839,7 +917,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update a GitLab work item (issue, task, epic, incident, objective/OKR, key result) by namespace path and IID. Required: namespace_path (full project or group path) and work_item_iid (the number from the URL/reference). All other fields optional: title, description (Markdown), state_event (\"close\" or \"reopen\"), confidential. Returns the updated work item (flattened). To update a classic project issue you can also use gitlab_issues_update."
+        description = "Update a GitLab work item (issue, task, epic, incident, objective/OKR, key result) by namespace path and IID. Required: namespace_path (full project or group path) and work_item_iid (the number from the URL/reference). All other fields optional: title, description (Markdown), state_event (\"close\" or \"reopen\"), confidential, add_labels / remove_labels (names), assignees (usernames, replaces), parent_work_item_iid, start_date / due_date (ISO 8601), milestone_id (numeric), weight (Premium/Ultimate). Returns the updated work item (flattened). To update a classic project issue you can also use gitlab_issues_update."
     )]
     async fn gitlab_work_items_update(
         &self,
@@ -949,7 +1027,9 @@ mod tests {
                   "children": { "nodes": [
                       { "id": "gid://gitlab/WorkItem/11", "iid": "3", "title": "Child", "state": "OPEN" }
                   ] } },
-                { "type": "START_AND_DUE_DATE", "startDate": "2026-01-01", "dueDate": null }
+                { "type": "START_AND_DUE_DATE", "startDate": "2026-01-01", "dueDate": null },
+                { "type": "MILESTONE", "milestone": { "id": "gid://gitlab/Milestone/3", "iid": "1", "title": "v1.0" } },
+                { "type": "WEIGHT", "weight": 5 }
             ]
         })
     }
@@ -998,6 +1078,8 @@ mod tests {
         assert_eq!(item["parent"]["title"], "Parent");
         assert_eq!(item["children"][0]["iid"], "3");
         assert_eq!(item["startDate"], "2026-01-01");
+        assert_eq!(item["milestone"]["title"], "v1.0");
+        assert_eq!(item["weight"], 5);
     }
 
     #[tokio::test]
@@ -1220,6 +1302,10 @@ mod tests {
                 labels: None,
                 assignees: None,
                 parent_work_item_iid: None,
+                start_date: None,
+                due_date: None,
+                milestone_id: None,
+                weight: None,
             },
         )
         .await
@@ -1246,6 +1332,10 @@ mod tests {
                 labels: None,
                 assignees: None,
                 parent_work_item_iid: None,
+                start_date: None,
+                due_date: None,
+                milestone_id: None,
+                weight: None,
             },
         )
         .await
@@ -1290,6 +1380,10 @@ mod tests {
                 labels: None,
                 assignees: None,
                 parent_work_item_iid: None,
+                start_date: None,
+                due_date: None,
+                milestone_id: None,
+                weight: None,
             },
         )
         .await
@@ -1393,6 +1487,10 @@ mod tests {
                 labels: Some(vec!["bug".into()]),
                 assignees: Some(vec!["alice".into()]),
                 parent_work_item_iid: Some(9),
+                start_date: None,
+                due_date: None,
+                milestone_id: None,
+                weight: None,
             },
         )
         .await
@@ -1433,6 +1531,10 @@ mod tests {
                 labels: Some(vec!["ghost".into()]),
                 assignees: None,
                 parent_work_item_iid: None,
+                start_date: None,
+                due_date: None,
+                milestone_id: None,
+                weight: None,
             },
         )
         .await
@@ -1444,6 +1546,58 @@ mod tests {
             }
             other => panic!("expected Other error, got {other}"),
         }
+    }
+
+    #[tokio::test]
+    async fn work_item_create_builds_date_milestone_weight_widgets() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(body_string_contains("workItemTypes"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "namespace": { "workItemTypes": { "nodes": [
+                    { "id": "gid://gitlab/WorkItems::Type/1", "name": "Issue" }
+                ] } } }
+            })))
+            .mount(&server)
+            .await;
+        // Mutation matches only if the widgets are built correctly: dates carry
+        // isFixed:true, milestone is the constructed GID, weight is the int.
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(body_partial_json(serde_json::json!({
+                "variables": { "input": {
+                    "startAndDueDateWidget": { "isFixed": true, "startDate": "2026-01-01", "dueDate": "2026-12-31" },
+                    "milestoneWidget": { "milestoneId": "gid://gitlab/Milestone/7" },
+                    "weightWidget": { "weight": 3 }
+                } }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "workItemCreate": { "errors": [], "workItem": work_item_node(1, "scheduled") } }
+            })))
+            .mount(&server)
+            .await;
+
+        let item = work_item_create(
+            &mock_client(&server),
+            WorkItemCreateParams {
+                namespace_path: "mygroup/myproject".into(),
+                work_item_type: "ISSUE".into(),
+                title: "scheduled".into(),
+                description: None,
+                confidential: None,
+                labels: None,
+                assignees: None,
+                parent_work_item_iid: None,
+                start_date: Some("2026-01-01".into()),
+                due_date: Some("2026-12-31".into()),
+                milestone_id: Some(7),
+                weight: Some(3),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(item["title"], "scheduled");
     }
 
     // ------------------------------------------------------------------
@@ -1502,6 +1656,10 @@ mod tests {
                 remove_labels: None,
                 assignees: None,
                 parent_work_item_iid: None,
+                start_date: None,
+                due_date: None,
+                milestone_id: None,
+                weight: None,
             },
         )
         .await
@@ -1527,6 +1685,10 @@ mod tests {
                 remove_labels: None,
                 assignees: None,
                 parent_work_item_iid: None,
+                start_date: None,
+                due_date: None,
+                milestone_id: None,
+                weight: None,
             },
         )
         .await
@@ -1599,6 +1761,10 @@ mod tests {
                 remove_labels: Some(vec!["wontfix".into()]),
                 assignees: Some(vec!["alice".into()]),
                 parent_work_item_iid: None,
+                start_date: None,
+                due_date: None,
+                milestone_id: None,
+                weight: None,
             },
         )
         .await
