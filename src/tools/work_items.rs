@@ -205,7 +205,7 @@ const DEFAULT_FIRST: u64 = 20;
 /// GitLab caps work-item connection page size at 100.
 const MAX_FIRST: u64 = 100;
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
 pub struct WorkItemsListParams {
     #[schemars(
         description = "Full path of the project or group to list work items in (e.g. \"mygroup/myproject\" or \"mygroup/subgroup\"). Not a numeric ID."
@@ -219,55 +219,159 @@ pub struct WorkItemsListParams {
     pub state: Option<String>,
     #[schemars(description = "Search text matched against title and description.")]
     pub search: Option<String>,
+    #[schemars(description = "Filter by author username.")]
+    pub author_username: Option<String>,
+    #[schemars(description = "Filter by assignee username(s).")]
+    pub assignee_usernames: Option<Vec<String>>,
+    #[schemars(description = "Filter by label name(s) (all must be present).")]
+    pub labels: Option<Vec<String>>,
+    #[schemars(description = "Filter by milestone title.")]
+    pub milestone_title: Option<String>,
+    #[schemars(description = "Filter by confidentiality.")]
+    pub confidential: Option<bool>,
+    #[schemars(description = "Only items created at/after this ISO 8601 timestamp.")]
+    pub created_after: Option<String>,
+    #[schemars(description = "Only items created at/before this ISO 8601 timestamp.")]
+    pub created_before: Option<String>,
+    #[schemars(description = "Only items updated at/after this ISO 8601 timestamp.")]
+    pub updated_after: Option<String>,
+    #[schemars(description = "Only items updated at/before this ISO 8601 timestamp.")]
+    pub updated_before: Option<String>,
+    #[schemars(description = "Only items due at/after this ISO 8601 timestamp.")]
+    pub due_after: Option<String>,
+    #[schemars(description = "Only items due at/before this ISO 8601 timestamp.")]
+    pub due_before: Option<String>,
     #[schemars(
-        description = "Page size (default 20, max 100). GraphQL cursor pagination: combine with `after`."
+        description = "Sort order (WorkItemSort), e.g. CREATED_DESC (default), CREATED_ASC, UPDATED_DESC, TITLE_ASC, DUE_DATE_ASC, DUE_DATE_DESC."
+    )]
+    pub sort: Option<String>,
+    #[schemars(
+        description = "Page size (default 20, max 100). GraphQL cursor pagination: combine with `after`. Ignored when `fetch_all` is true."
     )]
     pub first: Option<u64>,
     #[schemars(
         description = "Pagination cursor: pass the `pageInfo.endCursor` from a previous response to fetch the next page."
     )]
     pub after: Option<String>,
+    #[schemars(
+        description = "Fetch every page and merge the results into one `nodes` array, ignoring `first`/`after`. Use sparingly: large namespaces require many sequential requests."
+    )]
+    pub fetch_all: Option<bool>,
+}
+
+/// The list query, with every filter as a (nullable) variable. Built once and
+/// reused across pages for `fetch_all`.
+fn work_items_list_query() -> String {
+    format!(
+        "query($fullPath: ID!, $state: IssuableState, $types: [IssueType!], $search: String, \
+               $authorUsername: String, $assigneeUsernames: [String!], $labelName: [String!], \
+               $milestoneTitle: [String!], $confidential: Boolean, \
+               $createdAfter: Time, $createdBefore: Time, $updatedAfter: Time, $updatedBefore: Time, \
+               $dueAfter: Time, $dueBefore: Time, $sort: WorkItemSort, \
+               $first: Int, $after: String) {{ \
+            namespace(fullPath: $fullPath) {{ \
+                workItems(state: $state, types: $types, search: $search, \
+                    authorUsername: $authorUsername, assigneeUsernames: $assigneeUsernames, \
+                    labelName: $labelName, milestoneTitle: $milestoneTitle, confidential: $confidential, \
+                    createdAfter: $createdAfter, createdBefore: $createdBefore, \
+                    updatedAfter: $updatedAfter, updatedBefore: $updatedBefore, \
+                    dueAfter: $dueAfter, dueBefore: $dueBefore, sort: $sort, \
+                    first: $first, after: $after) {{ \
+                    pageInfo {{ hasNextPage endCursor }} \
+                    nodes {{ {WORK_ITEM_FIELDS} }} \
+                }} \
+            }} \
+        }}"
+    )
+}
+
+/// The filter variables shared by every page (everything except `first`/`after`).
+fn work_items_list_filters(p: &WorkItemsListParams) -> serde_json::Map<String, Value> {
+    let mut v = serde_json::Map::new();
+    v.insert("fullPath".into(), json!(p.namespace_path));
+    v.insert("state".into(), json!(p.state));
+    v.insert("types".into(), json!(p.types));
+    v.insert("search".into(), json!(p.search));
+    v.insert("authorUsername".into(), json!(p.author_username));
+    v.insert("assigneeUsernames".into(), json!(p.assignee_usernames));
+    v.insert("labelName".into(), json!(p.labels));
+    // milestoneTitle is [String!]; wrap the single friendly title in a list.
+    v.insert(
+        "milestoneTitle".into(),
+        json!(p.milestone_title.clone().map(|t| vec![t])),
+    );
+    v.insert("confidential".into(), json!(p.confidential));
+    v.insert("createdAfter".into(), json!(p.created_after));
+    v.insert("createdBefore".into(), json!(p.created_before));
+    v.insert("updatedAfter".into(), json!(p.updated_after));
+    v.insert("updatedBefore".into(), json!(p.updated_before));
+    v.insert("dueAfter".into(), json!(p.due_after));
+    v.insert("dueBefore".into(), json!(p.due_before));
+    v.insert("sort".into(), json!(p.sort));
+    v
+}
+
+/// Flatten a `workItems` connection's `nodes` array.
+fn flatten_nodes(conn: &Value) -> Vec<Value> {
+    conn.get("nodes")
+        .and_then(Value::as_array)
+        .map(|nodes| nodes.iter().cloned().map(flatten_work_item).collect())
+        .unwrap_or_default()
 }
 
 pub async fn work_items_list(
     client: &GitlabClient,
     p: WorkItemsListParams,
 ) -> Result<Value, GitlabError> {
-    let query = format!(
-        "query($fullPath: ID!, $state: IssuableState, $types: [IssueType!], \
-               $search: String, $first: Int, $after: String) {{ \
-            namespace(fullPath: $fullPath) {{ \
-                workItems(state: $state, types: $types, search: $search, first: $first, after: $after) {{ \
-                    pageInfo {{ hasNextPage endCursor }} \
-                    nodes {{ {WORK_ITEM_FIELDS} }} \
-                }} \
-            }} \
-        }}"
-    );
-    let first = p.first.unwrap_or(DEFAULT_FIRST).min(MAX_FIRST);
-    let vars = json!({
-        "fullPath": p.namespace_path,
-        "state": p.state,
-        "types": p.types,
-        "search": p.search,
-        "first": first,
-        "after": p.after,
-    });
+    let query = work_items_list_query();
+    let filters = work_items_list_filters(&p);
+    let not_found = || GitlabError::Other(format!("namespace not found: {}", p.namespace_path));
 
-    let data = client.graphql(&query, vars).await?;
-    let conn = data
-        .pointer("/namespace/workItems")
-        .ok_or_else(|| GitlabError::Other(format!("namespace not found: {}", p.namespace_path)))?;
+    if !p.fetch_all.unwrap_or(false) {
+        let first = p.first.unwrap_or(DEFAULT_FIRST).min(MAX_FIRST);
+        let mut vars = filters;
+        vars.insert("first".into(), json!(first));
+        vars.insert("after".into(), json!(p.after));
+        let data = client.graphql(&query, Value::Object(vars)).await?;
+        let conn = data.pointer("/namespace/workItems").ok_or_else(not_found)?;
+        return Ok(json!({
+            "nodes": flatten_nodes(conn),
+            "pageInfo": conn.get("pageInfo").cloned().unwrap_or(Value::Null),
+        }));
+    }
 
-    let nodes: Vec<Value> = conn
-        .get("nodes")
-        .and_then(Value::as_array)
-        .map(|nodes| nodes.iter().cloned().map(flatten_work_item).collect())
-        .unwrap_or_default();
+    // fetch_all: walk pages at MAX_FIRST each until there is no next page,
+    // bounded by MAX_PAGES (mirrors the REST `paginate` helper).
+    let mut all: Vec<Value> = Vec::new();
+    let mut after: Option<String> = None;
+    let mut page = 0u64;
+    loop {
+        page += 1;
+        if page > crate::client::MAX_PAGES {
+            return Err(GitlabError::Other(format!(
+                "fetch_all exceeded the {}-page limit; narrow the query",
+                crate::client::MAX_PAGES
+            )));
+        }
+        let mut vars = filters.clone();
+        vars.insert("first".into(), json!(MAX_FIRST));
+        vars.insert("after".into(), json!(after));
+        let data = client.graphql(&query, Value::Object(vars)).await?;
+        let conn = data.pointer("/namespace/workItems").ok_or_else(not_found)?;
+        all.extend(flatten_nodes(conn));
 
+        let page_info = &conn["pageInfo"];
+        if !page_info["hasNextPage"].as_bool().unwrap_or(false) {
+            break;
+        }
+        match page_info["endCursor"].as_str() {
+            Some(c) => after = Some(c.to_string()),
+            None => break,
+        }
+    }
     Ok(json!({
-        "nodes": nodes,
-        "pageInfo": conn.get("pageInfo").cloned().unwrap_or(Value::Null),
+        "nodes": all,
+        "pageInfo": { "hasNextPage": false, "endCursor": Value::Null },
     }))
 }
 
@@ -897,7 +1001,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List GitLab work items (issues, tasks, epics, incidents, objectives/OKRs, key results) in a project or group. Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID). Optional filters: types (array of ISSUE/TASK/EPIC/INCIDENT/OBJECTIVE/KEY_RESULT/...), state (opened/closed/all), search (title + description). Pagination is cursor-based: first sets the page size (default 20, max 100), and after takes a cursor from the previous response. Returns { nodes: [...flattened work items...], pageInfo: { hasNextPage, endCursor } }. For classic project issues you can also use gitlab_issues_list."
+        description = "List GitLab work items (issues, tasks, epics, incidents, objectives/OKRs, key results) in a project or group. Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID). Optional filters: types (array of ISSUE/TASK/EPIC/INCIDENT/OBJECTIVE/KEY_RESULT/...), state (opened/closed/all), search (title + description), author_username, assignee_usernames, labels (names), milestone_title, confidential, and date ranges created_after/before, updated_after/before, due_after/before (ISO 8601). sort takes a WorkItemSort value (e.g. CREATED_DESC, UPDATED_DESC, DUE_DATE_ASC, TITLE_ASC). Pagination is cursor-based: first sets the page size (default 20, max 100) and after takes a cursor from the previous response; or pass fetch_all=true to merge every page into one nodes array. Returns { nodes: [...flattened work items...], pageInfo: { hasNextPage, endCursor } }. For classic project issues you can also use gitlab_issues_list."
     )]
     async fn gitlab_work_items_list(
         &self,
@@ -1165,9 +1269,7 @@ mod tests {
                 namespace_path: "mygroup/myproject".into(),
                 types: Some(vec!["TASK".into()]),
                 state: Some("opened".into()),
-                search: None,
-                first: None,
-                after: None,
+                ..Default::default()
             },
         )
         .await
@@ -1205,11 +1307,8 @@ mod tests {
             &mock_client(&server),
             WorkItemsListParams {
                 namespace_path: "mygroup/myproject".into(),
-                types: None,
-                state: None,
-                search: None,
                 first: Some(500),
-                after: None,
+                ..Default::default()
             },
         )
         .await
@@ -1232,11 +1331,7 @@ mod tests {
             &mock_client(&server),
             WorkItemsListParams {
                 namespace_path: "ghost/nope".into(),
-                types: None,
-                state: None,
-                search: None,
-                first: None,
-                after: None,
+                ..Default::default()
             },
         )
         .await
@@ -1245,6 +1340,101 @@ mod tests {
             crate::client::GitlabError::Other(msg) => assert!(msg.contains("namespace not found")),
             other => panic!("expected Other error, got {other}"),
         }
+    }
+
+    #[tokio::test]
+    async fn work_items_list_passes_filters_and_sort() {
+        let server = MockServer::start().await;
+        // The mock matches only if every filter is forwarded as the right variable.
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(body_partial_json(serde_json::json!({
+                "variables": {
+                    "authorUsername": "alice",
+                    "assigneeUsernames": ["bob"],
+                    "labelName": ["bug"],
+                    "milestoneTitle": ["v1"],
+                    "confidential": true,
+                    "createdAfter": "2026-01-01T00:00:00Z",
+                    "dueBefore": "2026-12-31T00:00:00Z",
+                    "sort": "DUE_DATE_ASC"
+                }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "namespace": { "workItems": {
+                    "pageInfo": { "hasNextPage": false, "endCursor": null },
+                    "nodes": [work_item_node(1, "Filtered")]
+                } } }
+            })))
+            .mount(&server)
+            .await;
+
+        let result = work_items_list(
+            &mock_client(&server),
+            WorkItemsListParams {
+                namespace_path: "mygroup/myproject".into(),
+                author_username: Some("alice".into()),
+                assignee_usernames: Some(vec!["bob".into()]),
+                labels: Some(vec!["bug".into()]),
+                milestone_title: Some("v1".into()),
+                confidential: Some(true),
+                created_after: Some("2026-01-01T00:00:00Z".into()),
+                due_before: Some("2026-12-31T00:00:00Z".into()),
+                sort: Some("DUE_DATE_ASC".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(result["nodes"][0]["title"], "Filtered");
+    }
+
+    #[tokio::test]
+    async fn work_items_list_fetch_all_walks_pages() {
+        let server = MockServer::start().await;
+        // Page 1 (after = null): one node, hasNextPage = true.
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(body_string_contains(r#""after":null"#))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "namespace": { "workItems": {
+                    "pageInfo": { "hasNextPage": true, "endCursor": "P2" },
+                    "nodes": [work_item_node(1, "Page1")]
+                } } }
+            })))
+            .mount(&server)
+            .await;
+        // Page 2 (after = "P2"): one node, hasNextPage = false.
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(body_string_contains(r#""after":"P2""#))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "namespace": { "workItems": {
+                    "pageInfo": { "hasNextPage": false, "endCursor": null },
+                    "nodes": [work_item_node(2, "Page2")]
+                } } }
+            })))
+            .mount(&server)
+            .await;
+
+        let result = work_items_list(
+            &mock_client(&server),
+            WorkItemsListParams {
+                namespace_path: "mygroup/myproject".into(),
+                fetch_all: Some(true),
+                first: Some(1), // ignored when fetch_all
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let nodes = result["nodes"].as_array().unwrap();
+        assert_eq!(nodes.len(), 2, "both pages merged");
+        assert_eq!(nodes[0]["title"], "Page1");
+        assert_eq!(nodes[1]["title"], "Page2");
+        // Merged result is presented as a single complete page.
+        assert_eq!(result["pageInfo"]["hasNextPage"], false);
     }
 
     // ------------------------------------------------------------------

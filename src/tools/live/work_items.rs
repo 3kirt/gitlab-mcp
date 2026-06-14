@@ -243,10 +243,9 @@ async fn work_items_list_matches_rest_issues_list() {
             work_items::WorkItemsListParams {
                 namespace_path: env.project.clone(),
                 types: Some(vec!["ISSUE".into()]),
-                state: None,
                 search: Some(tag.clone()),
                 first: Some(100),
-                after: None,
+                ..Default::default()
             },
         )
         .await
@@ -758,6 +757,59 @@ async fn work_item_dates_and_milestone_visible_via_rest() {
         .client
         .delete(&format!("{proj}/milestones/{milestone_id}"))
         .await;
+}
+
+// --------------------------------------------------------------------------
+// List filters + fetch_all
+// --------------------------------------------------------------------------
+
+#[tokio::test]
+async fn work_items_list_fetch_all_and_filters_live() {
+    let env = skip_unless_live!();
+    let tag = run_tag();
+
+    let mut seeded = vec![
+        seed_issue_full(&env, format!("{tag} f1"), None, None).await,
+        seed_issue_full(&env, format!("{tag} f2"), None, None).await,
+    ];
+    seeded.sort();
+
+    let me = env.client.get("/api/v4/user").await.expect("GET /user");
+    let username = me["username"].as_str().unwrap().to_string();
+
+    // fetch_all + search + author filter + explicit sort: should surface exactly
+    // the two issues we authored (polled to absorb search-index lag).
+    let got = poll_for_iids(&seeded, || async {
+        let r = work_items::work_items_list(
+            &env.client,
+            work_items::WorkItemsListParams {
+                namespace_path: env.project.clone(),
+                types: Some(vec!["ISSUE".into()]),
+                search: Some(tag.clone()),
+                author_username: Some(username.clone()),
+                sort: Some("CREATED_ASC".into()),
+                fetch_all: Some(true),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("work_items_list fetch_all");
+        // fetch_all collapses to a single complete page.
+        assert_eq!(r["pageInfo"]["hasNextPage"], serde_json::json!(false));
+        gql_list_iids(&r["nodes"])
+    })
+    .await;
+
+    let mut got_sorted = got.clone();
+    got_sorted.sort();
+    assert_eq!(
+        got_sorted, seeded,
+        "fetch_all + filters returned the seeded set"
+    );
+
+    for iid in seeded {
+        delete_issue(&env, iid).await;
+    }
 }
 
 /// Re-run `check` (up to ~10s) until it returns true, tolerating read-after-write
