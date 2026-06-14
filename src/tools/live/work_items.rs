@@ -53,7 +53,22 @@ async fn seed_issue_full(
     )
     .await
     .expect("seed issue");
-    created["iid"].as_u64().expect("created issue has iid")
+    let iid = created["iid"].as_u64().expect("created issue has iid");
+    // Wait out REST-write → GraphQL-read replica lag so later GraphQL ops on this
+    // issue (which resolve its IID → GID) don't 404.
+    poll_value("seeded issue visible via graphql", || async {
+        work_items::work_item_get(
+            &env.client,
+            work_items::WorkItemGetParams {
+                namespace_path: env.project.clone(),
+                work_item_iid: iid,
+            },
+        )
+        .await
+        .ok()
+    })
+    .await;
+    iid
 }
 
 /// `IssuesListParams` defaulted except for `search` — mirrors the REST list the
@@ -78,31 +93,38 @@ fn issues_list_params(project: &str, search: &str) -> issues::IssuesListParams {
 }
 
 /// Fetch an issue through the REST path the server uses (domain fn + `slim_get`).
+/// Polls for existence to absorb GraphQL-write → REST-read replica lag.
 async fn rest_issue_get(env: &LiveEnv, iid: u64) -> Value {
-    let raw = issues::issue_get(
-        &env.client,
-        issues::IssueGetParams {
-            project_id: env.project.clone().into(),
-            issue_iid: iid,
-        },
-    )
-    .await
-    .expect("issue_get");
+    let raw = poll_value("rest issue_get", || async {
+        issues::issue_get(
+            &env.client,
+            issues::IssueGetParams {
+                project_id: env.project.clone().into(),
+                issue_iid: iid,
+            },
+        )
+        .await
+        .ok()
+    })
+    .await;
     slim::slim_get(raw)
 }
 
 /// Fetch a work item through the GraphQL path the server uses (domain fn +
-/// `slim_get`, matching `json_result`).
+/// `slim_get`, matching `json_result`). Polls for existence to absorb replica lag.
 async fn gql_work_item_get(env: &LiveEnv, iid: u64) -> Value {
-    let raw = work_items::work_item_get(
-        &env.client,
-        work_items::WorkItemGetParams {
-            namespace_path: env.project.clone(),
-            work_item_iid: iid,
-        },
-    )
-    .await
-    .expect("work_item_get");
+    let raw = poll_value("work_item_get", || async {
+        work_items::work_item_get(
+            &env.client,
+            work_items::WorkItemGetParams {
+                namespace_path: env.project.clone(),
+                work_item_iid: iid,
+            },
+        )
+        .await
+        .ok()
+    })
+    .await;
     slim::slim_get(raw)
 }
 
@@ -565,6 +587,7 @@ async fn work_item_notes_lifecycle_visible_via_rest() {
             work_item_iid: iid,
             body: body.clone(),
             internal: None,
+            discussion_id: None,
         },
     )
     .await
@@ -912,6 +935,138 @@ async fn work_items_list_fetch_all_and_filters_live() {
     }
 }
 
+// --------------------------------------------------------------------------
+// #23 follow-ups: clear parent, threaded reply, note emoji
+// --------------------------------------------------------------------------
+
+#[tokio::test]
+async fn work_item_23_followups_live() {
+    let env = skip_unless_live!();
+    let tag = run_tag();
+
+    // --- clear parent: Issue parent -> Task child, then detach ---
+    let parent = work_items::work_item_create(
+        &env.client,
+        work_items::WorkItemCreateParams {
+            namespace_path: env.project.clone(),
+            work_item_type: "ISSUE".into(),
+            title: format!("{tag} fu-parent"),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("create parent");
+    let parent_iid = parent["iid"].as_str().unwrap().parse::<u64>().unwrap();
+
+    let child = work_items::work_item_create(
+        &env.client,
+        work_items::WorkItemCreateParams {
+            namespace_path: env.project.clone(),
+            work_item_type: "TASK".into(),
+            title: format!("{tag} fu-child"),
+            parent_work_item_iid: Some(parent_iid),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("create child");
+    let child_iid = child["iid"].as_str().unwrap().parse::<u64>().unwrap();
+    assert_eq!(
+        gql_work_item_get(&env, child_iid).await["parent"]["iid"],
+        serde_json::json!(parent_iid.to_string()),
+        "child starts attached"
+    );
+
+    // Detach with the sentinel 0.
+    work_items::work_item_update(
+        &env.client,
+        work_items::WorkItemUpdateParams {
+            namespace_path: env.project.clone(),
+            work_item_iid: child_iid,
+            parent_work_item_iid: Some(0),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("detach parent");
+    assert!(
+        gql_work_item_get(&env, child_iid)
+            .await
+            .get("parent")
+            .is_none(),
+        "parent detached"
+    );
+
+    // --- threaded reply: reply lands in the same discussion ---
+    let n1 = work_items::work_item_note_create(
+        &env.client,
+        work_items::WorkItemNoteCreateParams {
+            namespace_path: env.project.clone(),
+            work_item_iid: child_iid,
+            body: "thread start".into(),
+            internal: None,
+            discussion_id: None,
+        },
+    )
+    .await
+    .expect("note create");
+    let discussion_id = n1["discussion"]["id"]
+        .as_str()
+        .expect("discussion id")
+        .to_string();
+    let n2 = work_items::work_item_note_create(
+        &env.client,
+        work_items::WorkItemNoteCreateParams {
+            namespace_path: env.project.clone(),
+            work_item_iid: child_iid,
+            body: "a reply".into(),
+            internal: None,
+            discussion_id: Some(discussion_id.clone()),
+        },
+    )
+    .await
+    .expect("note reply");
+    assert_eq!(
+        n2["discussion"]["id"],
+        serde_json::json!(discussion_id),
+        "reply joined the thread"
+    );
+
+    // --- note emoji: react on the first note ---
+    let note_id = n1["id"].as_str().unwrap().to_string();
+    let award = work_items::work_item_note_emoji_add(
+        &env.client,
+        work_items::WorkItemNoteEmojiParams {
+            note_id: note_id.clone(),
+            name: "thumbsup".into(),
+        },
+    )
+    .await
+    .expect("note emoji add");
+    assert_eq!(award["name"], "thumbsup");
+    work_items::work_item_note_emoji_remove(
+        &env.client,
+        work_items::WorkItemNoteEmojiParams {
+            note_id,
+            name: "thumbsup".into(),
+        },
+    )
+    .await
+    .expect("note emoji remove");
+
+    // Cleanup (child is a Task — delete over GraphQL).
+    work_items::work_item_delete(
+        &env.client,
+        work_items::WorkItemDeleteParams {
+            namespace_path: env.project.clone(),
+            work_item_iid: child_iid,
+        },
+    )
+    .await
+    .expect("delete child");
+    delete_issue(&env, parent_iid).await;
+}
+
 /// Re-run `check` (up to ~10s) until it returns true, tolerating read-after-write
 /// lag and transient read errors. Returns false if it never does.
 async fn poll_until<F, Fut>(mut check: F) -> bool
@@ -926,6 +1081,24 @@ where
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
     false
+}
+
+/// Retry an async fetch returning `Option`, until it yields `Some` or ~10s pass.
+/// Absorbs gitlab.com's read replica lag between a write on one API and a read
+/// on the other (a REST-created issue isn't instantly visible to GraphQL, and
+/// vice versa).
+async fn poll_value<F, Fut, T>(what: &str, mut f: F) -> T
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Option<T>>,
+{
+    for _ in 0..20 {
+        if let Some(v) = f().await {
+            return v;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    panic!("{what} did not become available within timeout");
 }
 
 /// Re-run `fetch` (up to ~10s) until its returned iids contain every `expected`

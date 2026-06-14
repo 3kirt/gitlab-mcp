@@ -144,9 +144,13 @@ ready.
   against gitlab.com, which can trip GitLab's per-endpoint rate limits (notably
   on rapid issue/note creation). `GitlabClient` retries any `429 Too Many
   Requests` honoring the `Retry-After` header (bounded: 4 retries, 60s cap), so
-  the suite waits out a limit rather than failing. Read-after-write lag (a
-  separate transient) is handled per-test by the `poll_until`/`poll_for_iids`
-  helpers.
+  the suite waits out a limit rather than failing. **Read-after-write replica
+  lag** (a separate transient — gitlab.com load-balances reads across DB
+  replicas, so an issue created via REST isn't instantly visible to a GraphQL
+  read, and vice versa) is handled by polling: the work-items live helpers wait
+  for cross-API visibility after seeding (`seed_issue_full`) and on read-back
+  (`rest_issue_get`/`gql_work_item_get` via `poll_value`), and `poll_until`/
+  `poll_for_iids` cover value-level waits.
 - **Skips without credentials.** `skip_unless_live!` returns early (printing a
   notice) when `GITLAB_URL`/`GITLAB_TOKEN` are absent, so the feature is safe to
   enable in CI without secrets — supply credentials in a dedicated job to

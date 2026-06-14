@@ -72,6 +72,9 @@ const WORK_ITEM_FIELDS: &str = r#"
             upvotes downvotes
             awardEmoji { nodes { name user { id username name } } }
         }
+        ... on WorkItemWidgetDevelopment {
+            closingMergeRequests { nodes { mergeRequest { iid title webUrl state } } }
+        }
     }
 "#;
 
@@ -190,6 +193,21 @@ fn flatten_work_item(mut node: Value) -> Value {
                 }
                 if let Some(nodes) = w.get("awardEmoji").and_then(|a| a.get("nodes")) {
                     obj.insert("awardEmoji".into(), nodes.clone());
+                }
+            }
+            Some("DEVELOPMENT") => {
+                // The merge requests that close this item when merged — the
+                // work-item equivalent of REST issue_get's `closed_by`.
+                if let Some(nodes) = w
+                    .get("closingMergeRequests")
+                    .and_then(|c| c.get("nodes"))
+                    .and_then(Value::as_array)
+                {
+                    let mrs: Vec<Value> = nodes
+                        .iter()
+                        .filter_map(|n| n.get("mergeRequest").cloned())
+                        .collect();
+                    obj.insert("closingMergeRequests".into(), Value::Array(mrs));
                 }
             }
             _ => {}
@@ -389,6 +407,7 @@ fn slim_list_node(mut node: Value) -> Value {
         // blocked/blockingCount, upvotes/downvotes) are kept.
         obj.remove("linkedItems");
         obj.remove("awardEmoji");
+        obj.remove("closingMergeRequests");
     }
     node
 }
@@ -705,7 +724,7 @@ fn check_mutation_errors(data: &Value, field: &str) -> Result<(), GitlabError> {
 // Create work item
 // --------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
 pub struct WorkItemCreateParams {
     #[schemars(
         description = "Full path of the project or group to create the work item in (e.g. \"mygroup/myproject\"). Not a numeric ID."
@@ -795,7 +814,7 @@ pub async fn work_item_create(
 // Update work item
 // --------------------------------------------------------------------------
 
-#[derive(Debug, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
 pub struct WorkItemUpdateParams {
     #[schemars(description = "Full path of the project or group the work item belongs to.")]
     pub namespace_path: String,
@@ -818,7 +837,7 @@ pub struct WorkItemUpdateParams {
     )]
     pub assignees: Option<Vec<String>>,
     #[schemars(
-        description = "IID of an existing work item in the same namespace to set as the hierarchy parent."
+        description = "IID of an existing work item in the same namespace to set as the hierarchy parent. Pass 0 to detach the current parent."
     )]
     pub parent_work_item_iid: Option<u64>,
     #[schemars(description = "Start date (ISO 8601, e.g. \"2026-01-01\").")]
@@ -884,9 +903,16 @@ pub async fn work_item_update(
         let ids = resolve_user_ids(client, &usernames).await?;
         input.insert("assigneesWidget".into(), json!({ "assigneeIds": ids }));
     }
-    if let Some(parent_iid) = p.parent_work_item_iid {
-        let parent_gid = resolve_work_item_gid(client, &p.namespace_path, parent_iid).await?;
-        input.insert("hierarchyWidget".into(), json!({ "parentId": parent_gid }));
+    match p.parent_work_item_iid {
+        None => {}
+        // Sentinel 0 detaches the current parent (mirrors epics' parent_epic_iid=0).
+        Some(0) => {
+            input.insert("hierarchyWidget".into(), json!({ "parentId": Value::Null }));
+        }
+        Some(parent_iid) => {
+            let parent_gid = resolve_work_item_gid(client, &p.namespace_path, parent_iid).await?;
+            input.insert("hierarchyWidget".into(), json!({ "parentId": parent_gid }));
+        }
     }
     apply_scalar_widgets(
         &mut input,
@@ -947,8 +973,8 @@ pub async fn work_item_delete(
 // they need no namespace/IID.
 
 /// Field selection for a single note, shared across list/create/update.
-const NOTE_FIELDS: &str =
-    "id body system internal createdAt updatedAt url author { id username name }";
+const NOTE_FIELDS: &str = "id body system internal createdAt updatedAt url \
+     author { id username name } discussion { id }";
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct WorkItemNotesListParams {
@@ -1021,6 +1047,10 @@ pub struct WorkItemNoteCreateParams {
         description = "Make this an internal note (visible only to project members), rather than a public comment."
     )]
     pub internal: Option<bool>,
+    #[schemars(
+        description = "To reply within an existing thread, the discussion global ID (the `discussion.id` from the notes list). Omit to start a new top-level comment."
+    )]
+    pub discussion_id: Option<String>,
 }
 
 pub async fn work_item_note_create(
@@ -1033,6 +1063,9 @@ pub async fn work_item_note_create(
     input.insert("body".into(), json!(p.body));
     if let Some(i) = p.internal {
         input.insert("internal".into(), json!(i));
+    }
+    if let Some(d) = p.discussion_id {
+        input.insert("discussionId".into(), json!(d));
     }
     let mutation = format!(
         "mutation($input: CreateNoteInput!) {{ createNote(input: $input) {{ errors note {{ {NOTE_FIELDS} }} }} }}"
@@ -1208,15 +1241,15 @@ pub struct WorkItemEmojiParams {
     pub name: String,
 }
 
-/// Shared add/remove on a work item's award-emoji widget. `mutation_field` is
-/// `awardEmojiAdd` or `awardEmojiRemove`.
-async fn work_item_emoji_mutate(
+/// Add/remove an award emoji on any awardable (a work item or a note), given
+/// its global ID. `mutation_field` is `awardEmojiAdd` or `awardEmojiRemove`.
+async fn award_emoji_mutate(
     client: &GitlabClient,
-    p: WorkItemEmojiParams,
+    awardable_id: &str,
+    name: &str,
     mutation_field: &str,
     input_type: &str,
 ) -> Result<Value, GitlabError> {
-    let gid = resolve_work_item_gid(client, &p.namespace_path, p.work_item_iid).await?;
     let mutation = format!(
         "mutation($input: {input_type}!) {{ \
             {mutation_field}(input: $input) {{ errors awardEmoji {{ name user {{ id username name }} }} }} \
@@ -1225,7 +1258,7 @@ async fn work_item_emoji_mutate(
     let data = client
         .graphql(
             &mutation,
-            json!({ "input": { "awardableId": gid, "name": p.name } }),
+            json!({ "input": { "awardableId": awardable_id, "name": name } }),
         )
         .await?;
     check_mutation_errors(&data, mutation_field)?;
@@ -1239,14 +1272,61 @@ pub async fn work_item_emoji_add(
     client: &GitlabClient,
     p: WorkItemEmojiParams,
 ) -> Result<Value, GitlabError> {
-    work_item_emoji_mutate(client, p, "awardEmojiAdd", "AwardEmojiAddInput").await
+    let gid = resolve_work_item_gid(client, &p.namespace_path, p.work_item_iid).await?;
+    award_emoji_mutate(client, &gid, &p.name, "awardEmojiAdd", "AwardEmojiAddInput").await
 }
 
 pub async fn work_item_emoji_remove(
     client: &GitlabClient,
     p: WorkItemEmojiParams,
 ) -> Result<Value, GitlabError> {
-    work_item_emoji_mutate(client, p, "awardEmojiRemove", "AwardEmojiRemoveInput").await
+    let gid = resolve_work_item_gid(client, &p.namespace_path, p.work_item_iid).await?;
+    award_emoji_mutate(
+        client,
+        &gid,
+        &p.name,
+        "awardEmojiRemove",
+        "AwardEmojiRemoveInput",
+    )
+    .await
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct WorkItemNoteEmojiParams {
+    #[schemars(
+        description = "Note global ID — the `id` from the notes list, e.g. \"gid://gitlab/Note/123\"."
+    )]
+    pub note_id: String,
+    #[schemars(description = "Emoji name, e.g. \"thumbsup\", \"rocket\", \"eyes\".")]
+    pub name: String,
+}
+
+pub async fn work_item_note_emoji_add(
+    client: &GitlabClient,
+    p: WorkItemNoteEmojiParams,
+) -> Result<Value, GitlabError> {
+    award_emoji_mutate(
+        client,
+        &p.note_id,
+        &p.name,
+        "awardEmojiAdd",
+        "AwardEmojiAddInput",
+    )
+    .await
+}
+
+pub async fn work_item_note_emoji_remove(
+    client: &GitlabClient,
+    p: WorkItemNoteEmojiParams,
+) -> Result<Value, GitlabError> {
+    award_emoji_mutate(
+        client,
+        &p.note_id,
+        &p.name,
+        "awardEmojiRemove",
+        "AwardEmojiRemoveInput",
+    )
+    .await
 }
 
 // --------------------------------------------------------------------------
@@ -1323,7 +1403,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Comment on a GitLab work item (issue, task, epic, etc.) — creates a note. Required: namespace_path (full project or group path), work_item_iid (the number from the URL/reference), and body (Markdown). Optional: internal (true makes it an internal note visible only to project members). Returns the created note including its id (global ID) for later edit/delete."
+        description = "Comment on a GitLab work item (issue, task, epic, etc.) — creates a note. Required: namespace_path (full project or group path), work_item_iid (the number from the URL/reference), and body (Markdown). Optional: internal (true makes it an internal note visible only to project members), discussion_id (a thread's global ID from the notes list, to reply within that thread instead of starting a new one). Returns the created note including its id (global ID) for later edit/delete."
     )]
     async fn gitlab_work_items_notes_create(
         &self,
@@ -1397,6 +1477,37 @@ impl GitlabMcpServer {
             "work item emoji reaction"
         )
     }
+
+    #[tool(
+        description = "Add an emoji reaction (award emoji) to a comment (note) on a GitLab work item. Required: note_id (the note's global ID, e.g. \"gid://gitlab/Note/123\", from gitlab_work_items_notes_list) and name (emoji name, e.g. \"thumbsup\"). Returns the created award emoji."
+    )]
+    async fn gitlab_work_items_notes_emoji_add(
+        &self,
+        Parameters(p): Parameters<WorkItemNoteEmojiParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_create!(
+            self,
+            work_item_note_emoji_add,
+            p,
+            "work item note emoji reaction"
+        )
+    }
+
+    #[tool(
+        description = "Remove an emoji reaction (award emoji) from a comment (note) on a GitLab work item. Required: note_id (the note's global ID) and name (the emoji name to remove). Returns the removed award emoji."
+    )]
+    async fn gitlab_work_items_notes_emoji_remove(
+        &self,
+        Parameters(p): Parameters<WorkItemNoteEmojiParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(
+            self,
+            work_item_note_emoji_remove,
+            p,
+            "removing",
+            "work item note emoji reaction"
+        )
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -1411,10 +1522,11 @@ mod tests {
     use super::{
         WorkItemCreateParams, WorkItemDeleteParams, WorkItemEmojiParams, WorkItemGetParams,
         WorkItemLinkAddParams, WorkItemNoteCreateParams, WorkItemNoteDeleteParams,
-        WorkItemNoteUpdateParams, WorkItemNotesListParams, WorkItemUpdateParams,
-        WorkItemsListParams, work_item_create, work_item_delete, work_item_emoji_add,
-        work_item_get, work_item_link_add, work_item_note_create, work_item_note_delete,
-        work_item_note_update, work_item_notes_list, work_item_update, work_items_list,
+        WorkItemNoteEmojiParams, WorkItemNoteUpdateParams, WorkItemNotesListParams,
+        WorkItemUpdateParams, WorkItemsListParams, work_item_create, work_item_delete,
+        work_item_emoji_add, work_item_get, work_item_link_add, work_item_note_create,
+        work_item_note_delete, work_item_note_emoji_add, work_item_note_update,
+        work_item_notes_list, work_item_update, work_items_list,
     };
     use crate::test_util::mock_client;
 
@@ -1462,7 +1574,10 @@ mod tests {
                 { "type": "AWARD_EMOJI", "upvotes": 2, "downvotes": 0,
                   "awardEmoji": { "nodes": [
                       { "name": "thumbsup", "user": { "id": "gid://gitlab/User/3", "username": "carol", "name": "Carol" } }
-                  ] } }
+                  ] } },
+                { "type": "DEVELOPMENT", "closingMergeRequests": { "nodes": [
+                    { "mergeRequest": { "iid": "12", "title": "Fix it", "webUrl": "https://gitlab.example.com/mr/12", "state": "opened" } }
+                ] } }
             ]
         })
     }
@@ -1526,6 +1641,9 @@ mod tests {
         assert_eq!(item["upvotes"], 2);
         assert_eq!(item["awardEmoji"][0]["name"], "thumbsup");
         assert_eq!(item["awardEmoji"][0]["user"]["username"], "carol");
+        // closingMergeRequests (the closed_by equivalent) flattened to the MRs.
+        assert_eq!(item["closingMergeRequests"][0]["iid"], "12");
+        assert_eq!(item["closingMergeRequests"][0]["title"], "Fix it");
     }
 
     #[tokio::test]
@@ -1643,6 +1761,10 @@ mod tests {
             "linkedItems stripped"
         );
         assert!(nodes[0].get("awardEmoji").is_none(), "awardEmoji stripped");
+        assert!(
+            nodes[0].get("closingMergeRequests").is_none(),
+            "closingMergeRequests stripped"
+        );
         assert_eq!(nodes[0]["upvotes"], 2, "upvote count retained");
         assert_eq!(nodes[0]["blockingCount"], 1, "blocking count retained");
         // Cursor surfaced for the caller to paginate.
@@ -2596,6 +2718,7 @@ mod tests {
                 work_item_iid: 42,
                 body: "hello".into(),
                 internal: Some(true),
+                discussion_id: None,
             },
         )
         .await
@@ -2627,6 +2750,7 @@ mod tests {
                 work_item_iid: 42,
                 body: "".into(),
                 internal: None,
+                discussion_id: None,
             },
         )
         .await
@@ -2688,5 +2812,111 @@ mod tests {
         )
         .await;
         assert!(result.is_ok());
+    }
+
+    // ------------------------------------------------------------------
+    // #23 follow-ups: clear parent, threaded reply, note emoji
+    // ------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn work_item_update_parent_zero_detaches() {
+        let server = MockServer::start().await;
+        let gid = "gid://gitlab/WorkItem/700";
+        mount_gid_resolution(&server, gid).await;
+        // Sentinel 0 → hierarchyWidget { parentId: null } (no target resolution).
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(body_partial_json(serde_json::json!({
+                "variables": { "input": { "id": gid, "hierarchyWidget": { "parentId": null } } }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "workItemUpdate": { "errors": [], "workItem": work_item_node(42, "Detached") } }
+            })))
+            .mount(&server)
+            .await;
+
+        let item = work_item_update(
+            &mock_client(&server),
+            WorkItemUpdateParams {
+                namespace_path: "mygroup/myproject".into(),
+                work_item_iid: 42,
+                title: None,
+                description: None,
+                state_event: None,
+                confidential: None,
+                add_labels: None,
+                remove_labels: None,
+                assignees: None,
+                parent_work_item_iid: Some(0),
+                start_date: None,
+                due_date: None,
+                milestone_id: None,
+                weight: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(item["title"], "Detached");
+    }
+
+    #[tokio::test]
+    async fn work_item_note_create_replies_in_thread() {
+        let server = MockServer::start().await;
+        mount_gid_resolution(&server, "gid://gitlab/WorkItem/700").await;
+        // discussion_id flows through to the mutation as discussionId.
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(body_partial_json(serde_json::json!({
+                "variables": { "input": {
+                    "body": "a reply",
+                    "discussionId": "gid://gitlab/Discussion/abc"
+                } }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "createNote": { "errors": [], "note": note_node(9, "a reply") } }
+            })))
+            .mount(&server)
+            .await;
+
+        let note = work_item_note_create(
+            &mock_client(&server),
+            WorkItemNoteCreateParams {
+                namespace_path: "mygroup/myproject".into(),
+                work_item_iid: 42,
+                body: "a reply".into(),
+                internal: None,
+                discussion_id: Some("gid://gitlab/Discussion/abc".into()),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(note["body"], "a reply");
+    }
+
+    #[tokio::test]
+    async fn work_item_note_emoji_add_uses_note_gid_directly() {
+        let server = MockServer::start().await;
+        // No GID resolution: the note GID is the awardableId.
+        Mock::given(method("POST"))
+            .and(path("/api/graphql"))
+            .and(body_partial_json(serde_json::json!({
+                "variables": { "input": { "awardableId": "gid://gitlab/Note/9", "name": "eyes" } }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "data": { "awardEmojiAdd": { "errors": [], "awardEmoji": { "name": "eyes", "user": { "id": "gid://gitlab/User/1", "username": "alice", "name": "Alice" } } } }
+            })))
+            .mount(&server)
+            .await;
+
+        let award = work_item_note_emoji_add(
+            &mock_client(&server),
+            WorkItemNoteEmojiParams {
+                note_id: "gid://gitlab/Note/9".into(),
+                name: "eyes".into(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(award["name"], "eyes");
     }
 }
