@@ -4,6 +4,45 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.26.0] — 2026-06-14
+
+GraphQL Work Items — a full tool family for GitLab's unified successor to the
+deprecating Issues/Epics REST APIs.
+
+### Added
+- **Work Items (GraphQL) tools** — the `gitlab_work_items_*` family, covering the
+  unified work-item model (issues, tasks, epics, incidents, objectives/OKRs, key
+  results) via GitLab's GraphQL API:
+  - CRUD: `get`, `list`, `create`, `update`, `delete`. Create/update take
+    *friendly* inputs — type name, label/assignee names, numeric milestone id,
+    ISO start/due dates, weight, parent IID — and resolve them to GraphQL global
+    IDs internally. Update can detach a parent (`parent_work_item_iid = 0`).
+  - Comments: `notes_list` / `note_create` / `note_update` / `note_delete`, with
+    threaded replies (`discussion_id`) and internal notes.
+  - Linked items: `link_add` / `link_remove` (relates-to / blocks / is-blocked-by).
+  - Emoji reactions: `emoji_add` / `emoji_remove` on items and
+    `notes_emoji_add` / `notes_emoji_remove` on comments.
+  - `list` supports rich filtering (author, assignees, labels, milestone,
+    confidentiality, created/updated/due date ranges), `sort`, and `fetch_all`.
+  - Read responses surface description, assignees, labels, hierarchy
+    (parent/children + counts), dates, milestone, weight, iteration, health
+    status, linked items, emoji reactions, comment count, and the merge requests
+    that close the item. Output keys are snake_case and values normalized to
+    match the REST tools; list responses drop bulk arrays to save tokens.
+- **GraphQL client method** — `GitlabClient::graphql` posts to `/api/graphql` and
+  surfaces GitLab's HTTP-200-with-`errors` responses (and mutation-payload
+  errors) as proper failures.
+- **Rate-limit resilience** — every request retries on `429 Too Many Requests`,
+  honoring the `Retry-After` header (bounded retries/backoff), so the server
+  rides out GitLab's rate limits instead of failing the call.
+
+### Changed
+- **`project_id` / `group_id` parameter descriptions** are now defined once via
+  `ProjectId` / `GroupId` newtypes instead of being copy-pasted across ~130 tool
+  parameter structs. No change to the wire format or accepted values.
+
+---
+
 ## [0.25.0] — 2026-06-11
 
 LLM-interaction reliability improvements from issue #10.
