@@ -45,8 +45,24 @@ pub fn slim_list(v: Value) -> Value {
 
 /// Light slim for single-get, create, and update responses.
 /// Removes nulls, strips always-strip keys, collapses nested user objects.
+///
+/// The top-level object is never collapsed, even when it is user-shaped: a
+/// single-get returns the resource the caller asked for by name (the Users API
+/// returns a full user object here), so collapsing it to id/username/name would
+/// discard exactly the detail that was requested. Nested user *references*
+/// inside it are still collapsed via [`slim_nested`].
 pub fn slim_get(v: Value) -> Value {
-    slim_nested(v)
+    match v {
+        Value::Object(map) => {
+            let map: Map<_, _> = map
+                .into_iter()
+                .filter(|(k, v)| !v.is_null() && !STRIP_ALWAYS.contains(&k.as_str()))
+                .map(|(k, v)| (k, slim_nested(v)))
+                .collect();
+            Value::Object(map)
+        }
+        other => slim_nested(other),
+    }
 }
 
 fn slim_list_item(v: Value) -> Value {
@@ -282,6 +298,39 @@ mod tests {
         assert!(out.get("references").is_none());
         assert!(out.get("closed_at").is_none());
         assert_eq!(out["iid"], json!(1));
+    }
+
+    #[test]
+    fn get_keeps_top_level_user_object_uncollapsed() {
+        // A single-get of a user resource must retain its full detail; only
+        // nested user references inside it are collapsed.
+        let input = json!({
+            "id": 5,
+            "username": "alice",
+            "name": "Alice",
+            "state": "active",
+            "web_url": "https://example.com/alice",
+            "public_email": "alice@example.com",
+            "created_by": {
+                "id": 9,
+                "username": "admin",
+                "name": "Admin",
+                "avatar_url": "https://example.com/admin.png",
+            },
+            "_links": {"self": "https://example.com"},
+            "bio": null,
+        });
+        let out = slim_get(input);
+        // Top-level user detail survives.
+        assert_eq!(out["state"], json!("active"));
+        assert_eq!(out["web_url"], json!("https://example.com/alice"));
+        assert_eq!(out["public_email"], json!("alice@example.com"));
+        // Always-strip keys and nulls are still removed.
+        assert!(out.get("_links").is_none());
+        assert!(out.get("bio").is_none());
+        // Nested user reference is still collapsed.
+        assert_eq!(out["created_by"]["username"], json!("admin"));
+        assert!(out["created_by"].get("avatar_url").is_none());
     }
 
     #[test]

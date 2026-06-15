@@ -178,7 +178,9 @@ The live suite is being grown domain-by-domain. Covered today: Issues (including
 issue links, issue notes, and issue discussions), Merge Requests, MR Discussions,
 Branches, Repository Files, Snippets (personal snippets), Emoji Reactions
 (the issue, issue-note, and MR awardable types — MR-note and snippet awardables
-remain), and Work Items (full CRUD, verified by REST↔GraphQL
+remain), Users (read-only — `users_list`, `user_get`, and `users_keys_list`,
+pivoting on the authenticated `GET /user` rather than seeding, since the API
+can't create users without admin), and Work Items (full CRUD, verified by REST↔GraphQL
 equivalence — the mutation test creates an Issue work item over GraphQL and
 confirms each create/update/delete step is visible through the REST issues API). Not yet automated: pipeline schedules and the read-only families
 (commits, repository tree/compare, search, runners, jobs, pipelines).

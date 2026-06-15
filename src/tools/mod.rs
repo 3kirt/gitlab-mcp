@@ -134,6 +134,7 @@ pub mod runners;
 pub mod search;
 mod slim;
 pub mod snippets;
+pub mod users;
 pub mod work_items;
 
 // Opt-in live integration tests (cargo test --features live-tests).
@@ -636,6 +637,7 @@ impl GitlabMcpServer {
             + Self::tool_router_snippets()
             + Self::tool_router_emoji_reactions()
             + Self::tool_router_runners()
+            + Self::tool_router_users()
             + Self::tool_router_work_items()
     }
 }
@@ -768,7 +770,7 @@ mod tests {
         // count catches both a forgotten `+ Self::tool_router_<domain>()`
         // and a name collision. Update it when adding or removing tools.
         let tools = GitlabMcpServer::tool_router().list_all();
-        assert_eq!(tools.len(), 173);
+        assert_eq!(tools.len(), 176);
     }
 
     // Invalid-params error enrichment
