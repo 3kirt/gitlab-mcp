@@ -4,6 +4,27 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.27.0] — 2026-06-15
+
+Users API — a read-only tool family for looking up GitLab users and their SSH keys.
+
+### Added
+- **Users tools** — the `gitlab_users_*` family:
+  - `list` — `GET /users` with filters for username (exact, case-insensitive),
+    search (fuzzy on name/username/public email), active, blocked, external,
+    humans (exclude bots/internal), and created-before/after ranges; admin-only
+    `order_by` / `sort`; pagination.
+  - `get` — a single user's full profile, by numeric ID *or* username.
+  - `keys_list` — a user's public SSH keys (e.g. to populate `authorized_keys`
+    when provisioning infrastructure), by numeric ID *or* username.
+  - `get` and `keys_list` resolve a username to its numeric ID via an extra
+    lookup, since those endpoints only accept the numeric ID.
+
+### Fixed
+- **Single-get slimming** no longer collapses a top-level user resource to
+  `id`/`username`/`name` — `gitlab_users_get` now returns the full profile while
+  nested user *references* inside any response are still collapsed as before.
+
 ## [0.26.0] — 2026-06-14
 
 GraphQL Work Items — a full tool family for GitLab's unified successor to the
