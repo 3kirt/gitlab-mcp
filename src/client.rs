@@ -30,6 +30,10 @@ pub type ListResult = Result<(Value, PaginationMeta), GitlabError>;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// Tracing target for all GitLab client request/response logs, so they share
+/// one filter key (`gitlab_mcp=debug`, what `--debug` sets).
+const LOG_TARGET: &str = "gitlab_mcp";
+
 /// Max times to retry a request GitLab rejects with 429 Too Many Requests.
 const MAX_RETRIES: u32 = 4;
 /// Upper bound on how long to wait between 429 retries (honors `Retry-After`
@@ -175,12 +179,12 @@ impl GitlabClient {
     /// and return the `data` object so callers see the same shape as REST tools.
     pub async fn graphql(&self, query: &str, variables: Value) -> Result<Value, GitlabError> {
         let url = self.url("/api/graphql");
-        debug!(target: "gitlab_mcp", %query, variables = %variables, "graphql request");
+        debug!(target: LOG_TARGET, %query, variables = %variables, "graphql request");
         let body = serde_json::json!({ "query": query, "variables": variables });
         let resp = self.send(self.http.post(&url).json(&body)).await?;
         let resp = check_status(resp).await?;
         let mut json: Value = resp.json().await?;
-        trace!(target: "gitlab_mcp", response = %json, "graphql response");
+        trace!(target: LOG_TARGET, response = %json, "graphql response");
 
         let has_errors = json
             .get("errors")
@@ -250,10 +254,10 @@ impl GitlabClient {
             // thus the PRIVATE-TOKEN) are never logged. The `enabled!` guard keeps the
             // extra clone + build out of the hot path when debug logging is off.
             if attempt == 0
-                && tracing::enabled!(target: "gitlab_mcp", tracing::Level::DEBUG)
+                && tracing::enabled!(target: LOG_TARGET, tracing::Level::DEBUG)
                 && let Some(req) = builder.try_clone().and_then(|b| b.build().ok())
             {
-                debug!(target: "gitlab_mcp", method = %req.method(), url = %req.url(), "gitlab request");
+                debug!(target: LOG_TARGET, method = %req.method(), url = %req.url(), "gitlab request");
             }
             let resp = attempt_builder.send().await?;
             if resp.status() == StatusCode::TOO_MANY_REQUESTS && attempt < MAX_RETRIES {
@@ -289,10 +293,10 @@ async fn check_status(resp: reqwest::Response) -> Result<reqwest::Response, Gitl
         let body = resp.text().await.unwrap_or_default();
         // Log the full, untruncated error body — `to_tool_message()` clips it to
         // 300 chars for the MCP client, but a debug trace wants the whole thing.
-        debug!(target: "gitlab_mcp", %status, body = %body, "gitlab error response");
+        debug!(target: LOG_TARGET, %status, body = %body, "gitlab error response");
         return Err(GitlabError::Api { status, body });
     }
-    trace!(target: "gitlab_mcp", %status, "gitlab response");
+    trace!(target: LOG_TARGET, %status, "gitlab response");
     Ok(resp)
 }
 
