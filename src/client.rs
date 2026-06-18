@@ -4,6 +4,7 @@ use reqwest::{Client, StatusCode, header};
 use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
+use tracing::{debug, trace};
 
 /// Pagination headers extracted from a GitLab list response.
 ///
@@ -174,10 +175,12 @@ impl GitlabClient {
     /// and return the `data` object so callers see the same shape as REST tools.
     pub async fn graphql(&self, query: &str, variables: Value) -> Result<Value, GitlabError> {
         let url = self.url("/api/graphql");
+        debug!(target: "gitlab_mcp", %query, variables = %variables, "graphql request");
         let body = serde_json::json!({ "query": query, "variables": variables });
         let resp = self.send(self.http.post(&url).json(&body)).await?;
         let resp = check_status(resp).await?;
         let mut json: Value = resp.json().await?;
+        trace!(target: "gitlab_mcp", response = %json, "graphql response");
 
         let has_errors = json
             .get("errors")
@@ -242,6 +245,14 @@ impl GitlabClient {
             let attempt_builder = builder
                 .try_clone()
                 .ok_or_else(|| GitlabError::Other("request body is not retryable".into()))?;
+            // Log the method + URL once (first attempt) from the built request, so a
+            // single central point covers every REST and GraphQL call. Headers (and
+            // thus the PRIVATE-TOKEN) are never logged.
+            if attempt == 0
+                && let Some(req) = builder.try_clone().and_then(|b| b.build().ok())
+            {
+                debug!(target: "gitlab_mcp", method = %req.method(), url = %req.url(), "gitlab request");
+            }
             let resp = attempt_builder.send().await?;
             if resp.status() == StatusCode::TOO_MANY_REQUESTS && attempt < MAX_RETRIES {
                 let wait = retry_after(resp.headers())
@@ -274,8 +285,12 @@ async fn check_status(resp: reqwest::Response) -> Result<reqwest::Response, Gitl
     let status = resp.status();
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
+        // Log the full, untruncated error body — `to_tool_message()` clips it to
+        // 300 chars for the MCP client, but a debug trace wants the whole thing.
+        debug!(target: "gitlab_mcp", %status, body = %body, "gitlab error response");
         return Err(GitlabError::Api { status, body });
     }
+    trace!(target: "gitlab_mcp", %status, "gitlab response");
     Ok(resp)
 }
 
