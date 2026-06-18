@@ -247,8 +247,10 @@ impl GitlabClient {
                 .ok_or_else(|| GitlabError::Other("request body is not retryable".into()))?;
             // Log the method + URL once (first attempt) from the built request, so a
             // single central point covers every REST and GraphQL call. Headers (and
-            // thus the PRIVATE-TOKEN) are never logged.
+            // thus the PRIVATE-TOKEN) are never logged. The `enabled!` guard keeps the
+            // extra clone + build out of the hot path when debug logging is off.
             if attempt == 0
+                && tracing::enabled!(target: "gitlab_mcp", tracing::Level::DEBUG)
                 && let Some(req) = builder.try_clone().and_then(|b| b.build().ok())
             {
                 debug!(target: "gitlab_mcp", method = %req.method(), url = %req.url(), "gitlab request");

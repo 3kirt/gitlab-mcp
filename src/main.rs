@@ -81,9 +81,17 @@ async fn main() -> anyhow::Result<()> {
     let directive = log_directive(std::env::var("RUST_LOG").ok().as_deref(), args.debug);
     let writer = match &args.log_file {
         Some(path) => {
-            let file = OpenOptions::new()
-                .create(true)
-                .append(true)
+            let mut opts = OpenOptions::new();
+            opts.create(true).append(true);
+            // The trace can hold private GitLab content (URLs, GraphQL variables,
+            // error bodies), so restrict it to the owner — matching the
+            // world-readable rejection config.rs applies to the credentials file.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                opts.mode(0o600);
+            }
+            let file = opts
                 .open(path)
                 .with_context(|| format!("opening log file {}", path.display()))?;
             BoxMakeWriter::new(Mutex::new(file))
