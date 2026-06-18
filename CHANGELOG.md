@@ -4,6 +4,26 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.28.0] — 2026-06-18
+
+Request tracing — opt-in debug logging to diagnose GitLab API failures against a
+real instance.
+
+### Added
+- **`--debug` / `--log-file` request tracing** — opt-in logging of every GitLab
+  request (method + URL, and for GraphQL the query and variables) plus full,
+  untruncated error response bodies, to help diagnose API failures (e.g. the
+  group-epic `work_item_get` 500) against a real instance:
+  - `--debug` raises this crate's log level to `debug`; `RUST_LOG` still
+    overrides it for finer control (e.g. `gitlab_mcp=trace` to also log success
+    response bodies).
+  - `--log-file <PATH>` writes the JSON trace to a file — the reliable way to
+    capture output when an MCP client spawns the server (its stderr is otherwise
+    unreachable). The file is created owner-only (`0600`), since the trace can
+    contain private GitLab content.
+  - The `PRIVATE-TOKEN` is never logged (headers are excluded), and REST request
+    bodies are not logged either.
+
 ## [0.27.0] — 2026-06-15
 
 Users API — a read-only tool family for looking up GitLab users and their SSH keys.
