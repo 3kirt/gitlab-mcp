@@ -4,6 +4,18 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.29.0] — 2026-06-25
+
+Maintenance release — a security fix for a transitive dependency.
+
+### Security
+- **quinn-proto 0.11.14 → 0.11.15** — resolves [RUSTSEC-2026-0185](https://rustsec.org/advisories/RUSTSEC-2026-0185)
+  (high, 7.5): remote memory exhaustion from unbounded out-of-order stream
+  reassembly. Pulled in transitively via `reqwest`.
+
+### Changed
+- **anyhow 1.0.102 → 1.0.103** — routine in-range patch bump.
+
 ## [0.28.0] — 2026-06-18
 
 Request tracing — opt-in debug logging to diagnose GitLab API failures against a
