@@ -7,7 +7,7 @@ Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Crea
 - **Full CRUD** — create, read, update, and delete GitLab resources
 - **Broad coverage of common GitLab workflows** — issues, merge requests, branches, commits, repository files, pipelines, jobs, runners, epics, groups, snippets, emoji reactions, search, and more
 - **Token-efficient responses** — list results are automatically slimmed (descriptions, pipelines, and other bulk fields stripped); use single-get tools when full detail is needed
-- **MCP logging** — tool errors are forwarded to the client as structured `notifications/message` log entries; configure the minimum level with `logging/setLevel` (default: `warning`)
+- **Request tracing** — tool errors and (with `--debug`) every GitLab request are logged to stderr or a file via `--log-file`, for diagnosing API failures
 
 ---
 

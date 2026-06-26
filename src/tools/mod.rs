@@ -9,7 +9,7 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 use crate::client::{GitlabClient, GitlabError, ListResult, PaginationMeta};
 
@@ -26,7 +26,7 @@ macro_rules! delegate_json {
             Ok(v) => $crate::tools::json_result(v),
             Err(e) => {
                 let msg = format!("{} {}: {}", $verb, $noun, e.to_tool_message());
-                $self.send_log(rmcp::model::LoggingLevel::Error, &msg).await;
+                tracing::error!("{msg}");
                 $crate::tools::tool_error(&msg)
             }
         }
@@ -40,7 +40,7 @@ macro_rules! delegate_list {
             Ok((v, meta)) => $crate::tools::json_list_result(v, meta),
             Err(e) => {
                 let msg = format!("listing {}: {}", $noun, e.to_tool_message());
-                $self.send_log(rmcp::model::LoggingLevel::Error, &msg).await;
+                tracing::error!("{msg}");
                 $crate::tools::tool_error(&msg)
             }
         }
@@ -76,7 +76,7 @@ macro_rules! delegate_unit {
             ])),
             Err(e) => {
                 let msg = format!("{} {}: {}", $verb, $noun, e.to_tool_message());
-                $self.send_log(rmcp::model::LoggingLevel::Error, &msg).await;
+                tracing::error!("{msg}");
                 $crate::tools::tool_error(&msg)
             }
         }
@@ -106,7 +106,7 @@ macro_rules! delegate_text {
             ])),
             Err(e) => {
                 let msg = format!("{} {}: {}", $verb, $noun, e.to_tool_message());
-                $self.send_log(rmcp::model::LoggingLevel::Error, &msg).await;
+                tracing::error!("{msg}");
                 $crate::tools::tool_error(&msg)
             }
         }
@@ -544,19 +544,6 @@ impl BodyBuilder {
 // Server struct
 // --------------------------------------------------------------------------
 
-fn level_severity(level: LoggingLevel) -> u8 {
-    match level {
-        LoggingLevel::Debug => 0,
-        LoggingLevel::Info => 1,
-        LoggingLevel::Notice => 2,
-        LoggingLevel::Warning => 3,
-        LoggingLevel::Error => 4,
-        LoggingLevel::Critical => 5,
-        LoggingLevel::Alert => 6,
-        LoggingLevel::Emergency => 7,
-    }
-}
-
 #[derive(Clone)]
 pub struct GitlabMcpServer {
     client: Arc<OnceLock<GitlabClient>>,
@@ -570,7 +557,6 @@ pub struct GitlabMcpServer {
     #[expect(dead_code)]
     prompt_router: PromptRouter<GitlabMcpServer>,
     peer: Arc<OnceLock<Peer<RoleServer>>>,
-    log_level: Arc<Mutex<LoggingLevel>>,
 }
 
 impl GitlabMcpServer {
@@ -582,23 +568,7 @@ impl GitlabMcpServer {
             tool_router: Self::tool_router(),
             prompt_router: Self::prompt_router(),
             peer: Arc::new(OnceLock::new()),
-            log_level: Arc::new(Mutex::new(LoggingLevel::Warning)),
         })
-    }
-
-    async fn send_log(&self, level: LoggingLevel, message: &str) {
-        let current = *self.log_level.lock().unwrap();
-        if level_severity(level) >= level_severity(current)
-            && let Some(peer) = self.peer.get()
-        {
-            let _ = peer
-                .notify_logging_message(LoggingMessageNotificationParam {
-                    level,
-                    logger: Some("gitlab-mcp".to_string()),
-                    data: serde_json::json!({ "message": message }),
-                })
-                .await;
-        }
     }
 
     fn get_client(&self) -> Result<&GitlabClient, McpError> {
@@ -694,13 +664,8 @@ fn enrich_invalid_params(error: McpError, tool: Option<&Tool>) -> McpError {
 #[prompt_handler]
 impl ServerHandler for GitlabMcpServer {
     fn get_info(&self) -> ServerInfo {
-        let mut info = ServerInfo::new(
-            ServerCapabilities::builder()
-                .enable_tools()
-                .enable_logging()
-                .build(),
-        )
-        .with_server_info(Implementation::new("gitlab-mcp", env!("CARGO_PKG_VERSION")));
+        let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new("gitlab-mcp", env!("CARGO_PKG_VERSION")));
         info.instructions = Some(
             "Parameter naming conventions: project_id and group_id accept a numeric ID or a \
              namespace path (e.g. \"mygroup/myproject\"). Resources addressed by the number in \
@@ -743,16 +708,6 @@ impl ServerHandler for GitlabMcpServer {
             }
             other => other,
         }
-    }
-
-    async fn set_level(
-        &self,
-        request: SetLevelRequestParams,
-        context: RequestContext<RoleServer>,
-    ) -> Result<(), McpError> {
-        *self.log_level.lock().unwrap() = request.level;
-        let _ = self.peer.set(context.peer);
-        Ok(())
     }
 }
 
