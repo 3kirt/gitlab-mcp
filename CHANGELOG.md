@@ -4,6 +4,25 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.30.0] — 2026-06-25
+
+Drops the deprecated MCP logging feature and moves to rmcp 1.8.
+
+### Removed
+- **MCP logging capability** — the server no longer advertises `logging`, sends
+  `notifications/message` log entries, or handles `logging/setLevel`. MCP's
+  Logging feature was deprecated by [SEP-2577](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2577);
+  the per-tool-error notification it sent was redundant with the error already
+  returned in the tool result.
+
+### Changed
+- **rmcp 1.7 → 1.8.** The 1.8 release marks the Logging APIs deprecated, which
+  prompted the removal above.
+- **Tool errors are now logged via `tracing::error!`** (operator-facing, through
+  the existing `--debug` / `--log-file` pipeline) instead of being pushed to the
+  client over the MCP logging channel. The error is still returned in-band as the
+  tool result, so MCP clients see no change.
+
 ## [0.29.0] — 2026-06-25
 
 Maintenance release — a security fix for a transitive dependency.
