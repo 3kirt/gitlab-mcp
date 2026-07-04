@@ -72,7 +72,7 @@ macro_rules! delegate_unit {
         let client = $self.get_client()?;
         match $domain_fn(client, $p).await {
             Ok(()) => Ok(rmcp::model::CallToolResult::success(vec![
-                rmcp::model::Content::text($ok_msg),
+                rmcp::model::ContentBlock::text($ok_msg),
             ])),
             Err(e) => {
                 let msg = format!("{} {}: {}", $verb, $noun, e.to_tool_message());
@@ -102,7 +102,7 @@ macro_rules! delegate_text {
         let client = $self.get_client()?;
         match $domain_fn(client, $p).await {
             Ok(text) => Ok(rmcp::model::CallToolResult::success(vec![
-                rmcp::model::Content::text(text),
+                rmcp::model::ContentBlock::text(text),
             ])),
             Err(e) => {
                 let msg = format!("{} {}: {}", $verb, $noun, e.to_tool_message());
@@ -171,15 +171,10 @@ tokio::task_local! {
 async fn emit_page_progress(progress: u64, total: Option<u64>) {
     let ctx = PROGRESS_CTX.try_with(|c| c.clone()).ok().flatten();
     if let Some(ctx) = ctx {
-        let _ = ctx
-            .peer
-            .notify_progress(ProgressNotificationParam {
-                progress_token: ctx.token,
-                progress: progress as f64,
-                total: total.map(|t| t as f64),
-                message: Some(format!("{progress} items")),
-            })
-            .await;
+        let mut param = ProgressNotificationParam::new(ctx.token, progress as f64);
+        param.total = total.map(|t| t as f64);
+        param.message = Some(format!("{progress} items"));
+        let _ = ctx.peer.notify_progress(param).await;
     }
 }
 
@@ -204,7 +199,7 @@ pub fn json_result(v: Value) -> Result<CallToolResult, McpError> {
     let v = slim::slim_get(v);
     let text = serde_json::to_string_pretty(&v)
         .map_err(|e| McpError::internal_error(format!("marshalling response: {e}"), None))?;
-    Ok(CallToolResult::success(vec![Content::text(text)]))
+    Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
 }
 
 #[derive(Serialize)]
@@ -221,11 +216,11 @@ pub fn json_list_result(v: Value, meta: PaginationMeta) -> Result<CallToolResult
     };
     let text = serde_json::to_string_pretty(&envelope)
         .map_err(|e| McpError::internal_error(format!("marshalling response: {e}"), None))?;
-    Ok(CallToolResult::success(vec![Content::text(text)]))
+    Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
 }
 
 pub fn tool_error(msg: &str) -> Result<CallToolResult, McpError> {
-    Ok(CallToolResult::error(vec![Content::text(msg)]))
+    Ok(CallToolResult::error(vec![ContentBlock::text(msg)]))
 }
 
 /// Page size used when walking every page for a `fetch_all` request.

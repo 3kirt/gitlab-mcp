@@ -31,7 +31,7 @@ pub struct ToolSchemaGetParams {
 use rmcp::{
     ErrorData as McpError,
     handler::server::wrapper::Parameters,
-    model::{CallToolResult, Content},
+    model::{CallToolResult, ContentBlock},
     tool, tool_router,
 };
 
@@ -89,7 +89,7 @@ impl GitlabMcpServer {
         });
         let text = serde_json::to_string_pretty(&payload)
             .map_err(|e| McpError::internal_error(format!("marshalling response: {e}"), None))?;
-        Ok(CallToolResult::success(vec![Content::text(text)]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
     }
 }
 
