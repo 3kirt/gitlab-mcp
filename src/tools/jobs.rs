@@ -220,7 +220,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_jobs, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List jobs for a GitLab project. Optional: scope (array of states to filter by), order_by, sort, page, per_page."
+        description = "List jobs for a GitLab project. Optional: scope (array of states to filter by), order_by, sort, page, per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_jobs_list(
         &self,
@@ -230,7 +231,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List jobs for a specific GitLab pipeline. Optional: scope (array of states), include_retried (include non-latest attempts), page, per_page."
+        description = "List jobs for a specific GitLab pipeline. Optional: scope (array of states), include_retried (include non-latest attempts), page, per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_jobs_list_for_pipeline(
         &self,
@@ -240,7 +242,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List bridge (downstream trigger) jobs for a GitLab pipeline. Optional: scope (array of states), page, per_page."
+        description = "List bridge (downstream trigger) jobs for a GitLab pipeline. Optional: scope (array of states), page, per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_jobs_list_bridges(
         &self,
@@ -250,7 +253,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single GitLab job by project ID and job ID. Returns full job metadata including stage, status, runner, timings, and artifacts."
+        description = "Get a single GitLab job by project ID and job ID. Returns full job metadata including stage, status, runner, timings, and artifacts.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_jobs_get(
         &self,
@@ -259,7 +263,10 @@ impl GitlabMcpServer {
         delegate_get!(self, job_get, p, "job")
     }
 
-    #[tool(description = "Get the raw log output (trace) of a GitLab job as plain text.")]
+    #[tool(
+        description = "Get the raw log output (trace) of a GitLab job as plain text.",
+        annotations(read_only_hint = true)
+    )]
     async fn gitlab_jobs_get_trace(
         &self,
         Parameters(p): Parameters<JobGetTraceParams>,
@@ -268,7 +275,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Cancel a running GitLab job. Optional: force (force-cancel a job already in \"canceling\" state)."
+        description = "Cancel a running GitLab job. Optional: force (force-cancel a job already in \"canceling\" state).",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_jobs_cancel(
         &self,
@@ -277,7 +289,10 @@ impl GitlabMcpServer {
         delegate_json!(self, job_cancel, p, "canceling", "job")
     }
 
-    #[tool(description = "Retry a failed or canceled GitLab job, creating a new job run.")]
+    #[tool(
+        description = "Retry a failed or canceled GitLab job, creating a new job run.",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
     async fn gitlab_jobs_retry(
         &self,
         Parameters(p): Parameters<JobRetryParams>,
@@ -286,7 +301,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Erase a GitLab job — removes the job log and artifacts. The job must be finished."
+        description = "Erase a GitLab job — removes the job log and artifacts. The job must be finished.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_jobs_erase(
         &self,
@@ -296,7 +316,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Trigger a manual GitLab job. Optional: job_variables_attributes (array of {key, value, variable_type} objects to override job variables)."
+        description = "Trigger a manual GitLab job. Optional: job_variables_attributes (array of {key, value, variable_type} objects to override job variables).",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_jobs_play(
         &self,

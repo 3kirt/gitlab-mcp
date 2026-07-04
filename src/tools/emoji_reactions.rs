@@ -558,7 +558,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_emoji_reactions, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List all emoji reactions on a GitLab issue. Paginate with page and per_page."
+        description = "List all emoji reactions on a GitLab issue. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_emoji_reactions_issues_list(
         &self,
@@ -567,7 +568,10 @@ impl GitlabMcpServer {
         delegate_list!(self, issue_emoji_list, p, "issue emoji reactions")
     }
 
-    #[tool(description = "Get a single emoji reaction on a GitLab issue by award ID.")]
+    #[tool(
+        description = "Get a single emoji reaction on a GitLab issue by award ID.",
+        annotations(read_only_hint = true)
+    )]
     async fn gitlab_emoji_reactions_issues_get(
         &self,
         Parameters(p): Parameters<IssueEmojiGetParams>,
@@ -576,7 +580,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Add an emoji reaction to a GitLab issue. Required: project_id, issue_iid, name (emoji name without colons, e.g. \"thumbsup\")."
+        description = "Add an emoji reaction to a GitLab issue. Required: project_id, issue_iid, name (emoji name without colons, e.g. \"thumbsup\").",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_emoji_reactions_issues_create(
         &self,
@@ -586,7 +591,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete an emoji reaction from a GitLab issue. Only the reaction author or administrators may delete. Required: project_id, issue_iid, award_id."
+        description = "Delete an emoji reaction from a GitLab issue. Only the reaction author or administrators may delete. Required: project_id, issue_iid, award_id.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_emoji_reactions_issues_delete(
         &self,
@@ -596,7 +606,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List all emoji reactions on a GitLab merge request. Paginate with page and per_page."
+        description = "List all emoji reactions on a GitLab merge request. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_emoji_reactions_mrs_list(
         &self,
@@ -605,7 +616,10 @@ impl GitlabMcpServer {
         delegate_list!(self, mr_emoji_list, p, "MR emoji reactions")
     }
 
-    #[tool(description = "Get a single emoji reaction on a GitLab merge request by award ID.")]
+    #[tool(
+        description = "Get a single emoji reaction on a GitLab merge request by award ID.",
+        annotations(read_only_hint = true)
+    )]
     async fn gitlab_emoji_reactions_mrs_get(
         &self,
         Parameters(p): Parameters<MrEmojiGetParams>,
@@ -614,7 +628,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Add an emoji reaction to a GitLab merge request. Required: project_id, merge_request_iid, name (emoji name without colons, e.g. \"thumbsup\")."
+        description = "Add an emoji reaction to a GitLab merge request. Required: project_id, merge_request_iid, name (emoji name without colons, e.g. \"thumbsup\").",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_emoji_reactions_mrs_create(
         &self,
@@ -624,7 +639,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete an emoji reaction from a GitLab merge request. Only the reaction author or administrators may delete. Required: project_id, merge_request_iid, award_id."
+        description = "Delete an emoji reaction from a GitLab merge request. Only the reaction author or administrators may delete. Required: project_id, merge_request_iid, award_id.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_emoji_reactions_mrs_delete(
         &self,
@@ -634,7 +654,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List all emoji reactions on a GitLab project snippet. Paginate with page and per_page."
+        description = "List all emoji reactions on a GitLab project snippet. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_emoji_reactions_snippets_list(
         &self,
@@ -643,7 +664,10 @@ impl GitlabMcpServer {
         delegate_list!(self, snippet_emoji_list, p, "snippet emoji reactions")
     }
 
-    #[tool(description = "Get a single emoji reaction on a GitLab project snippet by award ID.")]
+    #[tool(
+        description = "Get a single emoji reaction on a GitLab project snippet by award ID.",
+        annotations(read_only_hint = true)
+    )]
     async fn gitlab_emoji_reactions_snippets_get(
         &self,
         Parameters(p): Parameters<SnippetEmojiGetParams>,
@@ -652,7 +676,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Add an emoji reaction to a GitLab project snippet. Required: project_id, snippet_id, name (emoji name without colons, e.g. \"thumbsup\")."
+        description = "Add an emoji reaction to a GitLab project snippet. Required: project_id, snippet_id, name (emoji name without colons, e.g. \"thumbsup\").",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_emoji_reactions_snippets_create(
         &self,
@@ -662,7 +687,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete an emoji reaction from a GitLab project snippet. Only the reaction author or administrators may delete. Required: project_id, snippet_id, award_id."
+        description = "Delete an emoji reaction from a GitLab project snippet. Only the reaction author or administrators may delete. Required: project_id, snippet_id, award_id.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_emoji_reactions_snippets_delete(
         &self,
@@ -672,7 +702,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List all emoji reactions on a note (comment) on a GitLab issue. Paginate with page and per_page."
+        description = "List all emoji reactions on a note (comment) on a GitLab issue. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_emoji_reactions_issue_notes_list(
         &self,
@@ -682,7 +713,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single emoji reaction on a note (comment) on a GitLab issue by award ID."
+        description = "Get a single emoji reaction on a note (comment) on a GitLab issue by award ID.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_emoji_reactions_issue_notes_get(
         &self,
@@ -692,7 +724,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Add an emoji reaction to a note (comment) on a GitLab issue. Required: project_id, issue_iid, note_id, name (emoji name without colons, e.g. \"thumbsup\")."
+        description = "Add an emoji reaction to a note (comment) on a GitLab issue. Required: project_id, issue_iid, note_id, name (emoji name without colons, e.g. \"thumbsup\").",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_emoji_reactions_issue_notes_create(
         &self,
@@ -707,7 +740,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete an emoji reaction from a note (comment) on a GitLab issue. Only the reaction author or administrators may delete. Required: project_id, issue_iid, note_id, award_id."
+        description = "Delete an emoji reaction from a note (comment) on a GitLab issue. Only the reaction author or administrators may delete. Required: project_id, issue_iid, note_id, award_id.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_emoji_reactions_issue_notes_delete(
         &self,
@@ -722,7 +760,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List all emoji reactions on a note (comment) on a GitLab merge request. Paginate with page and per_page."
+        description = "List all emoji reactions on a note (comment) on a GitLab merge request. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_emoji_reactions_mr_notes_list(
         &self,
@@ -732,7 +771,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single emoji reaction on a note (comment) on a GitLab merge request by award ID."
+        description = "Get a single emoji reaction on a note (comment) on a GitLab merge request by award ID.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_emoji_reactions_mr_notes_get(
         &self,
@@ -742,7 +782,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Add an emoji reaction to a note (comment) on a GitLab merge request. Required: project_id, merge_request_iid, note_id, name (emoji name without colons, e.g. \"thumbsup\")."
+        description = "Add an emoji reaction to a note (comment) on a GitLab merge request. Required: project_id, merge_request_iid, note_id, name (emoji name without colons, e.g. \"thumbsup\").",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_emoji_reactions_mr_notes_create(
         &self,
@@ -752,7 +793,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete an emoji reaction from a note (comment) on a GitLab merge request. Only the reaction author or administrators may delete. Required: project_id, merge_request_iid, note_id, award_id."
+        description = "Delete an emoji reaction from a note (comment) on a GitLab merge request. Only the reaction author or administrators may delete. Required: project_id, merge_request_iid, note_id, award_id.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_emoji_reactions_mr_notes_delete(
         &self,
@@ -762,7 +808,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List all emoji reactions on a note (comment) on a GitLab project snippet. Paginate with page and per_page."
+        description = "List all emoji reactions on a note (comment) on a GitLab project snippet. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_emoji_reactions_snippet_notes_list(
         &self,
@@ -777,7 +824,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single emoji reaction on a note (comment) on a GitLab project snippet by award ID."
+        description = "Get a single emoji reaction on a note (comment) on a GitLab project snippet by award ID.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_emoji_reactions_snippet_notes_get(
         &self,
@@ -792,7 +840,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Add an emoji reaction to a note (comment) on a GitLab project snippet. Required: project_id, snippet_id, note_id, name (emoji name without colons, e.g. \"thumbsup\")."
+        description = "Add an emoji reaction to a note (comment) on a GitLab project snippet. Required: project_id, snippet_id, note_id, name (emoji name without colons, e.g. \"thumbsup\").",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_emoji_reactions_snippet_notes_create(
         &self,
@@ -807,7 +856,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete an emoji reaction from a note (comment) on a GitLab project snippet. Only the reaction author or administrators may delete. Required: project_id, snippet_id, note_id, award_id."
+        description = "Delete an emoji reaction from a note (comment) on a GitLab project snippet. Only the reaction author or administrators may delete. Required: project_id, snippet_id, note_id, award_id.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_emoji_reactions_snippet_notes_delete(
         &self,

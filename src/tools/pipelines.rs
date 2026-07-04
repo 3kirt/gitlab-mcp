@@ -332,7 +332,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_pipelines, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List pipelines for a GitLab project. Optional filters: scope, status, source, ref, sha, yaml_errors, username, updated_after/before, created_after/before, order_by, sort, name. Paginate with page and per_page."
+        description = "List pipelines for a GitLab project. Optional filters: scope, status, source, ref, sha, yaml_errors, username, updated_after/before, created_after/before, order_by, sort, name. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_pipelines_list(
         &self,
@@ -341,7 +342,10 @@ impl GitlabMcpServer {
         delegate_list!(self, pipeline_list, p, "pipelines")
     }
 
-    #[tool(description = "Get a single GitLab pipeline by project ID and pipeline ID.")]
+    #[tool(
+        description = "Get a single GitLab pipeline by project ID and pipeline ID.",
+        annotations(read_only_hint = true)
+    )]
     async fn gitlab_pipelines_get(
         &self,
         Parameters(p): Parameters<PipelineGetParams>,
@@ -350,7 +354,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get the latest pipeline for a GitLab project. Optional: ref (branch or tag name; defaults to project default branch)."
+        description = "Get the latest pipeline for a GitLab project. Optional: ref (branch or tag name; defaults to project default branch).",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_pipelines_get_latest(
         &self,
@@ -360,7 +365,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List variables defined on a specific GitLab pipeline run. Returns key/value pairs used when the pipeline was triggered. Paginate with page and per_page."
+        description = "List variables defined on a specific GitLab pipeline run. Returns key/value pairs used when the pipeline was triggered. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_pipelines_get_variables(
         &self,
@@ -370,7 +376,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get the full test report for a GitLab pipeline, including suite and case details with pass/fail/error counts."
+        description = "Get the full test report for a GitLab pipeline, including suite and case details with pass/fail/error counts.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_pipelines_get_test_report(
         &self,
@@ -380,7 +387,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get the test report summary for a GitLab pipeline — total counts only without per-case details."
+        description = "Get the test report summary for a GitLab pipeline — total counts only without per-case details.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_pipelines_get_test_report_summary(
         &self,
@@ -395,7 +403,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create (trigger) a new GitLab pipeline. Required: project_id, ref (branch/tag/SHA). Optional: variables (array of {key, value, variable_type} objects), inputs."
+        description = "Create (trigger) a new GitLab pipeline. Required: project_id, ref (branch/tag/SHA). Optional: variables (array of {key, value, variable_type} objects), inputs.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_pipelines_create(
         &self,
@@ -405,7 +414,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Retry all failed and canceled jobs in a GitLab pipeline, creating a new pipeline run."
+        description = "Retry all failed and canceled jobs in a GitLab pipeline, creating a new pipeline run.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_pipelines_retry(
         &self,
@@ -414,7 +424,14 @@ impl GitlabMcpServer {
         delegate_json!(self, pipeline_retry, p, "retrying", "pipeline")
     }
 
-    #[tool(description = "Cancel all running jobs in a GitLab pipeline.")]
+    #[tool(
+        description = "Cancel all running jobs in a GitLab pipeline.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
+    )]
     async fn gitlab_pipelines_cancel(
         &self,
         Parameters(p): Parameters<PipelineCancelParams>,
@@ -423,7 +440,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete a GitLab pipeline and all its jobs. Requires at least Maintainer role. This action is permanent."
+        description = "Delete a GitLab pipeline and all its jobs. Requires at least Maintainer role. This action is permanent.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_pipelines_delete(
         &self,
@@ -433,7 +455,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update the name of a GitLab pipeline. Required: project_id, pipeline_id, name (new pipeline name)."
+        description = "Update the name of a GitLab pipeline. Required: project_id, pipeline_id, name (new pipeline name).",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_pipelines_update_metadata(
         &self,

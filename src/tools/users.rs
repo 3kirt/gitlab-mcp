@@ -120,7 +120,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_users, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List GitLab users (GET /users). Filter with username (exact, case-insensitive lookup), search (fuzzy match on name/username/public email), active, blocked, external, humans (exclude bots/internal), and created_after/created_before (ISO 8601). order_by and sort are admin-only. Paginate with page and per_page. To fetch one user's full details by ID or username, use gitlab_users_get instead."
+        description = "List GitLab users (GET /users). Filter with username (exact, case-insensitive lookup), search (fuzzy match on name/username/public email), active, blocked, external, humans (exclude bots/internal), and created_after/created_before (ISO 8601). order_by and sort are admin-only. Paginate with page and per_page. To fetch one user's full details by ID or username, use gitlab_users_get instead.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_users_list(
         &self,
@@ -130,7 +131,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single GitLab user's details (GET /users/:id). Pass user_id as either a numeric user ID or a username. Returns the user's profile: id, username, name, state, web_url, created_at, bio, public_email, and more (extra fields are visible to administrators or for your own account)."
+        description = "Get a single GitLab user's details (GET /users/:id). Pass user_id as either a numeric user ID or a username. Returns the user's profile: id, username, name, state, web_url, created_at, bio, public_email, and more (extra fields are visible to administrators or for your own account).",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_users_get(
         &self,
@@ -140,7 +142,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List the public SSH keys for a GitLab user (GET /users/:id/keys). Useful for looking up a user's SSH public keys to add to server authorized_keys (e.g. when provisioning infrastructure with Ansible). Pass user_id as either a numeric user ID or a username. Returns key objects with id, title, key, created_at, and expires_at. Paginate with page and per_page."
+        description = "List the public SSH keys for a GitLab user (GET /users/:id/keys). Useful for looking up a user's SSH public keys to add to server authorized_keys (e.g. when provisioning infrastructure with Ansible). Pass user_id as either a numeric user ID or a username. Returns key objects with id, title, key, created_at, and expires_at. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_users_keys_list(
         &self,

@@ -37,7 +37,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_projects, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "Get a GitLab project by ID or namespace path. project_id accepts a numeric ID (e.g. \"42\") or a full namespace path (e.g. \"mygroup/myrepo\"). Optional: statistics=true to include commit/storage counts (requires Reporter role or higher). Returns core project details: id, name, path, path_with_namespace, description, visibility, default_branch, web_url, http_url_to_repo, namespace, created_at, and feature settings."
+        description = "Get a GitLab project by ID or namespace path. project_id accepts a numeric ID (e.g. \"42\") or a full namespace path (e.g. \"mygroup/myrepo\"). Optional: statistics=true to include commit/storage counts (requires Reporter role or higher). Returns core project details: id, name, path, path_with_namespace, description, visibility, default_branch, web_url, http_url_to_repo, namespace, created_at, and feature settings.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_projects_get(
         &self,

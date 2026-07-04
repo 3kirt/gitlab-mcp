@@ -213,7 +213,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_runners, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List runners available to the current authenticated user. Optional filters: type (\"instance_type\", \"group_type\", \"project_type\"), status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page."
+        description = "List runners available to the current authenticated user. Optional filters: type (\"instance_type\", \"group_type\", \"project_type\"), status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_runners_list(
         &self,
@@ -223,7 +224,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List all runners registered on the GitLab instance (administrators only). Optional filters: type (\"instance_type\", \"group_type\", \"project_type\"), status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page."
+        description = "List all runners registered on the GitLab instance (administrators only). Optional filters: type (\"instance_type\", \"group_type\", \"project_type\"), status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_runners_all_list(
         &self,
@@ -233,7 +235,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get details of a single GitLab runner by ID. Returns architecture, description, ip_address, status, tag_list, version, platform, projects, and more."
+        description = "Get details of a single GitLab runner by ID. Returns architecture, description, ip_address, status, tag_list, version, platform, projects, and more.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_runners_get(
         &self,
@@ -243,7 +246,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List jobs processed by a specific GitLab runner. Optional filters: system_id (runner manager), status (\"running\", \"success\", \"failed\", \"canceled\"), sort (\"asc\" or \"desc\"). Paginate with page and per_page."
+        description = "List jobs processed by a specific GitLab runner. Optional filters: system_id (runner manager), status (\"running\", \"success\", \"failed\", \"canceled\"), sort (\"asc\" or \"desc\"). Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_runners_jobs_list(
         &self,
@@ -253,7 +257,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List runner managers (individual machines) registered under a GitLab runner. Returns system_id, version, platform, architecture, ip_address, status, and last contact time. Paginate with page and per_page."
+        description = "List runner managers (individual machines) registered under a GitLab runner. Returns system_id, version, platform, architecture, ip_address, status, and last contact time. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_runners_managers_list(
         &self,
@@ -263,7 +268,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List runners available to a GitLab project. project_id accepts a numeric ID or namespace path. Optional filters: type (\"instance_type\", \"group_type\", \"project_type\"), status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page."
+        description = "List runners available to a GitLab project. project_id accepts a numeric ID or namespace path. Optional filters: type (\"instance_type\", \"group_type\", \"project_type\"), status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_runners_list_for_project(
         &self,
@@ -273,7 +279,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List runners available to a GitLab group. group_id accepts a numeric ID or namespace path. Optional filters: status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page."
+        description = "List runners available to a GitLab group. group_id accepts a numeric ID or namespace path. Optional filters: status (\"online\", \"offline\", \"stale\", \"never_contacted\"), paused, tag_list, version_prefix. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_runners_list_for_group(
         &self,

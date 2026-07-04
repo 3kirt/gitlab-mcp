@@ -134,7 +134,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_branches, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List branches for a GitLab project, sorted alphabetically. Optional filters: search (substring match) and regex (re2 regular expression). Paginate with page and per_page."
+        description = "List branches for a GitLab project, sorted alphabetically. Optional filters: search (substring match) and regex (re2 regular expression). Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_branches_list(
         &self,
@@ -144,7 +145,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single GitLab branch by project and branch name. Returns commit details and protection status."
+        description = "Get a single GitLab branch by project and branch name. Returns commit details and protection status.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_branches_get(
         &self,
@@ -154,7 +156,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create a new branch in a GitLab project. Required: project_id, branch (new branch name), ref (source branch name or commit SHA)."
+        description = "Create a new branch in a GitLab project. Required: project_id, branch (new branch name), ref (source branch name or commit SHA).",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_branches_create(
         &self,
@@ -164,7 +167,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete a GitLab branch by name. Cannot delete default or protected branches."
+        description = "Delete a GitLab branch by name. Cannot delete default or protected branches.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_branches_delete(
         &self,
@@ -174,7 +182,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete all branches in a GitLab project that have been merged into the default branch. Protected branches are excluded."
+        description = "Delete all branches in a GitLab project that have been merged into the default branch. Protected branches are excluded.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_branches_delete_merged(
         &self,

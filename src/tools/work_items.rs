@@ -1398,7 +1398,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_work_items, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "Get a single GitLab work item (issue, task, epic, incident, objective/OKR, key result) by namespace path and IID. Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID) and work_item_iid (the number from the URL/reference, e.g. #42). Returns a flattened object with id (global ID), iid, title, state, work_item_type, author, user_discussions_count (number of comment threads), and lifted widget data: description, assignees, labels, parent/children + children_count (hierarchy), start_date/due_date, milestone, weight, linked_items, award_emoji, closing_merge_requests (MRs that close it), iteration, and health_status. Field names are snake_case (matching the REST tools); values are normalized to match inputs too — state is \"opened\"/\"closed\" and work_item_type is UPPER_SNAKE (e.g. \"ISSUE\", \"KEY_RESULT\"). For classic project issues you can also use gitlab_issues_get."
+        description = "Get a single GitLab work item (issue, task, epic, incident, objective/OKR, key result) by namespace path and IID. Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID) and work_item_iid (the number from the URL/reference, e.g. #42). Returns a flattened object with id (global ID), iid, title, state, work_item_type, author, user_discussions_count (number of comment threads), and lifted widget data: description, assignees, labels, parent/children + children_count (hierarchy), start_date/due_date, milestone, weight, linked_items, award_emoji, closing_merge_requests (MRs that close it), iteration, and health_status. Field names are snake_case (matching the REST tools); values are normalized to match inputs too — state is \"opened\"/\"closed\" and work_item_type is UPPER_SNAKE (e.g. \"ISSUE\", \"KEY_RESULT\"). For classic project issues you can also use gitlab_issues_get.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_work_items_get(
         &self,
@@ -1408,7 +1409,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List GitLab work items (issues, tasks, epics, incidents, objectives/OKRs, key results) in a project or group. Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID). Optional filters: types (array of ISSUE/TASK/EPIC/INCIDENT/OBJECTIVE/KEY_RESULT/...), state (opened/closed/all), search (title + description), author_username, assignee_usernames, labels (names), milestone_title, confidential, and date ranges created_after/before, updated_after/before, due_after/before (ISO 8601). sort takes a WorkItemSort value (e.g. CREATED_DESC, UPDATED_DESC, DUE_DATE_ASC, TITLE_ASC). Pagination is cursor-based: first sets the page size (default 20, max 100) and after takes a cursor from the previous response; or pass fetch_all=true to merge every page into one nodes array. Returns { nodes: [...flattened work items...], page_info: { has_next_page, end_cursor } }. Output keys are snake_case (matching the REST tools). List nodes omit the bulk arrays (description, children, linked_items, award_emoji, closing_merge_requests) to save tokens — all kept on the single-item get — while the cheap scalar signals (children_count, user_discussions_count, etc.) remain. Values are normalized like get (state \"opened\"/\"closed\", work_item_type UPPER_SNAKE). For classic project issues you can also use gitlab_issues_list."
+        description = "List GitLab work items (issues, tasks, epics, incidents, objectives/OKRs, key results) in a project or group. Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID). Optional filters: types (array of ISSUE/TASK/EPIC/INCIDENT/OBJECTIVE/KEY_RESULT/...), state (opened/closed/all), search (title + description), author_username, assignee_usernames, labels (names), milestone_title, confidential, and date ranges created_after/before, updated_after/before, due_after/before (ISO 8601). sort takes a WorkItemSort value (e.g. CREATED_DESC, UPDATED_DESC, DUE_DATE_ASC, TITLE_ASC). Pagination is cursor-based: first sets the page size (default 20, max 100) and after takes a cursor from the previous response; or pass fetch_all=true to merge every page into one nodes array. Returns { nodes: [...flattened work items...], page_info: { has_next_page, end_cursor } }. Output keys are snake_case (matching the REST tools). List nodes omit the bulk arrays (description, children, linked_items, award_emoji, closing_merge_requests) to save tokens — all kept on the single-item get — while the cheap scalar signals (children_count, user_discussions_count, etc.) remain. Values are normalized like get (state \"opened\"/\"closed\", work_item_type UPPER_SNAKE). For classic project issues you can also use gitlab_issues_list.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_work_items_list(
         &self,
@@ -1418,7 +1420,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create a GitLab work item (issue, task, epic, incident, objective/OKR, key result). Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID), work_item_type (ISSUE/TASK/EPIC/INCIDENT/OBJECTIVE/KEY_RESULT/TICKET — case-insensitive; EPIC/OBJECTIVE/KEY_RESULT need Premium/Ultimate), and title. Optional: description (Markdown), confidential, labels (names), assignees (usernames), parent_work_item_iid, start_date / due_date (ISO 8601), milestone_id (numeric), weight (Premium/Ultimate). Returns the created work item (flattened, GraphQL camelCase fields). To create a classic project issue you can also use gitlab_issues_create."
+        description = "Create a GitLab work item (issue, task, epic, incident, objective/OKR, key result). Work items are the unified successor to the issues/epics REST API. Required: namespace_path (full project or group path like \"mygroup/myproject\", not a numeric ID), work_item_type (ISSUE/TASK/EPIC/INCIDENT/OBJECTIVE/KEY_RESULT/TICKET — case-insensitive; EPIC/OBJECTIVE/KEY_RESULT need Premium/Ultimate), and title. Optional: description (Markdown), confidential, labels (names), assignees (usernames), parent_work_item_iid, start_date / due_date (ISO 8601), milestone_id (numeric), weight (Premium/Ultimate). Returns the created work item (flattened, GraphQL camelCase fields). To create a classic project issue you can also use gitlab_issues_create.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_work_items_create(
         &self,
@@ -1428,7 +1431,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update a GitLab work item (issue, task, epic, incident, objective/OKR, key result) by namespace path and IID. Required: namespace_path (full project or group path) and work_item_iid (the number from the URL/reference). All other fields optional: title, description (Markdown), state_event (\"close\" or \"reopen\"), confidential, add_labels / remove_labels (names), assignees (usernames, replaces), parent_work_item_iid, start_date / due_date (ISO 8601), milestone_id (numeric), weight (Premium/Ultimate). Returns the updated work item (flattened). To update a classic project issue you can also use gitlab_issues_update."
+        description = "Update a GitLab work item (issue, task, epic, incident, objective/OKR, key result) by namespace path and IID. Required: namespace_path (full project or group path) and work_item_iid (the number from the URL/reference). All other fields optional: title, description (Markdown), state_event (\"close\" or \"reopen\"), confidential, add_labels / remove_labels (names), assignees (usernames, replaces), parent_work_item_iid, start_date / due_date (ISO 8601), milestone_id (numeric), weight (Premium/Ultimate). Returns the updated work item (flattened). To update a classic project issue you can also use gitlab_issues_update.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_work_items_update(
         &self,
@@ -1438,7 +1446,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete a GitLab work item (issue, task, epic, incident, objective/OKR, key result) by namespace path and IID. Required: namespace_path (full project or group path) and work_item_iid (the number from the URL/reference). This is permanent and cannot be undone."
+        description = "Delete a GitLab work item (issue, task, epic, incident, objective/OKR, key result) by namespace path and IID. Required: namespace_path (full project or group path) and work_item_iid (the number from the URL/reference). This is permanent and cannot be undone.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_work_items_delete(
         &self,
@@ -1448,7 +1461,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List comments (notes / discussion threads) on a GitLab work item (issue, task, epic, etc.). Required: namespace_path (full project or group path) and work_item_iid (the number from the URL/reference). Pagination is cursor-based: first (default 20, max 100) and after. Returns { nodes: [...notes...], pageInfo }. Each note has id (global ID, used for update/delete), body, author, createdAt, and a `system` flag (true for auto-generated activity like label changes; false for real comments)."
+        description = "List comments (notes / discussion threads) on a GitLab work item (issue, task, epic, etc.). Required: namespace_path (full project or group path) and work_item_iid (the number from the URL/reference). Pagination is cursor-based: first (default 20, max 100) and after. Returns { nodes: [...notes...], pageInfo }. Each note has id (global ID, used for update/delete), body, author, createdAt, and a `system` flag (true for auto-generated activity like label changes; false for real comments).",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_work_items_notes_list(
         &self,
@@ -1458,7 +1472,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Comment on a GitLab work item (issue, task, epic, etc.) — creates a note. Required: namespace_path (full project or group path), work_item_iid (the number from the URL/reference), and body (Markdown). Optional: internal (true makes it an internal note visible only to project members), discussion_id (a thread's global ID from the notes list, to reply within that thread instead of starting a new one). Returns the created note including its id (global ID) for later edit/delete."
+        description = "Comment on a GitLab work item (issue, task, epic, etc.) — creates a note. Required: namespace_path (full project or group path), work_item_iid (the number from the URL/reference), and body (Markdown). Optional: internal (true makes it an internal note visible only to project members), discussion_id (a thread's global ID from the notes list, to reply within that thread instead of starting a new one). Returns the created note including its id (global ID) for later edit/delete.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_work_items_notes_create(
         &self,
@@ -1468,7 +1483,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Edit a comment (note) on a GitLab work item. Required: note_id (the note's global ID, e.g. \"gid://gitlab/Note/123\", from gitlab_work_items_notes_list or _create) and body (the new Markdown). Returns the updated note."
+        description = "Edit a comment (note) on a GitLab work item. Required: note_id (the note's global ID, e.g. \"gid://gitlab/Note/123\", from gitlab_work_items_notes_list or _create) and body (the new Markdown). Returns the updated note.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_work_items_notes_update(
         &self,
@@ -1478,7 +1498,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete a comment (note) on a GitLab work item. Required: note_id (the note's global ID, e.g. \"gid://gitlab/Note/123\", from gitlab_work_items_notes_list). Permanent."
+        description = "Delete a comment (note) on a GitLab work item. Required: note_id (the note's global ID, e.g. \"gid://gitlab/Note/123\", from gitlab_work_items_notes_list). Permanent.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_work_items_notes_delete(
         &self,
@@ -1488,7 +1513,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Link a GitLab work item to other work item(s) (relates-to / blocks / is-blocked-by — the work-item equivalent of issue links). Required: namespace_path (full project or group path), work_item_iid (the item to link from), target_work_item_iids (array of IIDs in the same namespace to link to). Optional: link_type — \"relates_to\" (default), \"blocks\", or \"is_blocked_by\". Returns the updated work item with its linkedItems. For classic project issues you can also use gitlab_issues_links_create."
+        description = "Link a GitLab work item to other work item(s) (relates-to / blocks / is-blocked-by — the work-item equivalent of issue links). Required: namespace_path (full project or group path), work_item_iid (the item to link from), target_work_item_iids (array of IIDs in the same namespace to link to). Optional: link_type — \"relates_to\" (default), \"blocks\", or \"is_blocked_by\". Returns the updated work item with its linkedItems. For classic project issues you can also use gitlab_issues_links_create.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_work_items_link_add(
         &self,
@@ -1498,7 +1524,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Remove a link between a GitLab work item and other work item(s). Required: namespace_path (full project or group path), work_item_iid, target_work_item_iids (array of linked IIDs to unlink). Returns the updated work item."
+        description = "Remove a link between a GitLab work item and other work item(s). Required: namespace_path (full project or group path), work_item_iid, target_work_item_iids (array of linked IIDs to unlink). Returns the updated work item.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_work_items_link_remove(
         &self,
@@ -1508,7 +1539,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Add an emoji reaction (award emoji) to a GitLab work item. Required: namespace_path (full project or group path), work_item_iid, and name (emoji name, e.g. \"thumbsup\", \"rocket\", \"eyes\"). Returns the created award emoji. For classic project issues you can also use gitlab_emoji_reactions_issues_create."
+        description = "Add an emoji reaction (award emoji) to a GitLab work item. Required: namespace_path (full project or group path), work_item_iid, and name (emoji name, e.g. \"thumbsup\", \"rocket\", \"eyes\"). Returns the created award emoji. For classic project issues you can also use gitlab_emoji_reactions_issues_create.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_work_items_emoji_add(
         &self,
@@ -1518,7 +1550,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Remove an emoji reaction (award emoji) from a GitLab work item. Required: namespace_path (full project or group path), work_item_iid, and name (the emoji name to remove). Returns the removed award emoji."
+        description = "Remove an emoji reaction (award emoji) from a GitLab work item. Required: namespace_path (full project or group path), work_item_iid, and name (the emoji name to remove). Returns the removed award emoji.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_work_items_emoji_remove(
         &self,
@@ -1534,7 +1571,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Add an emoji reaction (award emoji) to a comment (note) on a GitLab work item. Required: note_id (the note's global ID, e.g. \"gid://gitlab/Note/123\", from gitlab_work_items_notes_list) and name (emoji name, e.g. \"thumbsup\"). Returns the created award emoji."
+        description = "Add an emoji reaction (award emoji) to a comment (note) on a GitLab work item. Required: note_id (the note's global ID, e.g. \"gid://gitlab/Note/123\", from gitlab_work_items_notes_list) and name (emoji name, e.g. \"thumbsup\"). Returns the created award emoji.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_work_items_notes_emoji_add(
         &self,
@@ -1549,7 +1587,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Remove an emoji reaction (award emoji) from a comment (note) on a GitLab work item. Required: note_id (the note's global ID) and name (the emoji name to remove). Returns the removed award emoji."
+        description = "Remove an emoji reaction (award emoji) from a comment (note) on a GitLab work item. Required: note_id (the note's global ID) and name (the emoji name to remove). Returns the removed award emoji.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_work_items_notes_emoji_remove(
         &self,

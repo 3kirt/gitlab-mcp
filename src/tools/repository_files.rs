@@ -267,7 +267,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_repository_files, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "Get a file from a GitLab repository. Returns metadata and Base64-encoded content. Required: project_id, file_path (e.g. \"src/main.rs\"), ref_name (branch/tag/SHA or \"HEAD\" for default branch)."
+        description = "Get a file from a GitLab repository. Returns metadata and Base64-encoded content. Required: project_id, file_path (e.g. \"src/main.rs\"), ref_name (branch/tag/SHA or \"HEAD\" for default branch).",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_file_get(
         &self,
@@ -277,7 +278,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get the raw text content of a file from a GitLab repository. Required: project_id, file_path. Optional: ref_name (default: HEAD), lfs (return LFS object instead of pointer)."
+        description = "Get the raw text content of a file from a GitLab repository. Required: project_id, file_path. Optional: ref_name (default: HEAD), lfs (return LFS object instead of pointer).",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_file_raw(
         &self,
@@ -287,7 +289,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get the blame history for a file in a GitLab repository, showing which commit last modified each line. Required: project_id, file_path, ref_name. Optional: range_start, range_end (1-based line numbers)."
+        description = "Get the blame history for a file in a GitLab repository, showing which commit last modified each line. Required: project_id, file_path, ref_name. Optional: range_start, range_end (1-based line numbers).",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_file_blame(
         &self,
@@ -297,7 +300,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create a new file in a GitLab repository. Required: project_id, file_path, branch, commit_message, content. Optional: encoding (\"base64\"), author_name, author_email, execute_filemode, start_branch."
+        description = "Create a new file in a GitLab repository. Required: project_id, file_path, branch, commit_message, content. Optional: encoding (\"base64\"), author_name, author_email, execute_filemode, start_branch.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_file_create(
         &self,
@@ -307,7 +311,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update an existing file in a GitLab repository. Required: project_id, file_path, branch, commit_message, content. Optional: encoding (\"base64\"), author_name, author_email, execute_filemode, last_commit_id, start_branch."
+        description = "Update an existing file in a GitLab repository. Required: project_id, file_path, branch, commit_message, content. Optional: encoding (\"base64\"), author_name, author_email, execute_filemode, last_commit_id, start_branch.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_file_update(
         &self,
@@ -317,7 +326,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete a file from a GitLab repository by committing its removal. Required: project_id, file_path, branch, commit_message. Optional: author_name, author_email, last_commit_id, start_branch."
+        description = "Delete a file from a GitLab repository by committing its removal. Required: project_id, file_path, branch, commit_message. Optional: author_name, author_email, last_commit_id, start_branch.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_file_delete(
         &self,

@@ -201,7 +201,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_issue_discussions, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List comments and discussion threads on a GitLab issue (thread-grouped view). Each thread has an individual_note flag and a notes[] array. For a flat list of the same comments, use gitlab_issues_notes_list. Paginate with page and per_page."
+        description = "List comments and discussion threads on a GitLab issue (thread-grouped view). Each thread has an individual_note flag and a notes[] array. For a flat list of the same comments, use gitlab_issues_notes_list. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_issues_discussions_list(
         &self,
@@ -211,7 +212,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single comment thread (discussion) on a GitLab issue by discussion ID (hex string)."
+        description = "Get a single comment thread (discussion) on a GitLab issue by discussion ID (hex string).",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_issues_discussions_get(
         &self,
@@ -221,7 +223,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Start a comment thread (discussion) on a GitLab issue. To post a plain comment, gitlab_issues_notes_create is the simpler equivalent. Required: project_id, issue_iid, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
+        description = "Start a comment thread (discussion) on a GitLab issue. To post a plain comment, gitlab_issues_notes_create is the simpler equivalent. Required: project_id, issue_iid, body. Optional: created_at (ISO 8601; requires administrator or Owner role).",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_issues_discussions_create(
         &self,
@@ -231,7 +234,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Reply to an existing comment thread (discussion) on a GitLab issue. Required: project_id, issue_iid, discussion_id, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
+        description = "Reply to an existing comment thread (discussion) on a GitLab issue. Required: project_id, issue_iid, discussion_id, body. Optional: created_at (ISO 8601; requires administrator or Owner role).",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_issues_discussions_note_create(
         &self,
@@ -246,7 +250,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Edit the body of a comment (note) in a GitLab issue discussion thread. Required: project_id, issue_iid, discussion_id, note_id, body."
+        description = "Edit the body of a comment (note) in a GitLab issue discussion thread. Required: project_id, issue_iid, discussion_id, note_id, body.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_issues_discussions_note_update(
         &self,
@@ -261,7 +270,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete a comment (note) from a GitLab issue discussion thread. Required: project_id, issue_iid, discussion_id, note_id. This action is permanent."
+        description = "Delete a comment (note) from a GitLab issue discussion thread. Required: project_id, issue_iid, discussion_id, note_id. This action is permanent.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_issues_discussions_note_delete(
         &self,

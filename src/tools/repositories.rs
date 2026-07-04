@@ -312,7 +312,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_repositories, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List files and directories in a GitLab repository tree. Optional: path (subdirectory), ref (branch/tag/SHA), recursive, pagination mode (keyset), page_token, page, per_page."
+        description = "List files and directories in a GitLab repository tree. Optional: path (subdirectory), ref (branch/tag/SHA), recursive, pagination mode (keyset), page_token, page, per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_repo_tree(
         &self,
@@ -322,7 +323,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get metadata for a GitLab repository blob (file) by its SHA. Returns content (Base64 encoded), encoding, sha, and size in bytes."
+        description = "Get metadata for a GitLab repository blob (file) by its SHA. Returns content (Base64 encoded), encoding, sha, and size in bytes.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_repo_blob_get(
         &self,
@@ -332,7 +334,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get the raw text content of a GitLab repository blob by its SHA. Best suited for text files; binary files may not decode cleanly."
+        description = "Get the raw text content of a GitLab repository blob by its SHA. Best suited for text files; binary files may not decode cleanly.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_repo_blob_raw(
         &self,
@@ -342,7 +345,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Compare two refs (branches, tags, or commit SHAs) in a GitLab repository. Returns commit list, diffs, and comparison metadata. Optional: from_project_id, straight (direct diff), unidiff (unified format)."
+        description = "Compare two refs (branches, tags, or commit SHAs) in a GitLab repository. Returns commit list, diffs, and comparison metadata. Optional: from_project_id, straight (direct diff), unidiff (unified format).",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_repo_compare(
         &self,
@@ -352,7 +356,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List contributors for a GitLab repository with commit counts, additions, and deletions. Optional: order_by (name/email/commits), sort (asc/desc), ref (branch/tag/SHA), page, per_page."
+        description = "List contributors for a GitLab repository with commit counts, additions, and deletions. Optional: order_by (name/email/commits), sort (asc/desc), ref (branch/tag/SHA), page, per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_repo_contributors(
         &self,
@@ -362,7 +367,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Find the common ancestor (merge base) of two or more refs (commit SHAs, branch names, or tag names) in a GitLab repository."
+        description = "Find the common ancestor (merge base) of two or more refs (commit SHAs, branch names, or tag names) in a GitLab repository.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_repo_merge_base(
         &self,
@@ -372,7 +378,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Generate changelog markdown for a semantic version without committing it. Required: project_id, version. Optional: config_file, config_file_ref, from, to, trailer, date."
+        description = "Generate changelog markdown for a semantic version without committing it. Required: project_id, version. Optional: config_file, config_file_ref, from, to, trailer, date.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_repo_changelog_get(
         &self,
@@ -382,7 +389,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Generate changelog for a semantic version and commit it to the repository. Required: project_id, version. Optional: branch, config_file, config_file_ref, file, from, to, message, trailer, date."
+        description = "Generate changelog for a semantic version and commit it to the repository. Required: project_id, version. Optional: branch, config_file, config_file_ref, file, from, to, message, trailer, date.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_repo_changelog_add(
         &self,
@@ -392,7 +400,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get repository health statistics for a GitLab project, including size, references, objects, commit graph, and bitmap information. Optional: generate (create a report if none exists)."
+        description = "Get repository health statistics for a GitLab project, including size, references, objects, commit graph, and bitmap information. Optional: generate (create a report if none exists).",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_repo_health(
         &self,

@@ -372,7 +372,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_merge_requests, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List merge requests for a GitLab project. Filters: state (opened/closed/merged/all), source_branch, target_branch, author_id, assignee_id, reviewer_id, labels, search, draft, scope, created_after/created_before, updated_after/updated_before (ISO 8601), order_by, sort. Paginate with page and per_page."
+        description = "List merge requests for a GitLab project. Filters: state (opened/closed/merged/all), source_branch, target_branch, author_id, assignee_id, reviewer_id, labels, search, draft, scope, created_after/created_before, updated_after/updated_before (ISO 8601), order_by, sort. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_mrs_list(
         &self,
@@ -382,7 +383,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single GitLab merge request by project ID and merge request IID (the number shown in the GitLab UI). The response includes a closes_issues array (issues that will close when this MR is merged) and a related_issues array (all issues mentioned in or related to the MR; Premium/Ultimate — empty on lower tiers)."
+        description = "Get a single GitLab merge request by project ID and merge request IID (the number shown in the GitLab UI). The response includes a closes_issues array (issues that will close when this MR is merged) and a related_issues array (all issues mentioned in or related to the MR; Premium/Ultimate — empty on lower tiers).",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_mrs_get(
         &self,
@@ -392,7 +394,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create a new merge request in a GitLab project. Required: project_id, source_branch, target_branch, title. Optional: description, assignee_id, reviewer_ids, labels, milestone_id, squash, remove_source_branch, draft."
+        description = "Create a new merge request in a GitLab project. Required: project_id, source_branch, target_branch, title. Optional: description, assignee_id, reviewer_ids, labels, milestone_id, squash, remove_source_branch, draft.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_mrs_create(
         &self,
@@ -402,7 +405,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update an existing GitLab merge request. Use state_event=\"close\" to close or \"reopen\" to reopen. All fields except project_id and merge_request_iid are optional."
+        description = "Update an existing GitLab merge request. Use state_event=\"close\" to close or \"reopen\" to reopen. All fields except project_id and merge_request_iid are optional.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_mrs_update(
         &self,
@@ -412,7 +420,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete a GitLab merge request. Requires at least Maintainer role. This action is permanent and cannot be undone."
+        description = "Delete a GitLab merge request. Requires at least Maintainer role. This action is permanent and cannot be undone.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_mrs_delete(
         &self,
@@ -422,7 +435,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Accept and merge a GitLab merge request. Optional: merge_commit_message, squash, should_remove_source_branch, merge_when_pipeline_succeeds."
+        description = "Accept and merge a GitLab merge request. Optional: merge_commit_message, squash, should_remove_source_branch, merge_when_pipeline_succeeds.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_mrs_merge(
         &self,
@@ -432,7 +446,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Approve a GitLab merge request. Required: project_id and merge_request_iid. Optional: sha (HEAD commit SHA to guard against concurrent updates), approval_password (only needed if re-authentication is enabled). Returns the updated approval state including approvals_left and approved_by."
+        description = "Approve a GitLab merge request. Required: project_id and merge_request_iid. Optional: sha (HEAD commit SHA to guard against concurrent updates), approval_password (only needed if re-authentication is enabled). Returns the updated approval state including approvals_left and approved_by.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_mrs_approve(
         &self,
@@ -442,7 +461,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Unapprove a GitLab merge request that the current user has previously approved. Required: project_id and merge_request_iid."
+        description = "Unapprove a GitLab merge request that the current user has previously approved. Required: project_id and merge_request_iid.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_mrs_unapprove(
         &self,

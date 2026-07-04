@@ -318,7 +318,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_issues, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List issues for a GitLab project. Filters: state (opened/closed/all), labels, search, scope, assignee_id, author_id, created_after/created_before, updated_after/updated_before (ISO 8601), order_by, sort. Paginate with page and per_page."
+        description = "List issues for a GitLab project. Filters: state (opened/closed/all), labels, search, scope, assignee_id, author_id, created_after/created_before, updated_after/updated_before (ISO 8601), order_by, sort. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_issues_list(
         &self,
@@ -328,7 +329,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single GitLab issue by project ID and issue IID (the issue number shown in the GitLab UI). The response includes a linked_issues array (linked issues with link type and issue_link_id) and a closed_by array (merge requests that will close this issue when merged)."
+        description = "Get a single GitLab issue by project ID and issue IID (the issue number shown in the GitLab UI). The response includes a linked_issues array (linked issues with link type and issue_link_id) and a closed_by array (merge requests that will close this issue when merged).",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_issues_get(
         &self,
@@ -338,7 +340,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create a new issue in a GitLab project. Required: project_id, title. Optional: description, labels, assignee_ids, milestone_id, due_date, weight."
+        description = "Create a new issue in a GitLab project. Required: project_id, title. Optional: description, labels, assignee_ids, milestone_id, due_date, weight.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_issues_create(
         &self,
@@ -348,7 +351,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update an existing GitLab issue. Use state_event=\"close\" to close it or \"reopen\" to reopen it. All fields except project_id and issue_iid are optional."
+        description = "Update an existing GitLab issue. Use state_event=\"close\" to close it or \"reopen\" to reopen it. All fields except project_id and issue_iid are optional.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_issues_update(
         &self,
@@ -358,7 +366,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete a GitLab issue. Requires at least Maintainer role on the project. This action is permanent and cannot be undone."
+        description = "Delete a GitLab issue. Requires at least Maintainer role on the project. This action is permanent and cannot be undone.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_issues_delete(
         &self,
@@ -368,7 +381,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List all links for a GitLab issue. Returns linked issues with their link type (relates_to, blocks, is_blocked_by) and issue_link_id."
+        description = "List all links for a GitLab issue. Returns linked issues with their link type (relates_to, blocks, is_blocked_by) and issue_link_id.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_issues_links_list(
         &self,
@@ -378,7 +392,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single issue link by its relationship ID (issue_link_id). Returns source_issue, target_issue, and link_type."
+        description = "Get a single issue link by its relationship ID (issue_link_id). Returns source_issue, target_issue, and link_type.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_issues_links_get(
         &self,
@@ -388,7 +403,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create a link between two GitLab issues. Required: project_id, issue_iid (source), target_project_id, target_issue_iid. Optional: link_type (\"relates_to\" (default), \"blocks\", or \"is_blocked_by\")."
+        description = "Create a link between two GitLab issues. Required: project_id, issue_iid (source), target_project_id, target_issue_iid. Optional: link_type (\"relates_to\" (default), \"blocks\", or \"is_blocked_by\").",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_issues_links_create(
         &self,
@@ -398,7 +414,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete a link between two GitLab issues by its relationship ID (issue_link_id from the list response). Returns the deleted link object."
+        description = "Delete a link between two GitLab issues by its relationship ID (issue_link_id from the list response). Returns the deleted link object.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_issues_links_delete(
         &self,

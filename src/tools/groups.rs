@@ -84,7 +84,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_groups, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List GitLab groups accessible to the current user. Optional filters: search (by name or path), all_available (true to include all accessible groups, not just member groups), owned (limit to owned groups), min_access_level (10=Guest, 20=Reporter, 30=Developer, 40=Maintainer, 50=Owner), top_level_only (exclude subgroups). Sort with order_by (name/path/id/similarity) and sort (asc/desc). Paginate with page and per_page."
+        description = "List GitLab groups accessible to the current user. Optional filters: search (by name or path), all_available (true to include all accessible groups, not just member groups), owned (limit to owned groups), min_access_level (10=Guest, 20=Reporter, 30=Developer, 40=Maintainer, 50=Owner), top_level_only (exclude subgroups). Sort with order_by (name/path/id/similarity) and sort (asc/desc). Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_groups_list(
         &self,
@@ -94,7 +95,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get details of a GitLab group by ID or full namespace path (e.g. \"mygroup\" or \"mygroup/subgroup\"). Returns id, name, path, full_path, description, visibility, web_url, parent_id, and created_at. Set with_projects=true to include the group's projects (max 100) in the response."
+        description = "Get details of a GitLab group by ID or full namespace path (e.g. \"mygroup\" or \"mygroup/subgroup\"). Returns id, name, path, full_path, description, visibility, web_url, parent_id, and created_at. Set with_projects=true to include the group's projects (max 100) in the response.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_groups_get(
         &self,

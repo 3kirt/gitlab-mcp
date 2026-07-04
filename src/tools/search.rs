@@ -109,7 +109,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_search, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "Search across the entire GitLab instance. Required: scope (projects, issues, merge_requests, milestones, snippet_titles, users, wiki_blobs, commits, blobs, notes), search. Optional: search_type, order_by, sort, confidential, state, fields, page, per_page."
+        description = "Search across the entire GitLab instance. Required: scope (projects, issues, merge_requests, milestones, snippet_titles, users, wiki_blobs, commits, blobs, notes), search. Optional: search_type, order_by, sort, confidential, state, fields, page, per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_search_global(
         &self,
@@ -119,7 +120,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Search within a group. Required: group_id, scope, search. Optional: search_type, order_by, sort, confidential, state, fields, page, per_page."
+        description = "Search within a group. Required: group_id, scope, search. Optional: search_type, order_by, sort, confidential, state, fields, page, per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_search_group(
         &self,
@@ -129,7 +131,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Search within a project. Required: project_id, scope, search. Optional: search_type, order_by, sort, confidential, state, fields, page, per_page."
+        description = "Search within a project. Required: project_id, scope, search. Optional: search_type, order_by, sort, confidential, state, fields, page, per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_search_project(
         &self,

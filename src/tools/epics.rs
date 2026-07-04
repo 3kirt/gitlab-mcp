@@ -308,7 +308,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_epics, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List epics in a GitLab group. Required: group_id (numeric ID or full namespace path like \"mygroup\"). Optional filters: state (opened/closed/all), search, author_username, label_name (array of label names), iids (array of epic IIDs from the URL). Sort: order_by (created_at/updated_at/title) and sort (asc/desc). Pagination: page and per_page (default 20, max 100). Returns each epic with id, iid, title, state, author, labels, dates, and web_url."
+        description = "List epics in a GitLab group. Required: group_id (numeric ID or full namespace path like \"mygroup\"). Optional filters: state (opened/closed/all), search, author_username, label_name (array of label names), iids (array of epic IIDs from the URL). Sort: order_by (created_at/updated_at/title) and sort (asc/desc). Pagination: page and per_page (default 20, max 100). Returns each epic with id, iid, title, state, author, labels, dates, and web_url.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_epics_list(
         &self,
@@ -318,7 +319,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single GitLab epic by group and epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`). group_id accepts a numeric ID or full namespace path. Returns full epic details: id, iid, title, description, state, author, labels, start_date, due_date, parent_id, parent_iid, web_url, and issues (child issues associated with the epic)."
+        description = "Get a single GitLab epic by group and epic IID (the number from the URL `/groups/<g>/-/epics/<iid>`). group_id accepts a numeric ID or full namespace path. Returns full epic details: id, iid, title, description, state, author, labels, start_date, due_date, parent_id, parent_iid, web_url, and issues (child issues associated with the epic).",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_epics_get(
         &self,
@@ -328,7 +330,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create a new epic in a GitLab group. Required: group_id (numeric ID or full namespace path), title. Optional: description (Markdown), labels (comma-separated label names), parent_epic_iid (an existing epic IID in the same group to set as the hierarchy parent; 0 is not valid on create), start_date and due_date (ISO 8601)."
+        description = "Create a new epic in a GitLab group. Required: group_id (numeric ID or full namespace path), title. Optional: description (Markdown), labels (comma-separated label names), parent_epic_iid (an existing epic IID in the same group to set as the hierarchy parent; 0 is not valid on create), start_date and due_date (ISO 8601).",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_epics_create(
         &self,
@@ -338,7 +341,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update an existing GitLab epic by group and epic IID. All fields are optional. Use state_event=\"close\" or \"reopen\" to change state. Use labels to replace all labels, add_labels/remove_labels to adjust them incrementally. For parent_epic_iid: pass an existing epic IID to set a new parent, or 0 to remove the existing parent."
+        description = "Update an existing GitLab epic by group and epic IID. All fields are optional. Use state_event=\"close\" or \"reopen\" to change state. Use labels to replace all labels, add_labels/remove_labels to adjust them incrementally. For parent_epic_iid: pass an existing epic IID to set a new parent, or 0 to remove the existing parent.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_epics_update(
         &self,
@@ -348,7 +356,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete a GitLab epic by group and epic IID. Requires sufficient group permissions. This action is permanent and cannot be undone."
+        description = "Delete a GitLab epic by group and epic IID. Requires sufficient group permissions. This action is permanent and cannot be undone.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_epics_delete(
         &self,
@@ -358,7 +371,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Assign an issue to a GitLab epic. Required: group_id (numeric ID or full namespace path), epic_iid (epic's IID from the URL), issue_id (the global numeric issue ID — not the project-scoped IID; use gitlab_issues_get to find it). Returns the epic-issue association object, which includes an `id` field (the epic_issue_id) needed to remove or reorder the issue."
+        description = "Assign an issue to a GitLab epic. Required: group_id (numeric ID or full namespace path), epic_iid (epic's IID from the URL), issue_id (the global numeric issue ID — not the project-scoped IID; use gitlab_issues_get to find it). Returns the epic-issue association object, which includes an `id` field (the epic_issue_id) needed to remove or reorder the issue.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_epics_issue_assign(
         &self,
@@ -368,7 +382,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Remove an issue from a GitLab epic. Required: group_id (numeric ID or full namespace path), epic_iid (epic's IID from the URL), epic_issue_id (the association ID — the `id` field returned by gitlab_epics_get in the issues array, or by gitlab_epics_issue_assign). Returns the deleted association object."
+        description = "Remove an issue from a GitLab epic. Required: group_id (numeric ID or full namespace path), epic_iid (epic's IID from the URL), epic_issue_id (the association ID — the `id` field returned by gitlab_epics_get in the issues array, or by gitlab_epics_issue_assign). Returns the deleted association object.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_epics_issue_remove(
         &self,

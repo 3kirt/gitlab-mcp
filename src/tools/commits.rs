@@ -572,7 +572,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_commits, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List commits for a GitLab project. Optional filters: ref_name (branch/tag/range), since/until (ISO 8601), path (file filter), author, all, first_parent, order (default/topo), with_stats, trailers, follow. Paginate with page and per_page."
+        description = "List commits for a GitLab project. Optional filters: ref_name (branch/tag/range), since/until (ISO 8601), path (file filter), author, all, first_parent, order (default/topo), with_stats, trailers, follow. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_commits_list(
         &self,
@@ -582,7 +583,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single GitLab commit by SHA, branch name, or tag name. Optional: stats (include commit statistics, default true)."
+        description = "Get a single GitLab commit by SHA, branch name, or tag name. Optional: stats (include commit statistics, default true).",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_commits_get(
         &self,
@@ -592,7 +594,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create a commit in a GitLab project with one or more file actions (create, update, delete, move, chmod). Required: project_id, branch, commit_message, actions[]. Optional: start_branch, start_sha, start_project, author_name, author_email, force, allow_empty, stats."
+        description = "Create a commit in a GitLab project with one or more file actions (create, update, delete, move, chmod). Required: project_id, branch, commit_message, actions[]. Optional: start_branch, start_sha, start_project, author_name, author_email, force, allow_empty, stats.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_commits_create(
         &self,
@@ -602,7 +605,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List all branches and tags that contain a specific commit. Optional: type (\"branch\", \"tag\", or \"all\"), page, per_page."
+        description = "List all branches and tags that contain a specific commit. Optional: type (\"branch\", \"tag\", or \"all\"), page, per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_commits_refs(
         &self,
@@ -612,7 +616,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get the sequence number of a commit (number of ancestors by following parent links). Optional: first_parent."
+        description = "Get the sequence number of a commit (number of ancestors by following parent links). Optional: first_parent.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_commits_sequence(
         &self,
@@ -622,7 +627,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Cherry-pick a commit into a target branch. Required: project_id, sha, branch. Optional: dry_run (simulate without committing), message (custom commit message)."
+        description = "Cherry-pick a commit into a target branch. Required: project_id, sha, branch. Optional: dry_run (simulate without committing), message (custom commit message).",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_commits_cherry_pick(
         &self,
@@ -632,7 +638,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Revert a commit by creating a new revert commit on the target branch. Required: project_id, sha, branch. Optional: dry_run (simulate without committing)."
+        description = "Revert a commit by creating a new revert commit on the target branch. Required: project_id, sha, branch. Optional: dry_run (simulate without committing).",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_commits_revert(
         &self,
@@ -642,7 +649,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get the diff introduced by a specific commit. Optional: unidiff (use unified diff format, default false), page, per_page."
+        description = "Get the diff introduced by a specific commit. Optional: unidiff (use unified diff format, default false), page, per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_commits_diff(
         &self,
@@ -651,7 +659,10 @@ impl GitlabMcpServer {
         delegate_list!(self, commit_diff, p, "commit diff")
     }
 
-    #[tool(description = "List all comments on a commit. Paginate with page and per_page.")]
+    #[tool(
+        description = "List all comments on a commit. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
+    )]
     async fn gitlab_commits_comments_list(
         &self,
         Parameters(p): Parameters<CommitCommentsListParams>,
@@ -660,7 +671,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Post a comment on a commit. Required: project_id, sha, note. Optional: path (file path for inline comment), line (line number), line_type (\"new\" or \"old\")."
+        description = "Post a comment on a commit. Required: project_id, sha, note. Optional: path (file path for inline comment), line (line number), line_type (\"new\" or \"old\").",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_commits_comment_create(
         &self,
@@ -670,7 +682,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List comment threads (discussions) on a commit. Paginate with page and per_page."
+        description = "List comment threads (discussions) on a commit. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_commits_discussions_list(
         &self,
@@ -680,7 +693,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List CI/CD pipeline statuses for a commit. Optional: ref (branch/tag), name (job name filter), stage, all (include non-latest), pipeline_id, order_by (id/pipeline_id), sort (asc/desc), page, per_page."
+        description = "List CI/CD pipeline statuses for a commit. Optional: ref (branch/tag), name (job name filter), stage, all (include non-latest), pipeline_id, order_by (id/pipeline_id), sort (asc/desc), page, per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_commits_statuses_list(
         &self,
@@ -690,7 +704,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Set a pipeline status on a commit (for external CI systems). Required: project_id, sha, state (pending/running/success/failed/canceled/skipped). Optional: name/context, ref, description, target_url, coverage, pipeline_id."
+        description = "Set a pipeline status on a commit (for external CI systems). Required: project_id, sha, state (pending/running/success/failed/canceled/skipped). Optional: name/context, ref, description, target_url, coverage, pipeline_id.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_commits_status_set(
         &self,
@@ -700,7 +715,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List merge requests that introduced a specific commit. Optional: state (opened/closed/locked/merged), page, per_page."
+        description = "List merge requests that introduced a specific commit. Optional: state (opened/closed/locked/merged), page, per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_commits_merge_requests(
         &self,
@@ -710,7 +726,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get the GPG, SSH, or X.509 signature for a signed commit. Returns 404 for unsigned commits."
+        description = "Get the GPG, SSH, or X.509 signature for a signed commit. Returns 404 for unsigned commits.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_commits_signature(
         &self,

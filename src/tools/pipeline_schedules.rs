@@ -370,7 +370,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_pipeline_schedules, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List pipeline schedules for a GitLab project. Optional: scope (\"active\" or \"inactive\"), page, per_page."
+        description = "List pipeline schedules for a GitLab project. Optional: scope (\"active\" or \"inactive\"), page, per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_pipeline_schedules_list(
         &self,
@@ -379,7 +380,10 @@ impl GitlabMcpServer {
         delegate_list!(self, pipeline_schedules_list, p, "pipeline schedules")
     }
 
-    #[tool(description = "Get a single GitLab pipeline schedule by project ID and schedule ID.")]
+    #[tool(
+        description = "Get a single GitLab pipeline schedule by project ID and schedule ID.",
+        annotations(read_only_hint = true)
+    )]
     async fn gitlab_pipeline_schedules_get(
         &self,
         Parameters(p): Parameters<PipelineScheduleGetParams>,
@@ -388,7 +392,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "List pipelines triggered by a pipeline schedule. Optional filters: status, scope, sort, created_after, created_before, updated_after, updated_before, page, per_page."
+        description = "List pipelines triggered by a pipeline schedule. Optional filters: status, scope, sort, created_after, created_before, updated_after, updated_before, page, per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_pipeline_schedules_pipelines_list(
         &self,
@@ -403,7 +408,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create a new pipeline schedule. Required: project_id, cron, description, ref. Optional: active, cron_timezone."
+        description = "Create a new pipeline schedule. Required: project_id, cron, description, ref. Optional: active, cron_timezone.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_pipeline_schedules_create(
         &self,
@@ -413,7 +419,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update an existing GitLab pipeline schedule. All fields optional: cron, description, ref, active, cron_timezone."
+        description = "Update an existing GitLab pipeline schedule. All fields optional: cron, description, ref, active, cron_timezone.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_pipeline_schedules_update(
         &self,
@@ -422,7 +433,14 @@ impl GitlabMcpServer {
         delegate_update!(self, pipeline_schedule_update, p, "pipeline schedule")
     }
 
-    #[tool(description = "Delete a GitLab pipeline schedule.")]
+    #[tool(
+        description = "Delete a GitLab pipeline schedule.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
+    )]
     async fn gitlab_pipeline_schedules_delete(
         &self,
         Parameters(p): Parameters<PipelineScheduleDeleteParams>,
@@ -430,7 +448,14 @@ impl GitlabMcpServer {
         delegate_delete!(self, pipeline_schedule_delete, p, "pipeline schedule")
     }
 
-    #[tool(description = "Take ownership of a GitLab pipeline schedule.")]
+    #[tool(
+        description = "Take ownership of a GitLab pipeline schedule.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
+    )]
     async fn gitlab_pipeline_schedules_take_ownership(
         &self,
         Parameters(p): Parameters<PipelineScheduleTakeOwnershipParams>,
@@ -444,7 +469,10 @@ impl GitlabMcpServer {
         )
     }
 
-    #[tool(description = "Run a GitLab pipeline schedule immediately (trigger now).")]
+    #[tool(
+        description = "Run a GitLab pipeline schedule immediately (trigger now).",
+        annotations(read_only_hint = false, destructive_hint = false)
+    )]
     async fn gitlab_pipeline_schedules_play(
         &self,
         Parameters(p): Parameters<PipelineSchedulePlayParams>,
@@ -459,7 +487,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create a variable for a GitLab pipeline schedule. Required: project_id, pipeline_schedule_id, key, value. Optional: variable_type (\"env_var\" or \"file\")."
+        description = "Create a variable for a GitLab pipeline schedule. Required: project_id, pipeline_schedule_id, key, value. Optional: variable_type (\"env_var\" or \"file\").",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_pipeline_schedules_variables_create(
         &self,
@@ -473,7 +502,10 @@ impl GitlabMcpServer {
         )
     }
 
-    #[tool(description = "Get a variable from a GitLab pipeline schedule.")]
+    #[tool(
+        description = "Get a variable from a GitLab pipeline schedule.",
+        annotations(read_only_hint = true)
+    )]
     async fn gitlab_pipeline_schedules_variables_get(
         &self,
         Parameters(p): Parameters<PipelineScheduleVariableGetParams>,
@@ -486,7 +518,14 @@ impl GitlabMcpServer {
         )
     }
 
-    #[tool(description = "Update a variable in a GitLab pipeline schedule.")]
+    #[tool(
+        description = "Update a variable in a GitLab pipeline schedule.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
+    )]
     async fn gitlab_pipeline_schedules_variables_update(
         &self,
         Parameters(p): Parameters<PipelineScheduleVariableUpdateParams>,
@@ -499,7 +538,14 @@ impl GitlabMcpServer {
         )
     }
 
-    #[tool(description = "Delete a variable from a GitLab pipeline schedule.")]
+    #[tool(
+        description = "Delete a variable from a GitLab pipeline schedule.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
+    )]
     async fn gitlab_pipeline_schedules_variables_delete(
         &self,
         Parameters(p): Parameters<PipelineScheduleVariableDeleteParams>,

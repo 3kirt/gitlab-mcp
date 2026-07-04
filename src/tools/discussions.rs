@@ -284,7 +284,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_discussions, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List comments and discussion threads on a GitLab merge request (an MR's notes/comments live here). Each thread has an individual_note flag and a notes[] array; plain top-level comments appear as single-note threads. Paginate with page and per_page."
+        description = "List comments and discussion threads on a GitLab merge request (an MR's notes/comments live here). Each thread has an individual_note flag and a notes[] array; plain top-level comments appear as single-note threads. Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_mrs_discussions_list(
         &self,
@@ -294,7 +295,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get a single comment thread (discussion) on a GitLab merge request by discussion ID (hex string)."
+        description = "Get a single comment thread (discussion) on a GitLab merge request by discussion ID (hex string).",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_mrs_discussions_get(
         &self,
@@ -304,7 +306,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Comment on a GitLab merge request (creates a note / starts a discussion thread). To post a plain top-level comment, pass only body — this is the MR equivalent of gitlab_issues_notes_create. To pin an inline comment to a specific diff line, also pass the position_* fields. Required: project_id, merge_request_iid, body. Optional: commit_id (pin to commit SHA); inline diff-note position: position_base_sha, position_head_sha, position_start_sha, position_type (\"text\"/\"image\"/\"file\"), position_new_path, position_old_path, position_new_line, position_old_line."
+        description = "Comment on a GitLab merge request (creates a note / starts a discussion thread). To post a plain top-level comment, pass only body — this is the MR equivalent of gitlab_issues_notes_create. To pin an inline comment to a specific diff line, also pass the position_* fields. Required: project_id, merge_request_iid, body. Optional: commit_id (pin to commit SHA); inline diff-note position: position_base_sha, position_head_sha, position_start_sha, position_type (\"text\"/\"image\"/\"file\"), position_new_path, position_old_path, position_new_line, position_old_line.",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_mrs_discussions_create(
         &self,
@@ -314,7 +317,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Resolve or unresolve a discussion thread on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, resolved (true to resolve, false to unresolve). Requires Developer role or being the change author."
+        description = "Resolve or unresolve a discussion thread on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, resolved (true to resolve, false to unresolve). Requires Developer role or being the change author.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_mrs_discussions_resolve(
         &self,
@@ -324,7 +332,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Reply to an existing comment thread (discussion) on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
+        description = "Reply to an existing comment thread (discussion) on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, body. Optional: created_at (ISO 8601; requires administrator or Owner role).",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_mrs_discussions_note_create(
         &self,
@@ -334,7 +343,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Edit or resolve a comment (note) on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, note_id. Provide exactly one of: body (new comment text) or resolved (true/false)."
+        description = "Edit or resolve a comment (note) on a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, note_id. Provide exactly one of: body (new comment text) or resolved (true/false).",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_mrs_discussions_note_update(
         &self,
@@ -344,7 +358,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete a comment (note) from a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, note_id. This action is permanent."
+        description = "Delete a comment (note) from a GitLab merge request. Required: project_id, merge_request_iid, discussion_id, note_id. This action is permanent.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_mrs_discussions_note_delete(
         &self,

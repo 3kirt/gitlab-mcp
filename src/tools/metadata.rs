@@ -40,7 +40,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_metadata, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "Get metadata about the GitLab instance, including version, revision, enterprise status, and Kubernetes agent server (KAS) information."
+        description = "Get metadata about the GitLab instance, including version, revision, enterprise status, and Kubernetes agent server (KAS) information.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_metadata_get(
         &self,
@@ -50,7 +51,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Get the parameter schema for a named tool on this GitLab MCP server (lightweight introspection). Returns the tool's description and JSON Schema of its parameters, including which fields are required. Use this before calling a tool when unsure of its exact parameter names."
+        description = "Get the parameter schema for a named tool on this GitLab MCP server (lightweight introspection). Returns the tool's description and JSON Schema of its parameters, including which fields are required. Use this before calling a tool when unsure of its exact parameter names.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_tool_schema_get(
         &self,

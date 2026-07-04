@@ -163,7 +163,8 @@ use crate::tools::GitlabMcpServer;
 #[tool_router(router = tool_router_issue_notes, vis = "pub(crate)")]
 impl GitlabMcpServer {
     #[tool(
-        description = "List notes (comments) on a GitLab issue. Optional: order_by (\"created_at\" or \"updated_at\"), sort (\"asc\" or \"desc\"). Paginate with page and per_page."
+        description = "List notes (comments) on a GitLab issue. Optional: order_by (\"created_at\" or \"updated_at\"), sort (\"asc\" or \"desc\"). Paginate with page and per_page.",
+        annotations(read_only_hint = true)
     )]
     async fn gitlab_issues_notes_list(
         &self,
@@ -172,7 +173,10 @@ impl GitlabMcpServer {
         delegate_list!(self, issue_notes_list, p, "issue notes")
     }
 
-    #[tool(description = "Get a single note on a GitLab issue by note ID.")]
+    #[tool(
+        description = "Get a single note on a GitLab issue by note ID.",
+        annotations(read_only_hint = true)
+    )]
     async fn gitlab_issues_notes_get(
         &self,
         Parameters(p): Parameters<IssueNoteGetParams>,
@@ -181,7 +185,8 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Create a new note (comment) on a GitLab issue. Required: project_id, issue_iid, body. Optional: created_at (ISO 8601; requires administrator or Owner role)."
+        description = "Create a new note (comment) on a GitLab issue. Required: project_id, issue_iid, body. Optional: created_at (ISO 8601; requires administrator or Owner role).",
+        annotations(read_only_hint = false, destructive_hint = false)
     )]
     async fn gitlab_issues_notes_create(
         &self,
@@ -191,7 +196,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update the body of a note on a GitLab issue. Required: project_id, issue_iid, note_id, body."
+        description = "Update the body of a note on a GitLab issue. Required: project_id, issue_iid, note_id, body.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_issues_notes_update(
         &self,
@@ -201,7 +211,12 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Delete a note from a GitLab issue. Required: project_id, issue_iid, note_id. This action is permanent."
+        description = "Delete a note from a GitLab issue. Required: project_id, issue_iid, note_id. This action is permanent.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true
+        )
     )]
     async fn gitlab_issues_notes_delete(
         &self,
