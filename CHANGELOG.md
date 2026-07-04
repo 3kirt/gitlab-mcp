@@ -4,6 +4,29 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.31.0] — 2026-07-04
+
+Upgrade to rmcp 2.x and add per-tool behavior annotations for MCP clients.
+
+### Added
+- **Tool annotations** — every tool now declares MCP behavior hints
+  (`readOnlyHint`, `destructiveHint`, `idempotentHint`) so clients can make
+  auto-approval and safety-UX decisions: reads are read-only, creates are
+  additive, updates are idempotent non-destructive, and deletes are destructive.
+  A fail-closed test ensures new tools can't be added without annotations.
+
+### Changed
+- **rmcp 1.8 → 2.1** (major). Adapts to the 2.x API: `model::Content` was
+  renamed to `ContentBlock`, and `ProgressNotificationParam` is now
+  `#[non_exhaustive]`.
+- **Clippy runs at pedantic strictness** — the `pedantic`, `nursery`, and
+  `cargo` lint groups are enabled in `Cargo.toml` (with a curated allow-list),
+  so every clippy run and the release gate enforce them. Added package
+  `repository`/`keywords`/`categories` metadata, and extended the `Makefile`
+  with `lint` (all targets + features), `check`, `audit`, and `live-test` targets.
+- `resolve_work_item_gids` now reuses the shared `map_names_to_ids` helper
+  instead of a hand-rolled lookup loop.
+
 ## [0.30.0] — 2026-06-25
 
 Drops the deprecated MCP logging feature and moves to rmcp 1.8.
