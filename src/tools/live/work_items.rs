@@ -235,7 +235,7 @@ async fn work_items_list_matches_rest_issues_list() {
         seed_issue_full(&env, format!("{tag} alpha"), None, None).await,
         seed_issue_full(&env, format!("{tag} beta"), None, None).await,
     ];
-    seeded.sort();
+    seeded.sort_unstable();
 
     // Search indexing can lag for freshly created issues, so poll each backend
     // until the seeded issues surface (or attempts run out). Both sides retry
@@ -268,9 +268,9 @@ async fn work_items_list_matches_rest_issues_list() {
     // The tag is unique to this run, so each backend should return exactly the
     // two seeded issues — and crucially, the *same* set.
     let mut rest_sorted = rest_iids.clone();
-    rest_sorted.sort();
+    rest_sorted.sort_unstable();
     let mut gql_sorted = gql_iids.clone();
-    gql_sorted.sort();
+    gql_sorted.sort_unstable();
 
     assert_eq!(
         rest_sorted, seeded,
@@ -828,8 +828,7 @@ async fn work_item_links_and_emoji_live() {
     assert!(
         unlinked["linked_items"]
             .as_array()
-            .map(Vec::is_empty)
-            .unwrap_or(true),
+            .is_none_or(Vec::is_empty),
         "link removed"
     );
 
@@ -869,12 +868,9 @@ async fn work_item_links_and_emoji_live() {
 
     let a_unreact = gql_work_item_get(&env, a).await;
     assert!(
-        a_unreact["award_emoji"]
-            .as_array()
-            .map(|arr| arr
-                .iter()
-                .all(|e| e["name"] != serde_json::json!("thumbsup")))
-            .unwrap_or(true),
+        a_unreact["award_emoji"].as_array().is_none_or(|arr| arr
+            .iter()
+            .all(|e| e["name"] != serde_json::json!("thumbsup"))),
         "reaction removed"
     );
 
@@ -895,7 +891,7 @@ async fn work_items_list_fetch_all_and_filters_live() {
         seed_issue_full(&env, format!("{tag} f1"), None, None).await,
         seed_issue_full(&env, format!("{tag} f2"), None, None).await,
     ];
-    seeded.sort();
+    seeded.sort_unstable();
 
     let me = env.client.get("/api/v4/user").await.expect("GET /user");
     let username = me["username"].as_str().unwrap().to_string();
@@ -924,7 +920,7 @@ async fn work_items_list_fetch_all_and_filters_live() {
     .await;
 
     let mut got_sorted = got.clone();
-    got_sorted.sort();
+    got_sorted.sort_unstable();
     assert_eq!(
         got_sorted, seeded,
         "fetch_all + filters returned the seeded set"

@@ -94,7 +94,7 @@ async fn resolve_user_id(client: &GitlabClient, user_id: &str) -> Result<String,
         .as_array()
         .and_then(|users| users.first())
         .and_then(|user| user.get("id"))
-        .and_then(|id| id.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|id| id.to_string())
         .ok_or_else(|| GitlabError::Other(format!("no user found with username '{user_id}'")))
 }

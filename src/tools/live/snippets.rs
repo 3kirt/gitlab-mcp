@@ -93,7 +93,7 @@ async fn snippet_crud_raw_and_list() {
     {
         Ok(file) => assert_eq!(file["content"], "v1 content\n"),
         Err(GitlabError::Api { status, .. }) if status.as_u16() == 404 => {
-            eprintln!("SKIP snippet_file_raw: snippet default branch is not 'main'")
+            eprintln!("SKIP snippet_file_raw: snippet default branch is not 'main'");
         }
         Err(e) => panic!("snippet_file_raw: {e:?}"),
     }

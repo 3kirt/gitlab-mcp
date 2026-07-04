@@ -15,6 +15,13 @@ cargo fmt --check                # check formatting without writing
 cargo run -- --help              # show CLI flags
 ```
 
+Clippy runs at pedantic strictness: the `pedantic`, `nursery`, and `cargo` lint
+groups are enabled in `Cargo.toml` under `[lints.clippy]` (with a curated set of
+per-lint `allow`s documented there), so *every* `cargo clippy` invocation — CI,
+rust-analyzer, and the release gate — enforces them. A `Makefile` wraps the common
+tasks; `make lint` runs clippy over all targets and both feature sets, and
+`make check` runs the full pre-release gate (`fmt-check` + `lint` + `test` + `release`).
+
 To run (requires env vars or `~/.gitlab_mcp.json`):
 ```sh
 GITLAB_URL=https://gitlab.com GITLAB_TOKEN=glpat-xxx cargo run

@@ -41,7 +41,7 @@ use crate::client::{GitlabClient, GitlabError};
 /// The work-item field selection shared by the get and list queries. Kept as a
 /// fragment body (no surrounding braces) so each query can splice it into its
 /// own `nodes { ... }` selection.
-const WORK_ITEM_FIELDS: &str = r#"
+const WORK_ITEM_FIELDS: &str = r"
     id
     iid
     title
@@ -79,7 +79,7 @@ const WORK_ITEM_FIELDS: &str = r#"
         ... on WorkItemWidgetIteration { iteration { id iid title startDate dueDate } }
         ... on WorkItemWidgetHealthStatus { healthStatus }
     }
-"#;
+";
 
 /// Convert a single camelCase identifier to snake_case (`webUrl` → `web_url`,
 /// `closingMergeRequests` → `closing_merge_requests`). The keys are simple
@@ -1309,8 +1309,7 @@ async fn award_emoji_mutate(
     Ok(data
         .pointer(&format!("/{mutation_field}/awardEmoji"))
         .cloned()
-        .map(snake_case_keys)
-        .unwrap_or(Value::Null))
+        .map_or(Value::Null, snake_case_keys))
 }
 
 pub async fn work_item_emoji_add(
@@ -2164,7 +2163,7 @@ mod tests {
             WorkItemCreateParams {
                 namespace_path: "mygroup/myproject".into(),
                 work_item_type: "issue".into(),
-                title: "".into(),
+                title: String::new(),
                 description: None,
                 confidential: None,
                 labels: None,
@@ -2862,7 +2861,7 @@ mod tests {
             WorkItemNoteCreateParams {
                 namespace_path: "mygroup/myproject".into(),
                 work_item_iid: 42,
-                body: "".into(),
+                body: String::new(),
                 internal: None,
                 discussion_id: None,
             },

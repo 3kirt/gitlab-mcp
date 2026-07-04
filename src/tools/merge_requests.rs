@@ -7,7 +7,7 @@ use crate::tools::{
     unwrap_404_as_empty_array, unwrap_404_or_403_as_empty_array,
 };
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 
@@ -213,18 +213,17 @@ pub async fn mr_update(client: &GitlabClient, p: MrUpdateParams) -> Result<Value
     // controlled by the "Draft: " title prefix. Fetch the current title when needed.
     let effective_title = match p.draft {
         Some(make_draft) => {
-            let base = match p.title {
-                Some(ref t) => t.clone(),
-                None => {
-                    let current = client.get(&path).await?;
-                    current["title"].as_str().unwrap_or("").to_string()
-                }
+            let base = if let Some(ref t) = p.title {
+                t.clone()
+            } else {
+                let current = client.get(&path).await?;
+                current["title"].as_str().unwrap_or("").to_string()
             };
             Some(if make_draft {
                 if base.starts_with("Draft:") {
                     base
                 } else {
-                    format!("Draft: {}", base)
+                    format!("Draft: {base}")
                 }
             } else {
                 base.strip_prefix("Draft: ")

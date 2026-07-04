@@ -38,7 +38,7 @@ const LOG_TARGET: &str = "gitlab_mcp";
 const MAX_RETRIES: u32 = 4;
 /// Upper bound on how long to wait between 429 retries (honors `Retry-After`
 /// up to this, then caps).
-const MAX_RETRY_WAIT: Duration = Duration::from_secs(60);
+const MAX_RETRY_WAIT: Duration = Duration::from_mins(1);
 
 /// Upper bound on pages fetched in a single `fetch_all` request, guarding
 /// against runaway loops when an endpoint never signals the last page.
@@ -62,12 +62,8 @@ impl GitlabError {
     /// Truncates the API error body to 300 chars to avoid blowing up context windows.
     pub fn to_tool_message(&self) -> String {
         match self {
-            GitlabError::Api { status, body } => {
-                let cut = body
-                    .char_indices()
-                    .nth(300)
-                    .map(|(i, _)| i)
-                    .unwrap_or(body.len());
+            Self::Api { status, body } => {
+                let cut = body.char_indices().nth(300).map_or(body.len(), |(i, _)| i);
                 if cut < body.len() {
                     format!("GitLab API error {status}: {}… (truncated)", &body[..cut])
                 } else {
@@ -107,7 +103,7 @@ impl GitlabClient {
             .default_headers(headers)
             .build()?;
 
-        Ok(GitlabClient {
+        Ok(Self {
             http,
             base_url: base_url.into(),
         })
@@ -197,7 +193,7 @@ impl GitlabClient {
             });
         }
 
-        Ok(json.get_mut("data").map(Value::take).unwrap_or(Value::Null))
+        Ok(json.get_mut("data").map_or(Value::Null, Value::take))
     }
 
     /// GET {base_url}{path}?{params} — returns the raw text response body (for non-JSON endpoints).
@@ -313,7 +309,7 @@ fn retry_after(headers: &header::HeaderMap) -> Option<Duration> {
 }
 
 /// Exponential backoff for retry `attempt` (0-based): 0.5s, 1s, 2s, 4s, …
-fn backoff(attempt: u32) -> Duration {
+const fn backoff(attempt: u32) -> Duration {
     Duration::from_millis(500u64.saturating_mul(2u64.saturating_pow(attempt)))
 }
 
@@ -791,8 +787,8 @@ mod tests {
     #[test]
     fn backoff_is_exponential() {
         assert_eq!(backoff(0), Duration::from_millis(500));
-        assert_eq!(backoff(1), Duration::from_millis(1000));
-        assert_eq!(backoff(3), Duration::from_millis(4000));
+        assert_eq!(backoff(1), Duration::from_secs(1));
+        assert_eq!(backoff(3), Duration::from_secs(4));
     }
 
     #[tokio::test]
@@ -827,7 +823,7 @@ mod tests {
         Mock::given(method("GET"))
             .and(path("/api/v4/projects"))
             .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "0"))
-            .expect(MAX_RETRIES as u64 + 1) // initial attempt + MAX_RETRIES
+            .expect(u64::from(MAX_RETRIES) + 1) // initial attempt + MAX_RETRIES
             .mount(&server)
             .await;
 

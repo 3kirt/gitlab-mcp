@@ -25,7 +25,7 @@ impl Config {
         };
 
         if !resolved.exists() {
-            return Ok(Config {
+            return Ok(Self {
                 file_url: None,
                 file_token: None,
             });
@@ -38,7 +38,7 @@ impl Config {
         let raw: RawConfig = serde_json::from_str(&contents)
             .with_context(|| format!("parsing config file {}", resolved.display()))?;
 
-        Ok(Config {
+        Ok(Self {
             file_url: raw.url,
             file_token: raw.token,
         })
@@ -107,9 +107,8 @@ fn enforce_https(url: &str) -> anyhow::Result<()> {
         }
     }
     bail!(
-        "GitLab URL must use HTTPS, got: {}  \
-         (use https:// to prevent token from being sent in plaintext)",
-        url
+        "GitLab URL must use HTTPS, got: {url}  \
+         (use https:// to prevent token from being sent in plaintext)"
     );
 }
 

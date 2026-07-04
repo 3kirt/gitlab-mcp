@@ -125,9 +125,10 @@ async fn merge_when_ready(env: &LiveEnv, iid: u64) -> Value {
         .expect("mr_get while polling merge status");
         let detailed = mr["detailed_merge_status"].as_str().unwrap_or("");
         let legacy = mr["merge_status"].as_str().unwrap_or("");
-        if detailed == "conflict" || legacy == "cannot_be_merged" {
-            panic!("MR {iid} cannot be merged (detailed_merge_status={detailed:?})");
-        }
+        assert!(
+            !(detailed == "conflict" || legacy == "cannot_be_merged"),
+            "MR {iid} cannot be merged (detailed_merge_status={detailed:?})"
+        );
         let ready = detailed == "mergeable" || (detailed.is_empty() && legacy == "can_be_merged");
         if ready {
             match merge_requests::mr_merge(

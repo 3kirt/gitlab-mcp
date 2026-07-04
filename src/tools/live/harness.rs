@@ -54,7 +54,7 @@ pub(super) fn run_tag() -> String {
 }
 
 /// Build the pagination triple without spelling out all three fields each time.
-pub(super) fn pg(page: Option<u64>, per_page: Option<u64>) -> PaginationParams {
+pub(super) const fn pg(page: Option<u64>, per_page: Option<u64>) -> PaginationParams {
     PaginationParams {
         page,
         per_page,
@@ -183,7 +183,7 @@ pub(super) fn assert_note_invariants(note: &Value) {
 
 /// Count the notes inside a (slimmed) discussion object.
 pub(super) fn discussion_note_count(disc: &Value) -> usize {
-    disc["notes"].as_array().map(Vec::len).unwrap_or(0)
+    disc["notes"].as_array().map_or(0, Vec::len)
 }
 
 // --------------------------------------------------------------------------

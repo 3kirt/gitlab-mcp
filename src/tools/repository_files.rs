@@ -356,9 +356,9 @@ mod tests {
     };
     use crate::test_util::mock_client;
 
-    fn captured_body(reqs: &[wiremock::Request], m: wiremock::http::Method) -> serde_json::Value {
+    fn captured_body(reqs: &[wiremock::Request], m: &wiremock::http::Method) -> serde_json::Value {
         reqs.iter()
-            .find(|r| r.method == m)
+            .find(|r| r.method == *m)
             .and_then(|r| r.body_json::<serde_json::Value>().ok())
             .expect("request not found")
     }
@@ -475,7 +475,7 @@ mod tests {
 
         let body = captured_body(
             &server.received_requests().await.unwrap(),
-            wiremock::http::Method::POST,
+            &wiremock::http::Method::POST,
         );
         assert_eq!(body["branch"], "main");
         assert_eq!(body["commit_message"], "Add README");
@@ -516,7 +516,7 @@ mod tests {
 
         let body = captured_body(
             &server.received_requests().await.unwrap(),
-            wiremock::http::Method::PUT,
+            &wiremock::http::Method::PUT,
         );
         assert_eq!(body["last_commit_id"], "abc123");
         assert!(body.get("encoding").is_none());
@@ -549,7 +549,7 @@ mod tests {
 
         let body = captured_body(
             &server.received_requests().await.unwrap(),
-            wiremock::http::Method::DELETE,
+            &wiremock::http::Method::DELETE,
         );
         assert_eq!(body["branch"], "main");
         assert_eq!(body["commit_message"], "Drop file");

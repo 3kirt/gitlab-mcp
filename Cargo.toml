@@ -4,6 +4,9 @@ version = "0.30.0"
 edition = "2024"
 description = "An MCP server that exposes the GitLab API as tools for Claude and other MCP clients"
 license = "GPL-3.0"
+repository = "https://github.com/3kirt/gitlab-mcp"
+keywords = ["gitlab", "mcp", "claude", "api", "llm"]
+categories = ["command-line-utilities", "api-bindings"]
 
 [[bin]]
 name = "gitlab-mcp"
@@ -42,3 +45,32 @@ lto = true
 opt-level = "z"
 codegen-units = 1
 strip = true
+
+# Strictest practical clippy: the pedantic, nursery, and cargo groups are on by
+# default for every `cargo clippy` (so the release gate and the Makefile pick
+# them up automatically). The `restriction` group is intentionally NOT enabled
+# wholesale — it contains mutually contradictory lints. `priority = -1` lets the
+# per-lint `allow`s below override the groups.
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+
+# Unfixable: the transitive dependency tree carries duplicate crate versions.
+multiple_crate_versions = "allow"
+# Doc comments are prose-heavy and reference many proper nouns and API terms
+# (GitLab, GraphQL, OAuth, PRIVATE-TOKEN, IID, …); backticking them all is noise.
+doc_markdown = "allow"
+# `pub(crate)` on the shared cross-module helpers is deliberate API-surface
+# control, not accidental over-exposure.
+redundant_pub_crate = "allow"
+# `use rmcp::model::*` is an intentional glob over rmcp's large model module.
+wildcard_imports = "allow"
+# u64 → f64 casts are for progress reporting, where precision loss is irrelevant.
+cast_precision_loss = "allow"
+# False positives on fields sharing a natural prefix (file_url/file_token, …).
+struct_field_names = "allow"
+# False positives on genuinely distinct names (parent_gid vs parent_iid).
+similar_names = "allow"
+# A few response-flattening functions are long by nature; splitting hurts clarity.
+too_many_lines = "allow"

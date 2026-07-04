@@ -721,7 +721,7 @@ mod tests {
         .unwrap_err();
         match err {
             crate::client::GitlabError::Other(msg) => {
-                assert!(msg.contains("parent_epic_iid=0"))
+                assert!(msg.contains("parent_epic_iid=0"));
             }
             other => panic!("expected Other error, got {other}"),
         }

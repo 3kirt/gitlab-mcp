@@ -169,7 +169,10 @@ tokio::task_local! {
 /// tests, where the task-local is never set). `progress`/`total` share the
 /// same unit — absolute item count — per the MCP spec.
 async fn emit_page_progress(progress: u64, total: Option<u64>) {
-    let ctx = PROGRESS_CTX.try_with(|c| c.clone()).ok().flatten();
+    let ctx = PROGRESS_CTX
+        .try_with(std::clone::Clone::clone)
+        .ok()
+        .flatten();
     if let Some(ctx) = ctx {
         let mut param = ProgressNotificationParam::new(ctx.token, progress as f64);
         param.total = total.map(|t| t as f64);
@@ -219,6 +222,10 @@ pub fn json_list_result(v: Value, meta: PaginationMeta) -> Result<CallToolResult
     Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
 }
 
+// Returns `Ok` unconditionally so the shape matches `json_result` /
+// `json_list_result`, keeping the delegate-macro match arms uniform (both arms
+// yield `Result<CallToolResult, McpError>`).
+#[allow(clippy::unnecessary_wraps)]
 pub fn tool_error(msg: &str) -> Result<CallToolResult, McpError> {
     Ok(CallToolResult::error(vec![ContentBlock::text(msg)]))
 }
@@ -474,7 +481,7 @@ pub struct QueryBuilder {
 }
 
 impl QueryBuilder {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { params: vec![] }
     }
 
@@ -544,13 +551,13 @@ pub struct GitlabMcpServer {
     client: Arc<OnceLock<GitlabClient>>,
     // Used by the `call_tool` override below; reused per call rather than
     // rebuilt via `Self::tool_router()` each time.
-    tool_router: ToolRouter<GitlabMcpServer>,
+    tool_router: ToolRouter<Self>,
     // Initialised by `new_stdio` but never read: `#[prompt_handler]` calls the
     // `prompt_router()` *function*, not this field, and the prompt router is
     // empty. `expect` (not `allow`) so that if a future rmcp starts reading the
     // field, the unfulfilled-expectation lint flags this for removal.
     #[expect(dead_code)]
-    prompt_router: PromptRouter<GitlabMcpServer>,
+    prompt_router: PromptRouter<Self>,
     peer: Arc<OnceLock<Peer<RoleServer>>>,
 }
 
@@ -581,7 +588,7 @@ impl GitlabMcpServer {
     /// Combined tool router: one sub-router per domain module, each generated
     /// by `#[tool_router(router = tool_router_<domain>)]` next to the domain's
     /// shims. `#[tool_handler]` and `new_stdio` both consume this.
-    fn tool_router() -> ToolRouter<GitlabMcpServer> {
+    fn tool_router() -> ToolRouter<Self> {
         Self::tool_router_metadata()
             + Self::tool_router_search()
             + Self::tool_router_issues()
