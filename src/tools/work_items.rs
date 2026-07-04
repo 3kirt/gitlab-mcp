@@ -606,21 +606,11 @@ async fn resolve_work_item_gids(
             }
         }
     }
-    let mut ids = Vec::with_capacity(iids.len());
-    let mut missing = Vec::new();
-    for iid in iids {
-        match by_iid.get(&iid.to_string()) {
-            Some(id) => ids.push(id.clone()),
-            None => missing.push(iid.to_string()),
-        }
-    }
-    if !missing.is_empty() {
-        return Err(GitlabError::Other(format!(
-            "work item(s) not found in {namespace_path}: {}",
-            missing.join(", ")
-        )));
-    }
-    Ok(ids)
+    map_names_to_ids(
+        &iid_strs,
+        &by_iid,
+        &format!("work item(s) not found in {namespace_path}"),
+    )
 }
 
 /// Resolve assignee *usernames* to `gid://gitlab/User/N` global IDs (one query
