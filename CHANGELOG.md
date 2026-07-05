@@ -4,6 +4,31 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.33.0] — 2026-07-05
+
+Add MCP prompts and completions, completing the MCP capability surface
+(tools + resources + prompts + completions).
+
+### Added
+- **MCP Prompts** — three workflow prompts clients can invoke (e.g. as slash
+  commands in Claude Code): `review-mr` (loads the MR, its full diff, and the
+  review threads, then asks for a review with a verdict), `summarize-issue`
+  (issue body plus human comments, system notes filtered out), and
+  `create-mr-description` (drafts a title + description from a branch's
+  commits and diff against the target branch, defaulting to the project's
+  default branch). Each prompt embeds its GitLab context in a single user
+  message; embedded diffs and comment blocks are truncated at a character
+  budget. IID arguments are strings on the wire (per the MCP spec) and parsed
+  server-side.
+- **MCP Completions** — `completion/complete` autocompletes prompt and
+  resource-template arguments from live GitLab data: `project_id`
+  (member-project search, percent-encoded for resource-template references),
+  `branch`/`target_branch`/`ref` (branch-name search in the context project),
+  and `issue_iid`/`merge_request_iid` (recently updated open items,
+  prefix-filtered on the typed digits). Project-scoped arguments return no
+  suggestions until the client supplies `project_id` in the completion
+  context; a full page of 20 sets `hasMore`.
+
 ## [0.32.0] — 2026-07-05
 
 Add MCP Resources: read-only GitLab data clients can pre-load as context
