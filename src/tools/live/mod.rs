@@ -30,10 +30,12 @@
 mod harness;
 
 mod branches;
+mod completions;
 mod emoji_reactions;
 mod issues;
 mod merge_requests;
 mod mr_discussions;
+mod prompts;
 mod repository_files;
 mod resources;
 mod snippets;

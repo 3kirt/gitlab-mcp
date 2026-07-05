@@ -81,8 +81,11 @@ A deterministic suite that verifies the tools against a real GitLab instance —
 the one risk the unit tests structurally cannot cover. Covers the **Issues**
 (plus issue links, notes, and discussions), **Merge Requests**, **MR
 Discussions**, **Branches**, **Repository Files**, **Emoji Reactions**,
-**Snippets**, **Work Items**, and **MCP resource reads** (`gitlab://` URIs
-dispatched through `resources::read`) so far. The suite lives under
+**Snippets**, **Work Items**, **MCP resource reads** (`gitlab://` URIs
+dispatched through `resources::read`), **MCP prompts** (the prompt
+builders, including the `/merge_requests/:iid/diffs` endpoint only they call),
+and **MCP completions** (argument autocompletion, including the
+`GET /projects` list endpoint only it calls) so far. The suite lives under
 [`src/tools/live/`](../src/tools/live/), one module per API area plus a shared
 `harness`.
 
