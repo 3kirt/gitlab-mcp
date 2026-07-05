@@ -4,6 +4,24 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.32.0] — 2026-07-05
+
+Add MCP Resources: read-only GitLab data clients can pre-load as context
+via `gitlab://` URIs, without a tool call.
+
+### Added
+- **MCP Resources support** — the server now advertises the `resources`
+  capability and four resource templates:
+  `gitlab://{project_id}/files/{file_path}{?ref}` (file content, decoded:
+  UTF-8 as text with an extension-based MIME type, binary as a base64 blob),
+  `gitlab://{project_id}/issues/{issue_iid}`,
+  `gitlab://{project_id}/mrs/{merge_request_iid}`, and
+  `gitlab://{project_id}/pipelines/{pipeline_id}` (JSON, shaped by the same
+  `slim_get` as the single-get tools). Namespace-path project IDs are
+  percent-encoded per RFC 6570 simple expansion; file paths work with encoded
+  or literal slashes. Unparseable URIs and GitLab 404s surface as MCP
+  `resource_not_found`. Covered by wiremock unit tests and two live tests.
+
 ## [0.31.0] — 2026-07-04
 
 Upgrade to rmcp 2.x and add per-tool behavior annotations for MCP clients.
