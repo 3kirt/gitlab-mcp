@@ -511,6 +511,7 @@ name = "gitlab-mcp"
 version = "0.31.0"
 dependencies = [
  "anyhow",
+ "base64",
  "clap",
  "percent-encoding",
  "reqwest",

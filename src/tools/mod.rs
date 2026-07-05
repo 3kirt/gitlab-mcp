@@ -130,6 +130,7 @@ pub mod pipelines;
 pub mod projects;
 pub mod repositories;
 pub mod repository_files;
+pub mod resources;
 pub mod runners;
 pub mod search;
 mod slim;
@@ -666,15 +667,23 @@ fn enrich_invalid_params(error: McpError, tool: Option<&Tool>) -> McpError {
 #[prompt_handler]
 impl ServerHandler for GitlabMcpServer {
     fn get_info(&self) -> ServerInfo {
-        let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
-            .with_server_info(Implementation::new("gitlab-mcp", env!("CARGO_PKG_VERSION")));
+        let mut info = ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
+        )
+        .with_server_info(Implementation::new("gitlab-mcp", env!("CARGO_PKG_VERSION")));
         info.instructions = Some(
             "Parameter naming conventions: project_id and group_id accept a numeric ID or a \
              namespace path (e.g. \"mygroup/myproject\"). Resources addressed by the number in \
              their URL use <resource>_iid (issue_iid, merge_request_iid, epic_iid); resources \
              addressed by a globally unique ID use <resource>_id (note_id, pipeline_id, \
              snippet_id, runner_id, job_id, discussion_id). When unsure of a tool's exact \
-             parameter names, call gitlab_tool_schema_get with the tool name first."
+             parameter names, call gitlab_tool_schema_get with the tool name first. \
+             Read-only data is also available as MCP resources via gitlab:// URI templates \
+             (files, issues, MRs, pipelines); in a resource URI a namespace-path project_id \
+             must be percent-encoded (mygroup%2Fmyproject)."
                 .to_string(),
         );
         info
@@ -682,6 +691,46 @@ impl ServerHandler for GitlabMcpServer {
 
     async fn on_initialized(&self, context: NotificationContext<RoleServer>) {
         let _ = self.peer.set(context.peer);
+    }
+
+    // `list_resources` stays on the rmcp default (an empty list): concrete
+    // resources can't be enumerated without knowing which of the instance's
+    // projects matter to the client, so templates are the right surface.
+    async fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, McpError> {
+        Ok(ListResourceTemplatesResult::with_all_items(
+            resources::resource_templates(),
+        ))
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResult, McpError> {
+        let client = self.get_client()?;
+        let resource = resources::parse_uri(&request.uri).map_err(|reason| {
+            McpError::resource_not_found(
+                format!("unsupported resource URI \"{}\": {reason}", request.uri),
+                None,
+            )
+        })?;
+        match resources::read(client, resource, &request.uri).await {
+            Ok(contents) => Ok(ReadResourceResult::new(contents)),
+            Err(e) => {
+                let msg = format!("reading {}: {}", request.uri, e.to_tool_message());
+                tracing::error!("{msg}");
+                match e {
+                    GitlabError::Api { status, .. } if status == StatusCode::NOT_FOUND => {
+                        Err(McpError::resource_not_found(msg, None))
+                    }
+                    _ => Err(McpError::internal_error(msg, None)),
+                }
+            }
+        }
     }
 
     /// Override the macro-generated dispatch so every tool call runs inside a

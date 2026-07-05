@@ -35,6 +35,7 @@ mod issues;
 mod merge_requests;
 mod mr_discussions;
 mod repository_files;
+mod resources;
 mod snippets;
 mod users;
 mod work_items;
