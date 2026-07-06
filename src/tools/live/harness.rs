@@ -159,7 +159,22 @@ pub(super) async fn seed_mr(env: &LiveEnv, tag: &str) -> (u64, String) {
     .await
     .expect("seed mr");
     let iid = created["iid"].as_u64().expect("created MR has iid");
-    (iid, branch)
+
+    // GitLab prepares MR diffs asynchronously; immediately after creation the
+    // diffs endpoint returns an empty array (observed ~1s to fill on
+    // gitlab.com). Wait until the diff exists so consumers (e.g. the
+    // review-mr prompt test) see the fully-prepared MR the seed promises.
+    let diffs_path = format!(
+        "{}/merge_requests/{iid}/diffs",
+        crate::tools::project_path(&env.project)
+    );
+    for _ in 0..20 {
+        match env.client.get(&diffs_path).await {
+            Ok(Value::Array(diffs)) if !diffs.is_empty() => return (iid, branch),
+            _ => tokio::time::sleep(std::time::Duration::from_millis(500)).await,
+        }
+    }
+    panic!("seeded MR !{iid} still has no diff after 10s");
 }
 
 pub(super) async fn delete_mr(env: &LiveEnv, iid: u64) {
