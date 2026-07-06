@@ -4,6 +4,59 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.34.0] — 2026-07-06
+
+Make the server a first-class Claude Code citizen: an installable plugin,
+discoverable resources, and an out-of-the-box repository setup.
+
+### Added
+- **Claude Code plugin** — install with `/plugin marketplace add
+  3kirt/gitlab-mcp` then `/plugin install gitlab-mcp@gitlab-mcp` (the repo is
+  its own marketplace). A bootstrap launcher downloads the release binary
+  matching the plugin version (macOS arm64/x86_64, Linux amd64/arm64),
+  verifies it against the release checksums, installs it atomically under
+  `~/.cache/gitlab-mcp/`, and execs it; whenever it can't (unsupported
+  platform, network failure, missing asset) it falls back to a `gitlab-mcp`
+  on PATH. Downloads are time-limited so a hung network can't hang the MCP
+  spawn. The release workflow now also builds the macOS x86_64 binary and
+  fails if `Cargo.toml` or `plugin.json` doesn't match the pushed tag.
+- **Project resource + resource listing** — a fifth resource template,
+  `gitlab://{project_id}` (project overview as JSON), and `resources/list`
+  now returns the caller's ≤20 most recently active member projects as
+  concrete project resources (cached for 60 seconds; degrades to an empty
+  list when GitLab is unreachable instead of erroring). The `initialize`
+  instructions list every `gitlab://` URI template, generated from the
+  template definitions so the two can't drift.
+- **CI token scan** — pushes and PRs fail if a real-shaped GitLab token
+  (`glpat-…`) is committed anywhere in the repo.
+
+### Changed
+- **`.mcp.json` is now committed** and runs the server from source with
+  `${GITLAB_URL:-https://gitlab.com}` / `${GITLAB_TOKEN}` env expansion —
+  contributors export `GITLAB_TOKEN` and start Claude Code. If you kept a
+  local `.mcp.json` containing a real token, delete or replace it before
+  committing.
+- **Blank environment variables count as unset** — an empty `GITLAB_TOKEN`
+  (e.g. an unexported `${GITLAB_TOKEN}` expanded by an MCP client) now falls
+  back to the config file, or fails at startup with the clear "not set"
+  error, instead of sending empty auth headers that 401 on every call.
+- **Resource URI parsing** — one trailing slash is tolerated on every
+  resource kind, and query strings on non-file resources are rejected rather
+  than silently ignored (`?ref=` remains file-only).
+- The `project_id` completer and `resources/list` share one
+  recent-member-projects query (same cap, same URI encoding), so the two
+  surfaces can't drift apart.
+
+### Fixed
+- The live-suite MR seed now waits out GitLab's asynchronous MR-diff
+  preparation, de-flaking the prompts live test.
+
+### Documentation
+- README: the plugin is the recommended Claude Code setup; team setup via a
+  committed `.mcp.json` with env expansion; and a rundown of what the
+  integration provides beyond tools (prompt slash commands, `@`-mentionable
+  `gitlab://` resources, argument completion).
+
 ## [0.33.0] — 2026-07-05
 
 Add MCP prompts and completions, completing the MCP capability surface
