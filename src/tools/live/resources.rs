@@ -31,24 +31,39 @@ async fn read_text(env: &LiveEnv, uri: &str) -> (String, Option<String>) {
     }
 }
 
-/// The `resources/list` surface and the project resource it points at: the
-/// test project is a recently active membership project, so it must appear,
-/// and its listed URI must read back as the project's JSON.
+/// The `resources/list` surface and the project resource it points at: after
+/// seeding activity, the test project must appear in the recent listing, and
+/// its listed URI must read back as the project's JSON.
 #[tokio::test]
 async fn recent_project_listing_includes_readable_test_project() {
     let env = skip_unless_live!();
+    // The listing is capped at the 20 most recently active member projects;
+    // seeding an issue bumps the test project's last_activity_at to now so
+    // the containment assertion doesn't depend on how busy the token's other
+    // projects are.
+    let iid = seed_issue(&env, &format!("{} recent-listing", run_tag())).await;
 
-    let listed = list_recent_projects(&env.client)
-        .await
-        .expect("list recent projects");
-    let expected_uri = format!("gitlab://{}", project_segment(&env));
-    let entry = listed
-        .iter()
-        .find(|r| r.uri == expected_uri)
-        .unwrap_or_else(|| panic!("test project {expected_uri} not in recent listing"));
-    assert_eq!(entry.name, env.project);
+    let listed = list_recent_projects(&env.client).await;
+    let read = match &listed {
+        Ok(items) => {
+            let expected_uri = format!("gitlab://{}", project_segment(&env));
+            match items.iter().find(|r| r.uri == expected_uri) {
+                Some(entry) => Some((entry.name.clone(), read_text(&env, &entry.uri).await)),
+                None => None,
+            }
+        }
+        Err(_) => None,
+    };
+    delete_issue(&env, iid).await;
 
-    let (text, mime) = read_text(&env, &entry.uri).await;
+    let listed = listed.expect("list recent projects");
+    let (name, (text, mime)) = read.unwrap_or_else(|| {
+        panic!(
+            "test project not in recent listing of {} projects",
+            listed.len()
+        )
+    });
+    assert_eq!(name, env.project);
     assert_eq!(mime.as_deref(), Some("application/json"));
     let v: serde_json::Value = serde_json::from_str(&text).expect("resource is JSON");
     assert_eq!(

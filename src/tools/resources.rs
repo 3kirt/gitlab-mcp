@@ -22,7 +22,7 @@ use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError};
 use crate::tools::{
-    QueryBuilder, encode_namespace_id, issues, merge_requests, pipelines, projects,
+    encode_namespace_id, issues, merge_requests, pipelines, projects, recent_member_projects,
     repository_files, slim,
 };
 
@@ -123,6 +123,9 @@ pub fn parse_uri(uri: &str) -> Result<ResourceRef, String> {
     let (path, query) = rest
         .split_once('?')
         .map_or((rest, None), |(p, q)| (p, Some(q)));
+    // Tolerate one trailing slash on any kind (URI-normalizing clients add
+    // them); a file path's own trailing slash would be invalid anyway.
+    let path = path.strip_suffix('/').unwrap_or(path);
 
     let mut segments = path.split('/');
     let project_seg = segments
@@ -130,13 +133,14 @@ pub fn parse_uri(uri: &str) -> Result<ResourceRef, String> {
         .filter(|s| !s.is_empty())
         .ok_or_else(|| "missing project ID".to_string())?;
     let project_id = decode(project_seg)?;
-    // No kind segment (allowing one trailing slash) → the project itself.
-    let Some(kind) = segments.next().filter(|s| !s.is_empty()) else {
-        if segments.next().is_some() {
-            return Err("unexpected path segments after the project ID".to_string());
-        }
+    // No kind segment → the project itself.
+    let Some(kind) = segments.next() else {
+        reject_query(query, "project")?;
         return Ok(ResourceRef::Project { project_id });
     };
+    if kind.is_empty() {
+        return Err("empty resource kind after the project ID".to_string());
+    }
 
     // `files` takes the rest of the path greedily; the numeric kinds take
     // exactly one trailing segment.
@@ -170,6 +174,7 @@ pub fn parse_uri(uri: &str) -> Result<ResourceRef, String> {
     let id: u64 = id_seg
         .parse()
         .map_err(|_| format!("\"{id_seg}\" is not a numeric identifier"))?;
+    reject_query(query, kind)?;
 
     match kind {
         "issues" => Ok(ResourceRef::Issue {
@@ -185,6 +190,18 @@ pub fn parse_uri(uri: &str) -> Result<ResourceRef, String> {
             project_id,
             pipeline_id: id,
         }),
+    }
+}
+
+/// Only file resources take query parameters (`?ref=`); rejecting a query on
+/// every other kind beats silently ignoring it — a caller who wrote
+/// `gitlab://proj?ref=x` should learn the parameter did nothing.
+fn reject_query(query: Option<&str>, kind: &str) -> Result<(), String> {
+    match query {
+        Some(q) if !q.is_empty() => Err(format!(
+            "{kind} resources take no query parameters (got \"?{q}\")"
+        )),
+        _ => Ok(()),
     }
 }
 
@@ -281,22 +298,14 @@ pub async fn read(
     Ok(vec![contents])
 }
 
-/// How many projects `resources/list` returns (matches the completion cap).
-const RECENT_PROJECTS_LIMIT: usize = 20;
-
 /// The concrete resources for `resources/list`: the caller's most recently
 /// active member projects, as `gitlab://{project_id}` project resources. The
-/// full resource space isn't enumerable, but "which projects matter" has the
-/// same answer the `project_id` completer uses, and listing them gives client
-/// resource pickers real entries instead of an empty list.
+/// full resource space isn't enumerable, but "which projects matter" is the
+/// shared [`recent_member_projects`] query the `project_id` completer also
+/// uses, and listing them gives client resource pickers real entries instead
+/// of an empty list.
 pub async fn list_recent_projects(client: &GitlabClient) -> Result<Vec<Resource>, GitlabError> {
-    let params = QueryBuilder::new()
-        .opt("membership", Some(true))
-        .opt("simple", Some(true))
-        .opt("order_by", Some("last_activity_at"))
-        .opt("per_page", Some(RECENT_PROJECTS_LIMIT))
-        .into_params();
-    let projects = client.get_with_params("/api/v4/projects", &params).await?;
+    let projects = recent_member_projects(client, None).await?;
     let resources = projects
         .as_array()
         .map(|a| {
@@ -399,6 +408,24 @@ mod tests {
     }
 
     #[test]
+    fn trailing_slash_is_tolerated_on_every_kind() {
+        assert_eq!(
+            parse_uri("gitlab://42/issues/7/").unwrap(),
+            ResourceRef::Issue {
+                project_id: "42".into(),
+                issue_iid: 7
+            }
+        );
+        assert_eq!(
+            parse_uri("gitlab://42/pipelines/9/").unwrap(),
+            ResourceRef::Pipeline {
+                project_id: "42".into(),
+                pipeline_id: 9
+            }
+        );
+    }
+
+    #[test]
     fn parses_numeric_project_issue_uri() {
         assert_eq!(
             parse_uri("gitlab://42/issues/7").unwrap(),
@@ -460,6 +487,8 @@ mod tests {
             "gitlab://42/issues/7/notes",     // trailing segments
             "gitlab://42/files/",             // empty file path
             "gitlab:///issues/7",             // empty project
+            "gitlab://42?ref=main",           // query on a project resource
+            "gitlab://42/issues/7?page=2",    // query on a non-file kind
         ] {
             assert!(parse_uri(uri).is_err(), "expected {uri} to be rejected");
         }

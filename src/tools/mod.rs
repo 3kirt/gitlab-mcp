@@ -237,6 +237,14 @@ pub fn tool_error(msg: &str) -> Result<CallToolResult, McpError> {
 /// GitLab caps `per_page` at 100.
 const FETCH_ALL_PER_PAGE: u64 = 100;
 
+/// How long a `resources/list` result is served from cache; recent-project
+/// activity changes on the order of minutes, picker re-opens on the order of
+/// seconds.
+const RECENT_PROJECTS_TTL: std::time::Duration = std::time::Duration::from_mins(1);
+
+/// See `GitlabMcpServer::recent_projects_cache`.
+type RecentProjectsCache = Arc<tokio::sync::Mutex<Option<(std::time::Instant, Vec<Resource>)>>>;
+
 /// Issue a list request, optionally walking every page.
 ///
 /// With `fetch_all == false` this is a thin pass-through to
@@ -446,6 +454,28 @@ pub(crate) fn group_path(group_id: &str) -> String {
     format!("/api/v4/groups/{}", encode_namespace_id(group_id))
 }
 
+/// Cap shared by the completion suggestion pages and the `resources/list`
+/// project listing (also used as the GitLab `per_page`, so a full page
+/// implies more matches exist).
+pub(crate) const SUGGESTION_LIMIT: usize = 20;
+
+/// The "which projects matter to this user" query shared by the `project_id`
+/// completer and `resources/list`: membership projects by recent activity,
+/// optionally narrowed by a search term, capped at [`SUGGESTION_LIMIT`].
+pub(crate) async fn recent_member_projects(
+    client: &GitlabClient,
+    search: Option<String>,
+) -> Result<Value, GitlabError> {
+    let params = QueryBuilder::new()
+        .opt("membership", Some(true))
+        .opt("simple", Some(true))
+        .opt("order_by", Some("last_activity_at"))
+        .opt("per_page", Some(SUGGESTION_LIMIT))
+        .opt("search", search)
+        .into_params();
+    client.get_with_params("/api/v4/projects", &params).await
+}
+
 /// For supplemental fetches embedded inside a primary response: pass through
 /// success and 404 (as an empty array) but propagate every other error.
 /// A 404 here means the sub-resource genuinely doesn't exist; 4xx/5xx
@@ -563,6 +593,8 @@ pub struct GitlabMcpServer {
     #[expect(dead_code)]
     prompt_router: PromptRouter<Self>,
     peer: Arc<OnceLock<Peer<RoleServer>>>,
+    // See `list_resources`: caches the recent-projects listing briefly.
+    recent_projects_cache: RecentProjectsCache,
 }
 
 impl GitlabMcpServer {
@@ -574,6 +606,7 @@ impl GitlabMcpServer {
             tool_router: Self::tool_router(),
             prompt_router: Self::prompt_router(),
             peer: Arc::new(OnceLock::new()),
+            recent_projects_cache: Arc::new(tokio::sync::Mutex::new(None)),
         })
     }
 
@@ -672,7 +705,14 @@ impl ServerHandler for GitlabMcpServer {
                 .build(),
         )
         .with_server_info(Implementation::new("gitlab-mcp", env!("CARGO_PKG_VERSION")));
-        info.instructions = Some(
+        // The template list is generated from `resource_templates()` so the
+        // instructions can never drift from what the parser accepts.
+        let templates = resources::resource_templates()
+            .iter()
+            .map(|t| t.uri_template.clone())
+            .collect::<Vec<_>>()
+            .join(", ");
+        info.instructions = Some(format!(
             "Parameter naming conventions: project_id and group_id accept a numeric ID or a \
              namespace path (e.g. \"mygroup/myproject\"). Resources addressed by the number in \
              their URL use <resource>_iid (issue_iid, merge_request_iid, epic_iid); resources \
@@ -681,14 +721,9 @@ impl ServerHandler for GitlabMcpServer {
              parameter names, call gitlab_tool_schema_get with the tool name first. \
              Read-only data is also available as MCP resources: resources/list returns \
              your recently active projects, and these gitlab:// URI templates are \
-             supported: gitlab://{project_id} (project overview), \
-             gitlab://{project_id}/files/{file_path}{?ref} (file content), \
-             gitlab://{project_id}/issues/{issue_iid}, \
-             gitlab://{project_id}/mrs/{merge_request_iid}, and \
-             gitlab://{project_id}/pipelines/{pipeline_id}. In a resource URI a \
-             namespace-path project_id must be percent-encoded (mygroup%2Fmyproject)."
-                .to_string(),
-        );
+             supported: {templates}. In a resource URI a namespace-path project_id must \
+             be percent-encoded (mygroup%2Fmyproject)."
+        ));
         info
     }
 
@@ -700,17 +735,36 @@ impl ServerHandler for GitlabMcpServer {
     /// only surface `resources/list`, so return the projects that plausibly
     /// matter: the caller's recently active member projects. Everything else
     /// stays discoverable through the templates.
+    ///
+    /// Clients list eagerly and repeatedly (every picker open), so results are
+    /// cached briefly, and a GitLab failure degrades to an empty list rather
+    /// than an error — a broken listing must not make the server look down.
+    // The guard is deliberately held across the fetch (see comment below).
+    #[expect(clippy::significant_drop_tightening)]
     async fn list_resources(
         &self,
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, McpError> {
         let client = self.get_client()?;
-        let items = resources::list_recent_projects(client).await.map_err(|e| {
-            let msg = format!("listing recent projects: {}", e.to_tool_message());
-            tracing::error!("{msg}");
-            McpError::internal_error(msg, None)
-        })?;
+        // Lock held across the fetch on purpose: concurrent lists coalesce
+        // into one GitLab request instead of racing.
+        let mut cache = self.recent_projects_cache.lock().await;
+        if let Some((fetched_at, items)) = cache.as_ref()
+            && fetched_at.elapsed() < RECENT_PROJECTS_TTL
+        {
+            return Ok(ListResourcesResult::with_all_items(items.clone()));
+        }
+        let items = match resources::list_recent_projects(client).await {
+            Ok(items) => {
+                *cache = Some((std::time::Instant::now(), items.clone()));
+                items
+            }
+            Err(e) => {
+                tracing::warn!("listing recent projects: {}", e.to_tool_message());
+                Vec::new()
+            }
+        };
         Ok(ListResourcesResult::with_all_items(items))
     }
 

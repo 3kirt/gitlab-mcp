@@ -84,8 +84,9 @@ Discussions**, **Branches**, **Repository Files**, **Emoji Reactions**,
 **Snippets**, **Work Items**, **MCP resource reads** (`gitlab://` URIs
 dispatched through `resources::read`), **MCP prompts** (the prompt
 builders, including the `/merge_requests/:iid/diffs` endpoint only they call),
-and **MCP completions** (argument autocompletion, including the
-`GET /projects` list endpoint only it calls) so far. The suite lives under
+and **MCP completions** (argument autocompletion; the `GET /projects` list
+endpoint behind it is the shared `recent_member_projects` query that
+`resources/list` also uses, live-covered from both sides) so far. The suite lives under
 [`src/tools/live/`](../src/tools/live/), one module per API area plus a shared
 `harness`.
 

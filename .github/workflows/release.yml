@@ -25,6 +25,18 @@ jobs:
 
       - run: cargo fmt --check
 
+      # The Claude Code plugin's bootstrap downloads the release binary
+      # matching plugin.json's version; a version that lags the tag would
+      # silently serve plugin users the previous release's binary.
+      - name: Check versions match the tag
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          cargo_version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -n 1)"
+          plugin_version="$(jq -r .version plugin/.claude-plugin/plugin.json)"
+          echo "tag=$tag cargo=$cargo_version plugin=$plugin_version"
+          test "$cargo_version" = "$tag" || { echo "Cargo.toml version does not match tag"; exit 1; }
+          test "$plugin_version" = "$tag" || { echo "plugin.json version does not match tag"; exit 1; }
+
   build:
     name: Build ${{ matrix.artifact }}
     runs-on: ${{ matrix.os }}

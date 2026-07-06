@@ -20,11 +20,10 @@
 use std::collections::HashMap;
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{QueryBuilder, project_path};
+use crate::tools::{QueryBuilder, encode_namespace_id, project_path, recent_member_projects};
 
-/// Max suggestions per response. Also used as the GitLab `per_page`, so a full
-/// page implies more matches exist (`has_more`).
-const LIMIT: usize = 20;
+/// Max suggestions per response; see [`crate::tools::SUGGESTION_LIMIT`].
+const LIMIT: usize = crate::tools::SUGGESTION_LIMIT;
 
 pub struct Completion {
     pub values: Vec<String>,
@@ -89,14 +88,7 @@ async fn complete_project(
     value: &str,
     for_resource_uri: bool,
 ) -> Result<Completion, GitlabError> {
-    let params = QueryBuilder::new()
-        .opt("membership", Some(true))
-        .opt("simple", Some(true))
-        .opt("order_by", Some("last_activity_at"))
-        .opt("per_page", Some(LIMIT))
-        .opt("search", non_empty(value))
-        .into_params();
-    let projects = client.get_with_params("/api/v4/projects", &params).await?;
+    let projects = recent_member_projects(client, non_empty(value)).await?;
     let values: Vec<String> = projects
         .as_array()
         .map(|a| {
@@ -104,7 +96,7 @@ async fn complete_project(
                 .filter_map(|p| p["path_with_namespace"].as_str())
                 .map(|path| {
                     if for_resource_uri {
-                        path.replace('/', "%2F")
+                        encode_namespace_id(path)
                     } else {
                         path.to_string()
                     }

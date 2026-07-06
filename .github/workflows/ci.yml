@@ -37,3 +37,12 @@ jobs:
       - run: cargo clippy --locked -- -D warnings
 
       - run: cargo fmt --check
+
+      # .mcp.json is tracked (with ${VAR} placeholders); make sure no real
+      # GitLab token ever lands in the repo. Docs use the all-x placeholder
+      # glpat-xxxxxxxxxxxxxxxxxxxx, which no real (random) token resembles.
+      - name: Scan for committed GitLab tokens
+        run: |
+          if git grep -nE 'glpat-[A-Za-z0-9_-]{10,}' -- . | grep -vE 'glpat-x{10,}'; then
+            echo "A GitLab personal access token appears to be committed"; exit 1
+          fi

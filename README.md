@@ -96,9 +96,11 @@ binary automatically — no manual install step. In Claude Code:
 ```
 
 On first start the plugin downloads the prebuilt binary for your platform
-(macOS arm64/x86_64, Linux amd64/arm64) from the GitHub release matching the
-plugin version, verifies it against the release checksums, and caches it under
-`~/.cache/gitlab-mcp/`. Plugin updates roll the binary forward automatically.
+(macOS arm64, Linux amd64/arm64; macOS x86_64 from v0.34.0 onward) from the
+GitHub release matching the plugin version, verifies it against the release
+checksums, and caches it under `~/.cache/gitlab-mcp/`. Plugin updates roll the
+binary forward automatically; on unsupported platforms (or when the download
+fails) a `gitlab-mcp` already on `PATH` is used instead.
 Supply credentials via `GITLAB_URL`/`GITLAB_TOKEN` environment variables or
 `~/.gitlab_mcp.json` ([Configuration](#configuration)).
 

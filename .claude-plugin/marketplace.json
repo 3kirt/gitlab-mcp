@@ -10,7 +10,7 @@
     {
       "name": "gitlab-mcp",
       "source": "./plugin",
-      "description": "GitLab MCP server: 176 tools covering issues, merge requests, pipelines, repositories, and more, plus workflow prompts, gitlab:// resources, and argument completion."
+      "description": "GitLab MCP server: tools covering issues, merge requests, pipelines, repositories, and more, plus workflow prompts, gitlab:// resources, and argument completion."
     }
   ]
 }
