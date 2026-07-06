@@ -13,6 +13,10 @@ command, use that instead.
 
 Change the `version` field in `Cargo.toml` to the new version string.
 
+Also change the `version` field in `plugin/.claude-plugin/plugin.json` to the
+same string — the Claude Code plugin's bootstrap script downloads the release
+binary matching that version, so it must stay in lockstep.
+
 ### 3. Update Cargo.lock
 
 Run `cargo build` (without `--locked`) so Cargo rewrites `Cargo.lock` to match
@@ -114,10 +118,11 @@ Write the entries in the same style as the existing changelog entries.
 
 ### 8. Commit the version bump and changelog
 
-Stage `Cargo.toml`, `Cargo.lock`, and `CHANGELOG.md`, then commit:
+Stage `Cargo.toml`, `Cargo.lock`, `CHANGELOG.md`, and
+`plugin/.claude-plugin/plugin.json`, then commit:
 
 ```
-git add Cargo.toml Cargo.lock CHANGELOG.md
+git add Cargo.toml Cargo.lock CHANGELOG.md plugin/.claude-plugin/plugin.json
 git commit -m "Bump version to <new version>"
 ```
 

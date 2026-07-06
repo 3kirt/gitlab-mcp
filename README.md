@@ -85,6 +85,25 @@ For self-hosted GitLab instances, replace `https://gitlab.com` with your instanc
 
 ## Claude Code setup
 
+### Plugin install (recommended)
+
+The plugin bundles the server configuration and fetches the matching release
+binary automatically — no manual install step. In Claude Code:
+
+```
+/plugin marketplace add 3kirt/gitlab-mcp
+/plugin install gitlab-mcp@gitlab-mcp
+```
+
+On first start the plugin downloads the prebuilt binary for your platform
+(macOS arm64/x86_64, Linux amd64/arm64) from the GitHub release matching the
+plugin version, verifies it against the release checksums, and caches it under
+`~/.cache/gitlab-mcp/`. Plugin updates roll the binary forward automatically.
+Supply credentials via `GITLAB_URL`/`GITLAB_TOKEN` environment variables or
+`~/.gitlab_mcp.json` ([Configuration](#configuration)).
+
+### Manual setup
+
 Register the server with the `claude` CLI:
 
 ```sh

@@ -1,0 +1,12 @@
+{
+  "name": "gitlab-mcp",
+  "version": "0.33.0",
+  "description": "GitLab MCP server: 176 tools covering issues, merge requests, pipelines, repositories, and more, plus workflow prompts (/review-mr, /summarize-issue, /create-mr-description), gitlab:// resources, and argument completion.",
+  "author": {
+    "name": "Kirtis Bakalarczyk"
+  },
+  "homepage": "https://github.com/3kirt/gitlab-mcp",
+  "repository": "https://github.com/3kirt/gitlab-mcp",
+  "license": "GPL-3.0",
+  "keywords": ["gitlab", "mcp", "issues", "merge-requests", "pipelines"]
+}

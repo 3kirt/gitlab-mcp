@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "gitlab": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/gitlab-mcp.sh",
+      "args": [],
+      "env": {
+        "GITLAB_URL": "${GITLAB_URL:-https://gitlab.com}",
+        "GITLAB_TOKEN": "${GITLAB_TOKEN}"
+      }
+    }
+  }
+}
