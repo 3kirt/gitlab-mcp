@@ -1,7 +1,6 @@
 /gitlab-mcp
 TODO.md
 .claude/settings.local.json
-.mcp.json
 .mcp.*.json
 
 # Added by cargo

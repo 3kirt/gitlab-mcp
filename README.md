@@ -59,7 +59,8 @@ gitlab-mcp reads credentials from `~/.gitlab_mcp.json`:
 }
 ```
 
-Environment variables take precedence over the config file:
+Environment variables take precedence over the config file (a variable that is
+set but empty counts as unset):
 
 | Variable | Description |
 |---|---|
@@ -93,20 +94,48 @@ claude mcp add --transport stdio \
   gitlab -- gitlab-mcp
 ```
 
-To share the configuration with your team (writes to `.mcp.json` in the repo
-root, omit the token so each user supplies their own):
+To share the configuration with your team, commit a `.mcp.json` in the repo
+root instead. Claude Code expands `${VAR}` (and `${VAR:-default}`) in `env`
+values from each user's environment, so the token never lands in the file —
+users just export `GITLAB_TOKEN` before starting Claude Code:
 
-```sh
-claude mcp add --transport stdio --scope project \
-  --env GITLAB_URL=https://gitlab.com \
-  gitlab -- gitlab-mcp
+```json
+{
+  "mcpServers": {
+    "gitlab": {
+      "command": "gitlab-mcp",
+      "args": [],
+      "env": {
+        "GITLAB_URL": "${GITLAB_URL:-https://gitlab.com}",
+        "GITLAB_TOKEN": "${GITLAB_TOKEN}"
+      }
+    }
+  }
+}
 ```
+
+(This repository's own [`.mcp.json`](.mcp.json) does exactly that, running the
+server from source via `cargo run` — contributors only need to export
+`GITLAB_TOKEN` and start Claude Code in the checkout.)
 
 Verify the server is connected:
 
 ```sh
 claude mcp list
 ```
+
+Once connected, beyond the tools themselves you get:
+
+- **Slash commands** — the server's MCP prompts appear as
+  `/mcp__gitlab__review-mr`, `/mcp__gitlab__summarize-issue`, and
+  `/mcp__gitlab__create-mr-description`, each pre-loading its GitLab context
+  (diffs, comments, commits) into the conversation.
+- **Resources** — GitLab data can be attached as context via `gitlab://`
+  URIs (e.g. `@gitlab:gitlab://mygroup%2Fmyproject/issues/42`); the resource
+  list offers your recently active projects.
+- **Argument completion** — project paths, branch names, and issue/MR
+  numbers are completed from live GitLab data where the client supports MCP
+  completions.
 
 > Other MCP clients (Claude Desktop, IDE plugins, etc.) work too — point them at
 > the `gitlab-mcp` binary with the same `GITLAB_URL` and `GITLAB_TOKEN` env

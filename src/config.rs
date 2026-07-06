@@ -46,9 +46,7 @@ impl Config {
 
     /// Resolve the GitLab base URL: GITLAB_URL env var, then config file, then error.
     pub fn resolve_url(&self) -> anyhow::Result<String> {
-        let url = std::env::var("GITLAB_URL")
-            .ok()
-            .or_else(|| self.file_url.clone())
+        let url = first_non_empty(std::env::var("GITLAB_URL").ok(), self.file_url.clone())
             .ok_or_else(|| {
                 anyhow!("GitLab URL not set: provide GITLAB_URL or set \"url\" in config file")
             })?;
@@ -58,15 +56,23 @@ impl Config {
 
     /// Resolve the GitLab personal access token: GITLAB_TOKEN env var, then config file, then error.
     pub fn resolve_token(&self) -> anyhow::Result<String> {
-        std::env::var("GITLAB_TOKEN")
-            .ok()
-            .or_else(|| self.file_token.clone())
-            .ok_or_else(|| {
+        first_non_empty(std::env::var("GITLAB_TOKEN").ok(), self.file_token.clone()).ok_or_else(
+            || {
                 anyhow!(
                     "GitLab token not set: provide GITLAB_TOKEN or set \"token\" in config file"
                 )
-            })
+            },
+        )
     }
+}
+
+/// The first non-blank value wins. A set-but-empty env var counts as unset:
+/// MCP clients expanding `${GITLAB_TOKEN}` in a shared config pass "" when the
+/// user hasn't exported the variable, and failing here with the "not set"
+/// error beats starting up and sending empty auth headers.
+fn first_non_empty(env_val: Option<String>, file_val: Option<String>) -> Option<String> {
+    let non_blank = |v: Option<String>| v.filter(|s| !s.trim().is_empty());
+    non_blank(env_val).or_else(|| non_blank(file_val))
 }
 
 fn default_config_path() -> anyhow::Result<PathBuf> {
@@ -114,7 +120,18 @@ fn enforce_https(url: &str) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::enforce_https;
+    use super::{enforce_https, first_non_empty};
+
+    #[test]
+    fn empty_env_value_falls_back_to_file_value() {
+        let s = |v: &str| Some(v.to_string());
+        assert_eq!(first_non_empty(s("env"), s("file")), s("env"));
+        assert_eq!(first_non_empty(s(""), s("file")), s("file"));
+        assert_eq!(first_non_empty(s("  "), s("file")), s("file"));
+        assert_eq!(first_non_empty(None, s("file")), s("file"));
+        assert_eq!(first_non_empty(s(""), s("")), None);
+        assert_eq!(first_non_empty(None, None), None);
+    }
 
     #[test]
     fn https_is_allowed() {
