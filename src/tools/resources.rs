@@ -17,11 +17,14 @@
 
 use base64::Engine as _;
 use percent_encoding::percent_decode_str;
-use rmcp::model::{ResourceContents, ResourceTemplate};
+use rmcp::model::{Resource, ResourceContents, ResourceTemplate};
 use serde_json::Value;
 
 use crate::client::{GitlabClient, GitlabError};
-use crate::tools::{issues, merge_requests, pipelines, repository_files, slim};
+use crate::tools::{
+    QueryBuilder, encode_namespace_id, issues, merge_requests, pipelines, projects,
+    repository_files, slim,
+};
 
 /// The resource templates advertised via `resources/templates/list`, one per
 /// single-get tool domain that makes sense to pre-load as context.
@@ -29,6 +32,14 @@ pub fn resource_templates() -> Vec<ResourceTemplate> {
     let id_note = "{project_id} is a numeric ID or percent-encoded namespace path \
                    (e.g. mygroup%2Fmyproject).";
     vec![
+        ResourceTemplate::new("gitlab://{project_id}", "gitlab-project")
+            .with_title("Project overview")
+            .with_description(format!(
+                "A GitLab project (repository) as JSON: description, default branch, \
+                 visibility, web URL, and feature settings. The entry point for the other \
+                 gitlab:// resources of the same project. {id_note}"
+            ))
+            .with_mime_type("application/json"),
         ResourceTemplate::new(
             "gitlab://{project_id}/files/{file_path}{?ref}",
             "gitlab-file",
@@ -74,6 +85,9 @@ pub fn resource_templates() -> Vec<ResourceTemplate> {
 /// A parsed `gitlab://` resource URI.
 #[derive(Debug, PartialEq, Eq)]
 pub enum ResourceRef {
+    Project {
+        project_id: String,
+    },
     File {
         project_id: String,
         file_path: String,
@@ -116,10 +130,13 @@ pub fn parse_uri(uri: &str) -> Result<ResourceRef, String> {
         .filter(|s| !s.is_empty())
         .ok_or_else(|| "missing project ID".to_string())?;
     let project_id = decode(project_seg)?;
-    let kind = segments
-        .next()
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| "missing resource kind after the project ID".to_string())?;
+    // No kind segment (allowing one trailing slash) → the project itself.
+    let Some(kind) = segments.next().filter(|s| !s.is_empty()) else {
+        if segments.next().is_some() {
+            return Err("unexpected path segments after the project ID".to_string());
+        }
+        return Ok(ResourceRef::Project { project_id });
+    };
 
     // `files` takes the rest of the path greedily; the numeric kinds take
     // exactly one trailing segment.
@@ -191,6 +208,17 @@ pub async fn read(
     uri: &str,
 ) -> Result<Vec<ResourceContents>, GitlabError> {
     let contents = match resource {
+        ResourceRef::Project { project_id } => {
+            let v = projects::project_get(
+                client,
+                projects::ProjectGetParams {
+                    project_id: project_id.into(),
+                    statistics: None,
+                },
+            )
+            .await?;
+            json_contents(v, uri)?
+        }
         ResourceRef::File {
             project_id,
             file_path,
@@ -253,6 +281,47 @@ pub async fn read(
     Ok(vec![contents])
 }
 
+/// How many projects `resources/list` returns (matches the completion cap).
+const RECENT_PROJECTS_LIMIT: usize = 20;
+
+/// The concrete resources for `resources/list`: the caller's most recently
+/// active member projects, as `gitlab://{project_id}` project resources. The
+/// full resource space isn't enumerable, but "which projects matter" has the
+/// same answer the `project_id` completer uses, and listing them gives client
+/// resource pickers real entries instead of an empty list.
+pub async fn list_recent_projects(client: &GitlabClient) -> Result<Vec<Resource>, GitlabError> {
+    let params = QueryBuilder::new()
+        .opt("membership", Some(true))
+        .opt("simple", Some(true))
+        .opt("order_by", Some("last_activity_at"))
+        .opt("per_page", Some(RECENT_PROJECTS_LIMIT))
+        .into_params();
+    let projects = client.get_with_params("/api/v4/projects", &params).await?;
+    let resources = projects
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|p| {
+                    let path = p["path_with_namespace"].as_str()?;
+                    let mut r = Resource::new(
+                        format!("gitlab://{}", encode_namespace_id(path)),
+                        path.to_string(),
+                    )
+                    .with_mime_type("application/json");
+                    if let Some(name) = p["name"].as_str() {
+                        r = r.with_title(name);
+                    }
+                    if let Some(desc) = p["description"].as_str().filter(|d| !d.is_empty()) {
+                        r = r.with_description(desc);
+                    }
+                    Some(r)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(resources)
+}
+
 /// JSON resources go through the same `slim_get` shaping as the tool results,
 /// so a resource read and a single-get tool call show the same object.
 fn json_contents(v: Value, uri: &str) -> Result<ResourceContents, GitlabError> {
@@ -301,7 +370,7 @@ mod tests {
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    use super::{ResourceRef, parse_uri, read, resource_templates};
+    use super::{ResourceRef, list_recent_projects, parse_uri, read, resource_templates};
     use crate::test_util::mock_client;
     use rmcp::model::ResourceContents;
 
@@ -314,6 +383,19 @@ mod tests {
             ] => (text.as_str(), mime_type.as_deref()),
             other => panic!("expected one text contents, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_bare_project_uri() {
+        let expected = ResourceRef::Project {
+            project_id: "mygroup/myproject".into(),
+        };
+        assert_eq!(parse_uri("gitlab://mygroup%2Fmyproject").unwrap(), expected);
+        // One trailing slash is tolerated.
+        assert_eq!(
+            parse_uri("gitlab://mygroup%2Fmyproject/").unwrap(),
+            expected
+        );
     }
 
     #[test]
@@ -371,7 +453,7 @@ mod tests {
     fn rejects_malformed_uris() {
         for uri in [
             "https://gitlab.com/42/issues/7", // wrong scheme
-            "gitlab://42",                    // no kind
+            "gitlab://42//issues/7",          // empty kind segment
             "gitlab://42/branches/main",      // unknown kind
             "gitlab://42/issues/seven",       // non-numeric IID
             "gitlab://42/issues",             // missing IID
@@ -402,6 +484,72 @@ mod tests {
                 template.uri_template
             );
         }
+    }
+
+    #[tokio::test]
+    async fn reads_project_as_slimmed_json() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/mygroup%2Fmyproject"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": 42,
+                "path_with_namespace": "mygroup/myproject",
+                "default_branch": "main",
+                "description": null
+            })))
+            .mount(&server)
+            .await;
+
+        let uri = "gitlab://mygroup%2Fmyproject";
+        let contents = read(&mock_client(&server), parse_uri(uri).unwrap(), uri)
+            .await
+            .unwrap();
+        let (text, mime) = text_of(&contents);
+        assert_eq!(mime, Some("application/json"));
+        let v: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(v["default_branch"], "main");
+        // slim_get drops nulls here too.
+        assert!(v.get("description").is_none());
+    }
+
+    #[tokio::test]
+    async fn lists_recent_projects_as_encoded_project_uris() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects"))
+            .and(query_param("membership", "true"))
+            .and(query_param("order_by", "last_activity_at"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+                {
+                    "path_with_namespace": "mygroup/active",
+                    "name": "Active",
+                    "description": "The busy one"
+                },
+                {
+                    "path_with_namespace": "mygroup/quiet",
+                    "name": "Quiet",
+                    "description": ""
+                }
+            ])))
+            .mount(&server)
+            .await;
+
+        let resources = list_recent_projects(&mock_client(&server)).await.unwrap();
+        assert_eq!(resources.len(), 2);
+        assert_eq!(resources[0].uri, "gitlab://mygroup%2Factive");
+        assert_eq!(resources[0].name, "mygroup/active");
+        assert_eq!(resources[0].title.as_deref(), Some("Active"));
+        assert_eq!(resources[0].description.as_deref(), Some("The busy one"));
+        // Every listed URI must be readable, i.e. parse as a project resource.
+        for r in &resources {
+            assert!(
+                matches!(parse_uri(&r.uri), Ok(ResourceRef::Project { .. })),
+                "listed URI {} should parse as a project",
+                r.uri
+            );
+        }
+        // Empty descriptions are omitted rather than surfaced as "".
+        assert_eq!(resources[1].description, None);
     }
 
     #[tokio::test]

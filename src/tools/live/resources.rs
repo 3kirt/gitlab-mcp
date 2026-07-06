@@ -6,7 +6,7 @@
 
 use rmcp::model::ResourceContents;
 
-use crate::tools::resources::{parse_uri, read};
+use crate::tools::resources::{list_recent_projects, parse_uri, read};
 
 use super::harness::{
     LiveEnv, delete_branch, delete_issue, run_tag, seed_branch_with_file, seed_issue,
@@ -29,6 +29,33 @@ async fn read_text(env: &LiveEnv, uri: &str) -> (String, Option<String>) {
         }) => (text, mime_type),
         other => panic!("expected text contents, got {other:?}"),
     }
+}
+
+/// The `resources/list` surface and the project resource it points at: the
+/// test project is a recently active membership project, so it must appear,
+/// and its listed URI must read back as the project's JSON.
+#[tokio::test]
+async fn recent_project_listing_includes_readable_test_project() {
+    let env = skip_unless_live!();
+
+    let listed = list_recent_projects(&env.client)
+        .await
+        .expect("list recent projects");
+    let expected_uri = format!("gitlab://{}", project_segment(&env));
+    let entry = listed
+        .iter()
+        .find(|r| r.uri == expected_uri)
+        .unwrap_or_else(|| panic!("test project {expected_uri} not in recent listing"));
+    assert_eq!(entry.name, env.project);
+
+    let (text, mime) = read_text(&env, &entry.uri).await;
+    assert_eq!(mime.as_deref(), Some("application/json"));
+    let v: serde_json::Value = serde_json::from_str(&text).expect("resource is JSON");
+    assert_eq!(
+        v["path_with_namespace"].as_str(),
+        Some(env.project.as_str())
+    );
+    super::harness::assert_no_stripped_keys(&v);
 }
 
 #[tokio::test]

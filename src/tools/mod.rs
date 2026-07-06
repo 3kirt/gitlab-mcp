@@ -679,9 +679,14 @@ impl ServerHandler for GitlabMcpServer {
              addressed by a globally unique ID use <resource>_id (note_id, pipeline_id, \
              snippet_id, runner_id, job_id, discussion_id). When unsure of a tool's exact \
              parameter names, call gitlab_tool_schema_get with the tool name first. \
-             Read-only data is also available as MCP resources via gitlab:// URI templates \
-             (files, issues, MRs, pipelines); in a resource URI a namespace-path project_id \
-             must be percent-encoded (mygroup%2Fmyproject)."
+             Read-only data is also available as MCP resources: resources/list returns \
+             your recently active projects, and these gitlab:// URI templates are \
+             supported: gitlab://{project_id} (project overview), \
+             gitlab://{project_id}/files/{file_path}{?ref} (file content), \
+             gitlab://{project_id}/issues/{issue_iid}, \
+             gitlab://{project_id}/mrs/{merge_request_iid}, and \
+             gitlab://{project_id}/pipelines/{pipeline_id}. In a resource URI a \
+             namespace-path project_id must be percent-encoded (mygroup%2Fmyproject)."
                 .to_string(),
         );
         info
@@ -691,9 +696,24 @@ impl ServerHandler for GitlabMcpServer {
         let _ = self.peer.set(context.peer);
     }
 
-    // `list_resources` stays on the rmcp default (an empty list): concrete
-    // resources can't be enumerated without knowing which of the instance's
-    // projects matter to the client, so templates are the right surface.
+    /// The full resource space isn't enumerable, but client resource pickers
+    /// only surface `resources/list`, so return the projects that plausibly
+    /// matter: the caller's recently active member projects. Everything else
+    /// stays discoverable through the templates.
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, McpError> {
+        let client = self.get_client()?;
+        let items = resources::list_recent_projects(client).await.map_err(|e| {
+            let msg = format!("listing recent projects: {}", e.to_tool_message());
+            tracing::error!("{msg}");
+            McpError::internal_error(msg, None)
+        })?;
+        Ok(ListResourcesResult::with_all_items(items))
+    }
+
     async fn list_resource_templates(
         &self,
         _request: Option<PaginatedRequestParams>,
