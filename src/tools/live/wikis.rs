@@ -97,14 +97,19 @@ async fn project_wiki_page_crud_lifecycle() {
         .clone();
     assert_eq!(ours["content"], "v1 wiki content\n");
 
-    // Update the content only; the get must reflect it.
+    // Update, passing the full path-style title alongside the content.
+    // Passing the title is load-bearing: a content-only update of a nested
+    // page makes GitLab re-derive the title from the slug's last segment and
+    // *move the page to the wiki root* (observed live on gitlab.com: updating
+    // "dir/leaf" without a title relocated it to slug "leaf"). The tool
+    // descriptions warn callers about this.
     let updated = slim::slim_get(
         wikis::project_wiki_update(
             &env.client,
             wikis::ProjectWikiUpdateParams {
                 project_id: env.project.clone().into(),
                 slug: slug.clone(),
-                title: None,
+                title: Some(title.clone()),
                 content: Some("v2 wiki content\n".into()),
                 format: None,
             },
@@ -113,6 +118,11 @@ async fn project_wiki_page_crud_lifecycle() {
         .expect("project_wiki_update"),
     );
     assert_wiki_page_invariants(&updated);
+    assert_eq!(
+        updated["slug"].as_str(),
+        Some(slug.as_str()),
+        "update with the full title must keep the page in place"
+    );
     let got = get_page_slimmed(&env, &slug)
         .await
         .expect("get after update");

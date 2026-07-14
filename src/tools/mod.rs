@@ -524,18 +524,35 @@ pub(crate) const SUGGESTION_LIMIT: usize = 20;
 /// The "which projects matter to this user" query shared by the `project_id`
 /// completer and `resources/list`: membership projects by recent activity,
 /// optionally narrowed by a search term, capped at [`SUGGESTION_LIMIT`].
+///
+/// gitlab.com has been observed to 500 on the activity-*ordered* membership
+/// query (a ~15s statement timeout server-side) while the same query without
+/// `order_by` answers instantly — so on a 5xx the fetch retries unordered.
+/// A default-ordered project list still beats an empty picker.
 pub(crate) async fn recent_member_projects(
     client: &GitlabClient,
     search: Option<String>,
 ) -> Result<Value, GitlabError> {
-    let params = QueryBuilder::new()
-        .opt("membership", Some(true))
-        .opt("simple", Some(true))
-        .opt("order_by", Some("last_activity_at"))
-        .opt("per_page", Some(SUGGESTION_LIMIT))
-        .opt("search", search)
-        .into_params();
-    client.get_with_params("/api/v4/projects", &params).await
+    let params = |order_by: Option<&'static str>| {
+        QueryBuilder::new()
+            .opt("membership", Some(true))
+            .opt("simple", Some(true))
+            .opt("order_by", order_by)
+            .opt("per_page", Some(SUGGESTION_LIMIT))
+            .opt("search", search.clone())
+            .into_params()
+    };
+    let ordered = client
+        .get_with_params("/api/v4/projects", &params(Some("last_activity_at")))
+        .await;
+    match ordered {
+        Err(GitlabError::Api { status, .. }) if status.is_server_error() => {
+            client
+                .get_with_params("/api/v4/projects", &params(None))
+                .await
+        }
+        other => other,
+    }
 }
 
 /// For supplemental fetches embedded inside a primary response: pass through
@@ -1394,6 +1411,65 @@ mod tests {
         assert_eq!(item["title"], json!("x"));
         assert!(item.get("description").is_none());
         assert!(item.get("_links").is_none());
+    }
+
+    // recent_member_projects
+
+    mod recent_member_projects_tests {
+        use super::*;
+        use crate::test_util::mock_client;
+        use wiremock::matchers::{method, path, query_param};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        #[tokio::test]
+        async fn falls_back_to_unordered_when_ordered_query_500s() {
+            let server = MockServer::start().await;
+            // The activity-ordered query 500s (as observed on gitlab.com)…
+            Mock::given(method("GET"))
+                .and(path("/api/v4/projects"))
+                .and(query_param("order_by", "last_activity_at"))
+                .respond_with(ResponseTemplate::new(500))
+                .with_priority(1)
+                .expect(1)
+                .mount(&server)
+                .await;
+            // …and the unordered retry succeeds.
+            Mock::given(method("GET"))
+                .and(path("/api/v4/projects"))
+                .and(query_param("membership", "true"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+                    {"id": 1, "path_with_namespace": "g/p"}
+                ])))
+                .with_priority(2)
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let v = recent_member_projects(&mock_client(&server), None)
+                .await
+                .unwrap();
+            assert_eq!(v[0]["path_with_namespace"], "g/p");
+        }
+
+        #[tokio::test]
+        async fn client_errors_are_not_retried() {
+            let server = MockServer::start().await;
+            // A 4xx (e.g. bad token) must propagate, not trigger the fallback.
+            Mock::given(method("GET"))
+                .and(path("/api/v4/projects"))
+                .respond_with(ResponseTemplate::new(401))
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let err = recent_member_projects(&mock_client(&server), None)
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(err, GitlabError::Api { status, .. } if status.as_u16() == 401),
+                "expected 401 passthrough, got {err:?}"
+            );
+        }
     }
 
     // paginate (fetch_all)

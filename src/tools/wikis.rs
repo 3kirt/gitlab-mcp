@@ -176,7 +176,9 @@ pub struct ProjectWikiUpdateParams {
         description = "Slug of the wiki page to update (e.g. \"home\" or \"dir/page_name\"); slashes are encoded automatically"
     )]
     pub slug: String,
-    #[schemars(description = "New title (at least one of title/content is required)")]
+    #[schemars(
+        description = "New title (at least one of title/content is required). For a page in a directory, pass the full path-style title (e.g. \"dir/page_name\") — omitting the title moves the page to the wiki root."
+    )]
     pub title: Option<String>,
     #[schemars(description = "New content (at least one of title/content is required)")]
     pub content: Option<String>,
@@ -296,7 +298,9 @@ pub struct GroupWikiUpdateParams {
         description = "Slug of the wiki page to update (e.g. \"home\" or \"dir/page_name\"); slashes are encoded automatically"
     )]
     pub slug: String,
-    #[schemars(description = "New title (at least one of title/content is required)")]
+    #[schemars(
+        description = "New title (at least one of title/content is required). For a page in a directory, pass the full path-style title (e.g. \"dir/page_name\") — omitting the title moves the page to the wiki root."
+    )]
     pub title: Option<String>,
     #[schemars(description = "New content (at least one of title/content is required)")]
     pub content: Option<String>,
@@ -384,7 +388,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update (edit) a page of a GitLab project wiki by slug: change its content, retitle it, or switch format. Required: project_id, slug, and at least one of title/content. Note a title change also changes the page's slug. For a group-level wiki, use gitlab_group_wikis_update.",
+        description = "Update (edit) a page of a GitLab project wiki by slug: change its content, retitle it, or switch format. Required: project_id, slug, and at least one of title/content. Note a title change also changes the page's slug, and for a page in a directory (slug with slashes) the full path-style title must be passed with every update — omitting it moves the page to the wiki root. For a group-level wiki, use gitlab_group_wikis_update.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -447,7 +451,7 @@ impl GitlabMcpServer {
     }
 
     #[tool(
-        description = "Update (edit) a page of a GitLab group wiki by slug: change its content, retitle it, or switch format. Required: group_id, slug, and at least one of title/content. Note a title change also changes the page's slug. Group wikis require Premium/Ultimate; for a project's wiki, use gitlab_project_wikis_update.",
+        description = "Update (edit) a page of a GitLab group wiki by slug: change its content, retitle it, or switch format. Required: group_id, slug, and at least one of title/content. Note a title change also changes the page's slug, and for a page in a directory (slug with slashes) the full path-style title must be passed with every update — omitting it moves the page to the wiki root. Group wikis require Premium/Ultimate; for a project's wiki, use gitlab_project_wikis_update.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
