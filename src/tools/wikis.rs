@@ -483,8 +483,9 @@ impl GitlabMcpServer {
 //
 // The two scope families share the CRUD helpers, so the failure mode to guard
 // is prefix mix-ups (a project call hitting /groups/… or vice versa) and slug
-// encoding. Each family gets URL-shape coverage; body assembly is covered once
-// per verb since it's scope-independent.
+// encoding. Each family therefore pins the URL prefix for all five verbs;
+// query/body *assembly* is covered once per verb, since it lives in the shared
+// helpers and is scope-independent.
 
 #[cfg(test)]
 mod tests {
@@ -494,9 +495,10 @@ mod tests {
 
     use super::{
         GroupWikiCreateParams, GroupWikiDeleteParams, GroupWikiGetParams, GroupWikiUpdateParams,
-        GroupWikisListParams, ProjectWikiDeleteParams, ProjectWikiGetParams,
-        ProjectWikisListParams, group_wiki_create, group_wiki_delete, group_wiki_get,
-        group_wiki_update, group_wikis_list, project_wiki_delete, project_wiki_get,
+        GroupWikisListParams, ProjectWikiCreateParams, ProjectWikiDeleteParams,
+        ProjectWikiGetParams, ProjectWikiUpdateParams, ProjectWikisListParams, group_wiki_create,
+        group_wiki_delete, group_wiki_get, group_wiki_update, group_wikis_list,
+        project_wiki_create, project_wiki_delete, project_wiki_get, project_wiki_update,
         project_wikis_list,
     };
     use crate::test_util::mock_client;
@@ -552,6 +554,59 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(v["content"], "hello");
+    }
+
+    #[tokio::test]
+    async fn project_create_posts_to_projects_wikis_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/v4/projects/42/wikis"))
+            .and(body_json(json!({ "title": "Hello", "content": "hi" })))
+            .respond_with(ResponseTemplate::new(201).set_body_json(json!({
+                "slug": "Hello", "title": "Hello"
+            })))
+            .mount(&server)
+            .await;
+
+        let v = project_wiki_create(
+            &mock_client(&server),
+            ProjectWikiCreateParams {
+                project_id: "42".into(),
+                title: "Hello".into(),
+                content: "hi".into(),
+                format: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(v["slug"], "Hello");
+    }
+
+    #[tokio::test]
+    async fn project_update_puts_to_projects_slug_url() {
+        let server = MockServer::start().await;
+        Mock::given(method("PUT"))
+            .and(path("/api/v4/projects/42/wikis/foo"))
+            .and(body_json(json!({ "content": "v2" })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "slug": "foo", "content": "v2"
+            })))
+            .mount(&server)
+            .await;
+
+        let v = project_wiki_update(
+            &mock_client(&server),
+            ProjectWikiUpdateParams {
+                project_id: "42".into(),
+                slug: "foo".into(),
+                title: None,
+                content: Some("v2".into()),
+                format: None,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(v["content"], "v2");
     }
 
     #[tokio::test]
