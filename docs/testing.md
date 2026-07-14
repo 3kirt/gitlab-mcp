@@ -187,7 +187,13 @@ remain), Users (read-only — `users_list`, `user_get`, and `users_keys_list`,
 pivoting on the authenticated `GET /user` rather than seeding, since the API
 can't create users without admin), and Work Items (full CRUD, verified by REST↔GraphQL
 equivalence — the mutation test creates an Issue work item over GraphQL and
-confirms each create/update/delete step is visible through the REST issues API). Not yet automated: pipeline schedules and the read-only families
+confirms each create/update/delete step is visible through the REST issues API), Project Wikis
+(full page CRUD, with a slash-carrying slug so `encode_path_segment` is exercised
+against the real API; group wikis share the same CRUD helpers but need a
+Premium group, so their prefix is pinned by unit tests instead), and Licenses
+(tolerant: each endpoint asserts either a well-formed license payload or a
+clean `403`/`404` — the License API needs an admin token on Self-Managed, so
+against gitlab.com the rejection path is what's verified). Not yet automated: pipeline schedules and the read-only families
 (commits, repository tree/compare, search, runners, jobs, pipelines).
 
 **Epics** are Premium/Ultimate-only. The standing test token is on a Free-tier
