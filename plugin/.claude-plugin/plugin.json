@@ -1,6 +1,6 @@
 {
   "name": "gitlab-mcp",
-  "version": "0.34.0",
+  "version": "0.35.0",
   "description": "GitLab MCP server: tools covering issues, merge requests, pipelines, repositories, and more, plus workflow prompts (/review-mr, /summarize-issue, /create-mr-description), gitlab:// resources, and argument completion.",
   "author": {
     "name": "Kirtis Bakalarczyk"

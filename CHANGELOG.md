@@ -4,6 +4,48 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.35.0] — 2026-07-13
+
+Wikis, instance licenses, and a sweep of schema-quality cleanups
+(176 → 189 tools).
+
+### Added
+- **Project and group wiki tools** — full page CRUD for both scopes
+  (`gitlab_project_wikis_*`, `gitlab_group_wikis_*`): list (optionally with
+  content), get (with `render_html` and version-SHA history), create, update,
+  and delete. Page slugs may contain slashes (`dir/page_name`) and are
+  percent-encoded automatically. The two APIs are shape-identical, so both
+  families run through shared CRUD helpers; group wikis are Premium/Ultimate.
+  The multipart attachment-upload endpoint is not exposed.
+- **License tools (read-only)** — `gitlab_licenses_get` (current license, or
+  a specific one by ID), `gitlab_licenses_list`, and
+  `gitlab_licenses_usage_export` (seat-usage CSV). Requires an administrator
+  token; Self-Managed/Dedicated only. The create/delete/refresh endpoints are
+  deliberately not exposed.
+- **Live tests** for project wikis (full lifecycle with a slash-carrying
+  slug) and licenses (tolerant: asserts a license payload or a clean 403/404,
+  since the API needs an admin token on Self-Managed).
+
+### Changed
+- **Unified IID/note-ID parameter schemas** — `issue_iid`,
+  `merge_request_iid`, and `note_id` now carry one shared description each
+  (via `IssueIid`/`MergeRequestIid`/`NoteId` newtypes) instead of ~65
+  slightly-diverged copies. Wire shapes are unchanged; the descriptions LLM
+  callers see are slightly richer and now consistent across every tool.
+- Work-item emoji parameters adopt the "emoji name without colons" hint the
+  REST emoji tools already carried.
+
+### Fixed
+- `resources/list` and `project_id` completion now retry their
+  recent-projects query without the activity ordering when GitLab answers
+  5xx — gitlab.com has been observed to time out on the ordered membership
+  query, and a default-ordered picker beats an empty one.
+- Blob SHAs are percent-encoded in `gitlab_repo_blob_get` /
+  `gitlab_repo_blob_raw` URLs, matching every other path segment.
+- The wiki update tools document (and their live test pins) a GitLab quirk:
+  updating a page in a directory without passing its full path-style title
+  moves the page to the wiki root.
+
 ## [0.34.0] — 2026-07-06
 
 Make the server a first-class Claude Code citizen: an installable plugin,
