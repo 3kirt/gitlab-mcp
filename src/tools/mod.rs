@@ -946,7 +946,7 @@ mod tests {
         // count catches both a forgotten `+ Self::tool_router_<domain>()`
         // and a name collision. Update it when adding or removing tools.
         let tools = GitlabMcpServer::tool_router().list_all();
-        assert_eq!(tools.len(), 184);
+        assert_eq!(tools.len(), 189);
     }
 
     #[test]
