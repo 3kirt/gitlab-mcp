@@ -91,10 +91,7 @@ pub async fn mrs_list(client: &GitlabClient, p: MrsListParams) -> ListResult {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrGetParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(
-        description = "Merge request internal ID (IID) — the number shown in the GitLab UI"
-    )]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
 }
 
 pub async fn mr_get(client: &GitlabClient, p: MrGetParams) -> Result<Value, GitlabError> {
@@ -177,8 +174,7 @@ pub async fn mr_create(client: &GitlabClient, p: MrCreateParams) -> Result<Value
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrUpdateParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID)")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
     #[schemars(description = "New title")]
     pub title: Option<String>,
     #[schemars(description = "New description (Markdown supported)")]
@@ -255,8 +251,7 @@ pub async fn mr_update(client: &GitlabClient, p: MrUpdateParams) -> Result<Value
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDeleteParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID)")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
 }
 
 pub async fn mr_delete(client: &GitlabClient, p: MrDeleteParams) -> Result<(), GitlabError> {
@@ -275,8 +270,7 @@ pub async fn mr_delete(client: &GitlabClient, p: MrDeleteParams) -> Result<(), G
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrMergeParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID)")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
     #[schemars(description = "Custom merge commit message")]
     pub merge_commit_message: Option<String>,
     #[schemars(description = "Squash commits on merge (true/false)")]
@@ -312,8 +306,7 @@ pub async fn mr_merge(client: &GitlabClient, p: MrMergeParams) -> Result<Value, 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrApproveParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID)")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
     #[schemars(
         description = "The HEAD commit SHA of the merge request. If specified, GitLab rejects the approval if the MR has since been updated."
     )]
@@ -344,8 +337,7 @@ pub async fn mr_approve(client: &GitlabClient, p: MrApproveParams) -> Result<Val
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrUnapproveParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID)")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
 }
 
 pub async fn mr_unapprove(client: &GitlabClient, p: MrUnapproveParams) -> Result<(), GitlabError> {
@@ -540,7 +532,7 @@ mod tests {
             &mock_client(&server),
             MrGetParams {
                 project_id: "mygroup/myrepo".into(),
-                merge_request_iid: 12,
+                merge_request_iid: 12.into(),
             },
         )
         .await
@@ -575,7 +567,7 @@ mod tests {
             &mock_client(&server),
             MrGetParams {
                 project_id: "p".into(),
-                merge_request_iid: 3,
+                merge_request_iid: 3.into(),
             },
         )
         .await
@@ -609,7 +601,7 @@ mod tests {
             &mock_client(&server),
             MrGetParams {
                 project_id: "p".into(),
-                merge_request_iid: 3,
+                merge_request_iid: 3.into(),
             },
         )
         .await
@@ -642,7 +634,7 @@ mod tests {
             &mock_client(&server),
             MrGetParams {
                 project_id: "p".into(),
-                merge_request_iid: 999,
+                merge_request_iid: 999.into(),
             },
         )
         .await
@@ -676,7 +668,7 @@ mod tests {
             &mock_client(&server),
             MrApproveParams {
                 project_id: "mygroup/myrepo".into(),
-                merge_request_iid: 3,
+                merge_request_iid: 3.into(),
                 sha: None,
                 approval_password: None,
             },
@@ -701,7 +693,7 @@ mod tests {
             &mock_client(&server),
             MrApproveParams {
                 project_id: "p".into(),
-                merge_request_iid: 99,
+                merge_request_iid: 99.into(),
                 sha: None,
                 approval_password: None,
             },
@@ -728,7 +720,7 @@ mod tests {
             &mock_client(&server),
             MrUnapproveParams {
                 project_id: "p".into(),
-                merge_request_iid: 3,
+                merge_request_iid: 3.into(),
             },
         )
         .await;
@@ -748,7 +740,7 @@ mod tests {
             &mock_client(&server),
             MrUnapproveParams {
                 project_id: "p".into(),
-                merge_request_iid: 99,
+                merge_request_iid: 99.into(),
             },
         )
         .await

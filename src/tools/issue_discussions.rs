@@ -11,8 +11,7 @@ use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueDiscussionsListParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -36,8 +35,7 @@ pub async fn issue_discussions_list(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueDiscussionGetParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[schemars(description = "Discussion ID (hex string)")]
     pub discussion_id: String,
 }
@@ -62,8 +60,7 @@ pub async fn issue_discussion_get(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueDiscussionCreateParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[schemars(
         description = "Content of the discussion thread starter comment (Markdown supported)"
     )]
@@ -97,8 +94,7 @@ pub async fn issue_discussion_create(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueDiscussionNoteCreateParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[schemars(description = "Discussion ID (hex string)")]
     pub discussion_id: String,
     #[schemars(description = "Content of the reply note (Markdown supported)")]
@@ -133,12 +129,10 @@ pub async fn issue_discussion_note_create(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueDiscussionNoteUpdateParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[schemars(description = "Discussion ID (hex string)")]
     pub discussion_id: String,
-    #[schemars(description = "Note ID (integer)")]
-    pub note_id: u64,
+    pub note_id: crate::tools::NoteId,
     #[schemars(description = "New content for the note (Markdown supported)")]
     pub body: String,
 }
@@ -165,12 +159,10 @@ pub async fn issue_discussion_note_update(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueDiscussionNoteDeleteParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[schemars(description = "Discussion ID (hex string)")]
     pub discussion_id: String,
-    #[schemars(description = "Note ID (integer)")]
-    pub note_id: u64,
+    pub note_id: crate::tools::NoteId,
 }
 
 pub async fn issue_discussion_note_delete(

@@ -2,7 +2,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::client::{GitlabClient, GitlabError, ListResult};
-use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, project_path};
+use crate::tools::{
+    BodyBuilder, PaginationParams, QueryBuilder, encode_path_segment, list_paginated, project_path,
+};
 
 // --------------------------------------------------------------------------
 // List repository tree
@@ -63,7 +65,11 @@ pub async fn repo_blob_get(
     client: &GitlabClient,
     p: RepoBlobGetParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!("{}/repository/blobs/{}", project_path(&p.project_id), p.sha);
+    let path = format!(
+        "{}/repository/blobs/{}",
+        project_path(&p.project_id),
+        encode_path_segment(&p.sha)
+    );
     client.get(&path).await
 }
 
@@ -85,7 +91,7 @@ pub async fn repo_blob_raw(
     let path = format!(
         "{}/repository/blobs/{}/raw",
         project_path(&p.project_id),
-        p.sha
+        encode_path_segment(&p.sha)
     );
     let content = client.get_text(&path, &[]).await?;
     Ok(json!({"content": content}))

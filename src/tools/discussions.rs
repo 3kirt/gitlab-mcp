@@ -11,8 +11,7 @@ use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDiscussionsListParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID)")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -33,8 +32,7 @@ pub async fn mr_discussions_list(client: &GitlabClient, p: MrDiscussionsListPara
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDiscussionGetParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID)")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
     #[schemars(description = "Discussion ID (hex string)")]
     pub discussion_id: String,
 }
@@ -59,8 +57,7 @@ pub async fn mr_discussion_get(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDiscussionCreateParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID)")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
     #[schemars(description = "Content of the discussion thread starter comment")]
     pub body: String,
     #[schemars(description = "SHA of the commit to pin this discussion to")]
@@ -144,8 +141,7 @@ pub async fn mr_discussion_create(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDiscussionResolveParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID)")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
     #[schemars(description = "Discussion ID (hex string)")]
     pub discussion_id: String,
     #[schemars(description = "true to resolve the thread, false to unresolve it")]
@@ -173,8 +169,7 @@ pub async fn mr_discussion_resolve(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDiscussionNoteCreateParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID)")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
     #[schemars(description = "Discussion ID (hex string)")]
     pub discussion_id: String,
     #[schemars(description = "Content of the reply note")]
@@ -209,12 +204,10 @@ pub async fn mr_discussion_note_create(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDiscussionNoteUpdateParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID)")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
     #[schemars(description = "Discussion ID (hex string)")]
     pub discussion_id: String,
-    #[schemars(description = "Note ID (integer)")]
-    pub note_id: u64,
+    pub note_id: crate::tools::NoteId,
     #[schemars(description = "New content for the note (mutually exclusive with resolved)")]
     pub body: Option<String>,
     #[schemars(
@@ -248,12 +241,10 @@ pub async fn mr_discussion_note_update(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrDiscussionNoteDeleteParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID)")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
     #[schemars(description = "Discussion ID (hex string)")]
     pub discussion_id: String,
-    #[schemars(description = "Note ID (integer)")]
-    pub note_id: u64,
+    pub note_id: crate::tools::NoteId,
 }
 
 pub async fn mr_discussion_note_delete(
@@ -381,7 +372,7 @@ mod tests {
     fn base_create_params() -> MrDiscussionCreateParams {
         MrDiscussionCreateParams {
             project_id: "42".into(),
-            merge_request_iid: 1,
+            merge_request_iid: 1.into(),
             body: "comment".into(),
             commit_id: None,
             position_base_sha: None,

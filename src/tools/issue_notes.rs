@@ -11,8 +11,7 @@ use crate::tools::{BodyBuilder, PaginationParams, QueryBuilder, list_paginated, 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNotesListParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[schemars(
         description = "Order by: \"created_at\" or \"updated_at\" (default: \"created_at\")"
     )]
@@ -42,10 +41,8 @@ pub async fn issue_notes_list(client: &GitlabClient, p: IssueNotesListParams) ->
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteGetParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
-    #[schemars(description = "Note ID (integer)")]
-    pub note_id: u64,
+    pub issue_iid: crate::tools::IssueIid,
+    pub note_id: crate::tools::NoteId,
 }
 
 pub async fn issue_note_get(
@@ -68,8 +65,7 @@ pub async fn issue_note_get(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteCreateParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[schemars(description = "Content of the note (Markdown supported)")]
     pub body: String,
     #[schemars(
@@ -101,10 +97,8 @@ pub async fn issue_note_create(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteUpdateParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
-    #[schemars(description = "Note ID (integer)")]
-    pub note_id: u64,
+    pub issue_iid: crate::tools::IssueIid,
+    pub note_id: crate::tools::NoteId,
     #[schemars(description = "New content for the note (Markdown supported)")]
     pub body: String,
 }
@@ -130,10 +124,8 @@ pub async fn issue_note_update(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteDeleteParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
-    #[schemars(description = "Note ID (integer)")]
-    pub note_id: u64,
+    pub issue_iid: crate::tools::IssueIid,
+    pub note_id: crate::tools::NoteId,
 }
 
 pub async fn issue_note_delete(

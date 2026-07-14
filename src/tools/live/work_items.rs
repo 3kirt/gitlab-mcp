@@ -100,7 +100,7 @@ async fn rest_issue_get(env: &LiveEnv, iid: u64) -> Value {
             &env.client,
             issues::IssueGetParams {
                 project_id: env.project.clone().into(),
-                issue_iid: iid,
+                issue_iid: iid.into(),
             },
         )
         .await
@@ -393,7 +393,7 @@ async fn work_item_mutation_lifecycle_visible_via_rest() {
         &env.client,
         issues::IssueGetParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
+            issue_iid: iid.into(),
         },
     )
     .await
@@ -627,7 +627,7 @@ async fn work_item_notes_lifecycle_visible_via_rest() {
             &env.client,
             issue_notes::IssueNotesListParams {
                 project_id: env.project.clone().into(),
-                issue_iid: iid,
+                issue_iid: iid.into(),
                 order_by: None,
                 sort: None,
                 pagination: pg(None, Some(100)),

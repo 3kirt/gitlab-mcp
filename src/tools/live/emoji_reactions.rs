@@ -43,7 +43,7 @@ async fn issue_and_note_emoji_crud() {
             &env.client,
             emoji_reactions::IssueEmojiCreateParams {
                 project_id: env.project.clone().into(),
-                issue_iid: iid,
+                issue_iid: iid.into(),
                 name: "thumbsup".into(),
             },
         )
@@ -58,7 +58,7 @@ async fn issue_and_note_emoji_crud() {
             &env.client,
             emoji_reactions::IssueEmojiGetParams {
                 project_id: env.project.clone().into(),
-                issue_iid: iid,
+                issue_iid: iid.into(),
                 award_id,
             },
         )
@@ -76,7 +76,7 @@ async fn issue_and_note_emoji_crud() {
         &env.client,
         emoji_reactions::IssueEmojiDeleteParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
+            issue_iid: iid.into(),
             award_id,
         },
     )
@@ -92,7 +92,7 @@ async fn issue_and_note_emoji_crud() {
         &env.client,
         issue_notes::IssueNoteCreateParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
+            issue_iid: iid.into(),
             body: format!("{tag} note"),
             created_at: None,
         },
@@ -106,8 +106,8 @@ async fn issue_and_note_emoji_crud() {
             &env.client,
             emoji_reactions::IssueNoteEmojiCreateParams {
                 project_id: env.project.clone().into(),
-                issue_iid: iid,
-                note_id,
+                issue_iid: iid.into(),
+                note_id: note_id.into(),
                 name: "heart".into(),
             },
         )
@@ -125,8 +125,8 @@ async fn issue_and_note_emoji_crud() {
             &env.client,
             emoji_reactions::IssueNoteEmojiGetParams {
                 project_id: env.project.clone().into(),
-                issue_iid: iid,
-                note_id,
+                issue_iid: iid.into(),
+                note_id: note_id.into(),
                 award_id: note_award_id,
             },
         )
@@ -139,8 +139,8 @@ async fn issue_and_note_emoji_crud() {
         &env.client,
         emoji_reactions::IssueNoteEmojiListParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
-            note_id,
+            issue_iid: iid.into(),
+            note_id: note_id.into(),
             pagination: pg(None, None),
         },
     )
@@ -159,8 +159,8 @@ async fn issue_and_note_emoji_crud() {
         &env.client,
         emoji_reactions::IssueNoteEmojiDeleteParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
-            note_id,
+            issue_iid: iid.into(),
+            note_id: note_id.into(),
             award_id: note_award_id,
         },
     )
@@ -176,7 +176,7 @@ async fn issue_emoji_ids(env: &LiveEnv, iid: u64) -> Vec<u64> {
         &env.client,
         emoji_reactions::IssueEmojiListParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
+            issue_iid: iid.into(),
             pagination: pg(None, None),
         },
     )
@@ -205,7 +205,7 @@ async fn mr_emoji_crud() {
             &env.client,
             emoji_reactions::MrEmojiCreateParams {
                 project_id: env.project.clone().into(),
-                merge_request_iid: mr_iid,
+                merge_request_iid: mr_iid.into(),
                 name: "rocket".into(),
             },
         )
@@ -220,7 +220,7 @@ async fn mr_emoji_crud() {
             &env.client,
             emoji_reactions::MrEmojiGetParams {
                 project_id: env.project.clone().into(),
-                merge_request_iid: mr_iid,
+                merge_request_iid: mr_iid.into(),
                 award_id,
             },
         )
@@ -233,7 +233,7 @@ async fn mr_emoji_crud() {
         &env.client,
         emoji_reactions::MrEmojiListParams {
             project_id: env.project.clone().into(),
-            merge_request_iid: mr_iid,
+            merge_request_iid: mr_iid.into(),
             pagination: pg(None, None),
         },
     )
@@ -252,7 +252,7 @@ async fn mr_emoji_crud() {
         &env.client,
         emoji_reactions::MrEmojiDeleteParams {
             project_id: env.project.clone().into(),
-            merge_request_iid: mr_iid,
+            merge_request_iid: mr_iid.into(),
             award_id,
         },
     )

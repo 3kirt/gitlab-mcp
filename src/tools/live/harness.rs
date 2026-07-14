@@ -128,7 +128,7 @@ pub(super) async fn delete_issue(env: &LiveEnv, iid: u64) {
         &env.client,
         issues::IssueDeleteParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
+            issue_iid: iid.into(),
         },
     )
     .await;
@@ -182,7 +182,7 @@ pub(super) async fn delete_mr(env: &LiveEnv, iid: u64) {
         &env.client,
         merge_requests::MrDeleteParams {
             project_id: env.project.clone().into(),
-            merge_request_iid: iid,
+            merge_request_iid: iid.into(),
         },
     )
     .await;

@@ -260,7 +260,7 @@ pub async fn read(
                 client,
                 issues::IssueGetParams {
                     project_id: project_id.into(),
-                    issue_iid,
+                    issue_iid: issue_iid.into(),
                 },
             )
             .await?;
@@ -274,7 +274,7 @@ pub async fn read(
                 client,
                 merge_requests::MrGetParams {
                     project_id: project_id.into(),
-                    merge_request_iid,
+                    merge_request_iid: merge_request_iid.into(),
                 },
             )
             .await?;

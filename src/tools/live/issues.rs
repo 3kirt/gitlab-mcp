@@ -54,7 +54,7 @@ async fn get_issue_slimmed(env: &LiveEnv, iid: u64) -> Value {
         &env.client,
         issues::IssueGetParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
+            issue_iid: iid.into(),
         },
     )
     .await
@@ -154,7 +154,7 @@ async fn issues_create_get_update_delete_lifecycle() {
         &env.client,
         issues::IssueUpdateParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
+            issue_iid: iid.into(),
             title: Some(format!("{tag} retitled")),
             description: None,
             state_event: None,
@@ -174,7 +174,7 @@ async fn issues_create_get_update_delete_lifecycle() {
         &env.client,
         issues::IssueUpdateParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid_full,
+            issue_iid: iid_full.into(),
             title: None,
             description: None,
             state_event: None,
@@ -196,7 +196,7 @@ async fn issues_create_get_update_delete_lifecycle() {
         &env.client,
         issues::IssueUpdateParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
+            issue_iid: iid.into(),
             title: None,
             description: None,
             state_event: Some("close".into()),
@@ -219,7 +219,7 @@ async fn issues_create_get_update_delete_lifecycle() {
         &env.client,
         issues::IssueGetParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
+            issue_iid: iid.into(),
         },
     )
     .await
@@ -455,7 +455,7 @@ async fn issue_links_crud() {
         &env.client,
         issues::IssueLinksListParams {
             project_id: env.project.clone().into(),
-            issue_iid: src,
+            issue_iid: src.into(),
         },
     )
     .await
@@ -473,7 +473,7 @@ async fn issue_links_crud() {
             &env.client,
             issues::IssueLinkGetParams {
                 project_id: env.project.clone().into(),
-                issue_iid: src,
+                issue_iid: src.into(),
                 issue_link_id,
             },
         )
@@ -490,7 +490,7 @@ async fn issue_links_crud() {
             &env.client,
             issues::IssueLinkDeleteParams {
                 project_id: env.project.clone().into(),
-                issue_iid: src,
+                issue_iid: src.into(),
                 issue_link_id,
             },
         )
@@ -503,7 +503,7 @@ async fn issue_links_crud() {
         &env.client,
         issues::IssueLinksListParams {
             project_id: env.project.clone().into(),
-            issue_iid: src,
+            issue_iid: src.into(),
         },
     )
     .await
@@ -547,7 +547,7 @@ async fn issue_notes_crud() {
             &env.client,
             issue_notes::IssueNoteCreateParams {
                 project_id: env.project.clone().into(),
-                issue_iid: iid,
+                issue_iid: iid.into(),
                 body: format!("{tag} first comment"),
                 created_at: None,
             },
@@ -565,8 +565,8 @@ async fn issue_notes_crud() {
             &env.client,
             issue_notes::IssueNoteGetParams {
                 project_id: env.project.clone().into(),
-                issue_iid: iid,
-                note_id,
+                issue_iid: iid.into(),
+                note_id: note_id.into(),
             },
         )
         .await
@@ -580,7 +580,7 @@ async fn issue_notes_crud() {
         &env.client,
         issue_notes::IssueNotesListParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
+            issue_iid: iid.into(),
             order_by: None,
             sort: None,
             pagination: pg(None, None),
@@ -604,8 +604,8 @@ async fn issue_notes_crud() {
             &env.client,
             issue_notes::IssueNoteUpdateParams {
                 project_id: env.project.clone().into(),
-                issue_iid: iid,
-                note_id,
+                issue_iid: iid.into(),
+                note_id: note_id.into(),
                 body: format!("{tag} edited comment"),
             },
         )
@@ -619,8 +619,8 @@ async fn issue_notes_crud() {
         &env.client,
         issue_notes::IssueNoteDeleteParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
-            note_id,
+            issue_iid: iid.into(),
+            note_id: note_id.into(),
         },
     )
     .await
@@ -629,8 +629,8 @@ async fn issue_notes_crud() {
         &env.client,
         issue_notes::IssueNoteGetParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
-            note_id,
+            issue_iid: iid.into(),
+            note_id: note_id.into(),
         },
     )
     .await
@@ -673,7 +673,7 @@ async fn issue_discussions_crud() {
             &env.client,
             issue_discussions::IssueDiscussionCreateParams {
                 project_id: env.project.clone().into(),
-                issue_iid: iid,
+                issue_iid: iid.into(),
                 body: format!("{tag} thread root"),
                 created_at: None,
             },
@@ -694,7 +694,7 @@ async fn issue_discussions_crud() {
             &env.client,
             issue_discussions::IssueDiscussionNoteCreateParams {
                 project_id: env.project.clone().into(),
-                issue_iid: iid,
+                issue_iid: iid.into(),
                 discussion_id: discussion_id.clone(),
                 body: format!("{tag} reply"),
                 created_at: None,
@@ -712,7 +712,7 @@ async fn issue_discussions_crud() {
             &env.client,
             issue_discussions::IssueDiscussionGetParams {
                 project_id: env.project.clone().into(),
-                issue_iid: iid,
+                issue_iid: iid.into(),
                 discussion_id: discussion_id.clone(),
             },
         )
@@ -730,7 +730,7 @@ async fn issue_discussions_crud() {
         &env.client,
         issue_discussions::IssueDiscussionsListParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
+            issue_iid: iid.into(),
             pagination: pg(None, None),
         },
     )
@@ -752,9 +752,9 @@ async fn issue_discussions_crud() {
             &env.client,
             issue_discussions::IssueDiscussionNoteUpdateParams {
                 project_id: env.project.clone().into(),
-                issue_iid: iid,
+                issue_iid: iid.into(),
                 discussion_id: discussion_id.clone(),
-                note_id: reply_id,
+                note_id: reply_id.into(),
                 body: format!("{tag} reply edited"),
             },
         )
@@ -768,9 +768,9 @@ async fn issue_discussions_crud() {
         &env.client,
         issue_discussions::IssueDiscussionNoteDeleteParams {
             project_id: env.project.clone().into(),
-            issue_iid: iid,
+            issue_iid: iid.into(),
             discussion_id: discussion_id.clone(),
-            note_id: reply_id,
+            note_id: reply_id.into(),
         },
     )
     .await
@@ -780,7 +780,7 @@ async fn issue_discussions_crud() {
             &env.client,
             issue_discussions::IssueDiscussionGetParams {
                 project_id: env.project.clone().into(),
-                issue_iid: iid,
+                issue_iid: iid.into(),
                 discussion_id: discussion_id.clone(),
             },
         )

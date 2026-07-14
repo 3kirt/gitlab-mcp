@@ -75,8 +75,7 @@ pub async fn issues_list(client: &GitlabClient, p: IssuesListParams) -> ListResu
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueGetParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
 }
 
 pub async fn issue_get(client: &GitlabClient, p: IssueGetParams) -> Result<Value, GitlabError> {
@@ -142,8 +141,7 @@ pub async fn issue_create(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueUpdateParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[schemars(description = "New issue title")]
     pub title: Option<String>,
     #[schemars(description = "New issue description (Markdown supported)")]
@@ -187,8 +185,7 @@ pub async fn issue_update(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueDeleteParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
 }
 
 pub async fn issue_delete(client: &GitlabClient, p: IssueDeleteParams) -> Result<(), GitlabError> {
@@ -203,8 +200,7 @@ pub async fn issue_delete(client: &GitlabClient, p: IssueDeleteParams) -> Result
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueLinksListParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
 }
 
 pub async fn issue_links_list(client: &GitlabClient, p: IssueLinksListParams) -> ListResult {
@@ -223,8 +219,7 @@ pub async fn issue_links_list(client: &GitlabClient, p: IssueLinksListParams) ->
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueLinkGetParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[schemars(description = "Issue link relationship ID (issue_link_id from the list response)")]
     pub issue_link_id: u64,
 }
@@ -285,8 +280,7 @@ pub async fn issue_link_create(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueLinkDeleteParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[schemars(description = "Issue link relationship ID (issue_link_id from the list response)")]
     pub issue_link_id: u64,
 }
@@ -479,7 +473,7 @@ mod tests {
             &mock_client(&server),
             IssueGetParams {
                 project_id: "mygroup/myrepo".into(),
-                issue_iid: 7,
+                issue_iid: 7.into(),
             },
         )
         .await
@@ -513,7 +507,7 @@ mod tests {
             &mock_client(&server),
             IssueGetParams {
                 project_id: "p".into(),
-                issue_iid: 4,
+                issue_iid: 4.into(),
             },
         )
         .await
@@ -547,7 +541,7 @@ mod tests {
             &mock_client(&server),
             IssueGetParams {
                 project_id: "p".into(),
-                issue_iid: 999,
+                issue_iid: 999.into(),
             },
         )
         .await
@@ -579,7 +573,7 @@ mod tests {
             &mock_client(&server),
             IssueGetParams {
                 project_id: "p".into(),
-                issue_iid: 5,
+                issue_iid: 5.into(),
             },
         )
         .await

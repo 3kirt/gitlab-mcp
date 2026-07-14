@@ -54,11 +54,11 @@ async fn emoji_delete(
         .await
 }
 
-fn issue_path(project_id: &str, issue_iid: u64) -> String {
+fn issue_path(project_id: &str, issue_iid: crate::tools::IssueIid) -> String {
     format!("{}/issues/{}", project_path(project_id), issue_iid)
 }
 
-fn mr_path(project_id: &str, mr_iid: u64) -> String {
+fn mr_path(project_id: &str, mr_iid: crate::tools::MergeRequestIid) -> String {
     format!("{}/merge_requests/{}", project_path(project_id), mr_iid)
 }
 
@@ -68,7 +68,7 @@ fn snippet_path(project_id: &str, snippet_id: u64) -> String {
 
 /// Append `/notes/{note_id}` to a parent resource path, yielding the parent of
 /// a note's award-emoji endpoints.
-fn note_path(parent_path: &str, note_id: u64) -> String {
+fn note_path(parent_path: &str, note_id: crate::tools::NoteId) -> String {
     format!("{parent_path}/notes/{note_id}")
 }
 
@@ -79,8 +79,7 @@ fn note_path(parent_path: &str, note_id: u64) -> String {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueEmojiListParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -97,8 +96,7 @@ pub async fn issue_emoji_list(client: &GitlabClient, p: IssueEmojiListParams) ->
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueEmojiGetParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[schemars(description = "Award emoji ID")]
     pub award_id: u64,
 }
@@ -113,8 +111,7 @@ pub async fn issue_emoji_get(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueEmojiCreateParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[schemars(description = "Emoji name without colons (e.g. \"thumbsup\")")]
     pub name: String,
 }
@@ -129,8 +126,7 @@ pub async fn issue_emoji_create(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueEmojiDeleteParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
+    pub issue_iid: crate::tools::IssueIid,
     #[schemars(description = "Award emoji ID")]
     pub award_id: u64,
 }
@@ -149,8 +145,7 @@ pub async fn issue_emoji_delete(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrEmojiListParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID) within the project")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -167,8 +162,7 @@ pub async fn mr_emoji_list(client: &GitlabClient, p: MrEmojiListParams) -> ListR
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrEmojiGetParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID) within the project")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
     #[schemars(description = "Award emoji ID")]
     pub award_id: u64,
 }
@@ -188,8 +182,7 @@ pub async fn mr_emoji_get(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrEmojiCreateParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID) within the project")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
     #[schemars(description = "Emoji name without colons (e.g. \"thumbsup\")")]
     pub name: String,
 }
@@ -209,8 +202,7 @@ pub async fn mr_emoji_create(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrEmojiDeleteParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID) within the project")]
-    pub merge_request_iid: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
     #[schemars(description = "Award emoji ID")]
     pub award_id: u64,
 }
@@ -314,10 +306,8 @@ pub async fn snippet_emoji_delete(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteEmojiListParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
-    #[schemars(description = "Note ID")]
-    pub note_id: u64,
+    pub issue_iid: crate::tools::IssueIid,
+    pub note_id: crate::tools::NoteId,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -333,10 +323,8 @@ pub async fn issue_note_emoji_list(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteEmojiGetParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
-    #[schemars(description = "Note ID")]
-    pub note_id: u64,
+    pub issue_iid: crate::tools::IssueIid,
+    pub note_id: crate::tools::NoteId,
     #[schemars(description = "Award emoji ID")]
     pub award_id: u64,
 }
@@ -352,10 +340,8 @@ pub async fn issue_note_emoji_get(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteEmojiCreateParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
-    #[schemars(description = "Note ID")]
-    pub note_id: u64,
+    pub issue_iid: crate::tools::IssueIid,
+    pub note_id: crate::tools::NoteId,
     #[schemars(description = "Emoji name without colons (e.g. \"thumbsup\")")]
     pub name: String,
 }
@@ -371,10 +357,8 @@ pub async fn issue_note_emoji_create(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct IssueNoteEmojiDeleteParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Issue internal ID (IID) within the project")]
-    pub issue_iid: u64,
-    #[schemars(description = "Note ID")]
-    pub note_id: u64,
+    pub issue_iid: crate::tools::IssueIid,
+    pub note_id: crate::tools::NoteId,
     #[schemars(description = "Award emoji ID")]
     pub award_id: u64,
 }
@@ -394,10 +378,8 @@ pub async fn issue_note_emoji_delete(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrNoteEmojiListParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID) within the project")]
-    pub merge_request_iid: u64,
-    #[schemars(description = "Note ID")]
-    pub note_id: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
+    pub note_id: crate::tools::NoteId,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -410,10 +392,8 @@ pub async fn mr_note_emoji_list(client: &GitlabClient, p: MrNoteEmojiListParams)
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrNoteEmojiGetParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID) within the project")]
-    pub merge_request_iid: u64,
-    #[schemars(description = "Note ID")]
-    pub note_id: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
+    pub note_id: crate::tools::NoteId,
     #[schemars(description = "Award emoji ID")]
     pub award_id: u64,
 }
@@ -429,10 +409,8 @@ pub async fn mr_note_emoji_get(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrNoteEmojiCreateParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID) within the project")]
-    pub merge_request_iid: u64,
-    #[schemars(description = "Note ID")]
-    pub note_id: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
+    pub note_id: crate::tools::NoteId,
     #[schemars(description = "Emoji name without colons (e.g. \"thumbsup\")")]
     pub name: String,
 }
@@ -448,10 +426,8 @@ pub async fn mr_note_emoji_create(
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct MrNoteEmojiDeleteParams {
     pub project_id: crate::tools::ProjectId,
-    #[schemars(description = "Merge request internal ID (IID) within the project")]
-    pub merge_request_iid: u64,
-    #[schemars(description = "Note ID")]
-    pub note_id: u64,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
+    pub note_id: crate::tools::NoteId,
     #[schemars(description = "Award emoji ID")]
     pub award_id: u64,
 }
@@ -473,8 +449,7 @@ pub struct SnippetNoteEmojiListParams {
     pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Snippet ID")]
     pub snippet_id: u64,
-    #[schemars(description = "Note ID")]
-    pub note_id: u64,
+    pub note_id: crate::tools::NoteId,
     #[serde(flatten)]
     pub pagination: PaginationParams,
 }
@@ -492,8 +467,7 @@ pub struct SnippetNoteEmojiGetParams {
     pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Snippet ID")]
     pub snippet_id: u64,
-    #[schemars(description = "Note ID")]
-    pub note_id: u64,
+    pub note_id: crate::tools::NoteId,
     #[schemars(description = "Award emoji ID")]
     pub award_id: u64,
 }
@@ -511,8 +485,7 @@ pub struct SnippetNoteEmojiCreateParams {
     pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Snippet ID")]
     pub snippet_id: u64,
-    #[schemars(description = "Note ID")]
-    pub note_id: u64,
+    pub note_id: crate::tools::NoteId,
     #[schemars(description = "Emoji name without colons (e.g. \"thumbsup\")")]
     pub name: String,
 }
@@ -530,8 +503,7 @@ pub struct SnippetNoteEmojiDeleteParams {
     pub project_id: crate::tools::ProjectId,
     #[schemars(description = "Snippet ID")]
     pub snippet_id: u64,
-    #[schemars(description = "Note ID")]
-    pub note_id: u64,
+    pub note_id: crate::tools::NoteId,
     #[schemars(description = "Award emoji ID")]
     pub award_id: u64,
 }
@@ -915,7 +887,7 @@ mod tests {
             &mock_client(&server),
             IssueEmojiCreateParams {
                 project_id: "42".into(),
-                issue_iid: 7,
+                issue_iid: 7.into(),
                 name: "thumbsup".into(),
             },
         )
@@ -945,7 +917,7 @@ mod tests {
             &mock_client(&server),
             MrEmojiDeleteParams {
                 project_id: "42".into(),
-                merge_request_iid: 3,
+                merge_request_iid: 3.into(),
                 award_id: 99,
             },
         )
@@ -994,8 +966,8 @@ mod tests {
             &mock_client(&server),
             IssueNoteEmojiCreateParams {
                 project_id: "42".into(),
-                issue_iid: 7,
-                note_id: 11,
+                issue_iid: 7.into(),
+                note_id: 11.into(),
                 name: "tada".into(),
             },
         )

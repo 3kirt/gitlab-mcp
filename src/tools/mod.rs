@@ -124,6 +124,7 @@ pub mod issue_discussions;
 pub mod issue_notes;
 pub mod issues;
 pub mod jobs;
+pub mod licenses;
 pub mod merge_requests;
 pub mod metadata;
 pub mod pipeline_schedules;
@@ -138,6 +139,7 @@ pub mod search;
 mod slim;
 pub mod snippets;
 pub mod users;
+pub mod wikis;
 pub mod work_items;
 
 // Opt-in live integration tests (cargo test --features live-tests).
@@ -442,6 +444,66 @@ namespace_id_newtype!(
     "Group ID (numeric) or full namespace path (e.g. \"42\" or \"mygroup/subgroup\")"
 );
 
+/// The numeric-identifier counterpart of [`namespace_id_newtype!`]: a
+/// `#[serde(transparent)]` newtype over `u64` (wire shape unchanged) whose
+/// `JsonSchema` impl carries the parameter description in one place instead of
+/// a `#[schemars(description = …)]` literal repeated across the `*Params`
+/// structs. `Display` keeps `format!("…/{}", p.issue_iid)` call sites working.
+macro_rules! numeric_id_newtype {
+    ($ty:ident, $name:literal, $desc:literal) => {
+        #[derive(Debug, Clone, Copy, Deserialize)]
+        #[serde(transparent)]
+        pub struct $ty(u64);
+
+        impl std::fmt::Display for $ty {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                self.0.fmt(f)
+            }
+        }
+        impl From<u64> for $ty {
+            fn from(v: u64) -> Self {
+                Self(v)
+            }
+        }
+        impl schemars::JsonSchema for $ty {
+            // Inline at each use site so the description renders on the field
+            // itself rather than behind a `$ref` (cf. the namespace newtypes).
+            fn inline_schema() -> bool {
+                true
+            }
+            fn schema_name() -> std::borrow::Cow<'static, str> {
+                $name.into()
+            }
+            fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+                // Mirrors what schemars derives for a plain `u64` field, plus
+                // the shared description.
+                schemars::json_schema!({
+                    "type": "integer",
+                    "format": "uint64",
+                    "minimum": 0,
+                    "description": $desc
+                })
+            }
+        }
+    };
+}
+
+numeric_id_newtype!(
+    IssueIid,
+    "IssueIid",
+    "Issue internal ID (IID) within the project — the number shown in the issue's URL and references (e.g. #42)"
+);
+numeric_id_newtype!(
+    MergeRequestIid,
+    "MergeRequestIid",
+    "Merge request internal ID (IID) within the project — the number shown in the MR's URL and references (e.g. !42)"
+);
+numeric_id_newtype!(
+    NoteId,
+    "NoteId",
+    "Note ID (globally unique integer identifying the comment)"
+);
+
 /// `/api/v4/projects/{id}` — the prefix shared by every project-scoped
 /// endpoint. Domain functions append their own suffix:
 /// `format!("{}/issues/{}", project_path(&p.project_id), p.issue_iid)`.
@@ -648,6 +710,8 @@ impl GitlabMcpServer {
             + Self::tool_router_runners()
             + Self::tool_router_users()
             + Self::tool_router_work_items()
+            + Self::tool_router_licenses()
+            + Self::tool_router_wikis()
     }
 }
 
@@ -882,7 +946,7 @@ mod tests {
         // count catches both a forgotten `+ Self::tool_router_<domain>()`
         // and a name collision. Update it when adding or removing tools.
         let tools = GitlabMcpServer::tool_router().list_all();
-        assert_eq!(tools.len(), 176);
+        assert_eq!(tools.len(), 184);
     }
 
     #[test]
@@ -977,6 +1041,45 @@ mod tests {
                 .contains("full namespace path"),
             "group_id description missing: {gid}"
         );
+    }
+
+    #[test]
+    fn numeric_id_newtypes_render_description_inline() {
+        // IssueIid/MergeRequestIid/NoteId carry their parameter description in
+        // one place; verify it reaches the per-tool input schema inline and the
+        // wire type is still a plain integer.
+        let router = GitlabMcpServer::tool_router();
+
+        for (tool, field, needle) in [
+            ("gitlab_issues_get", "issue_iid", "Issue internal ID (IID)"),
+            (
+                "gitlab_mrs_get",
+                "merge_request_iid",
+                "Merge request internal ID (IID)",
+            ),
+            ("gitlab_issues_notes_get", "note_id", "Note ID"),
+        ] {
+            let schema = &router.get(tool).unwrap().input_schema;
+            let prop = &schema["properties"][field];
+            assert!(
+                prop.get("$ref").is_none(),
+                "{tool}.{field} must be inlined, not a $ref: {prop}"
+            );
+            assert_eq!(prop["type"], "integer", "{tool}.{field}: {prop}");
+            assert!(
+                prop["description"].as_str().unwrap().contains(needle),
+                "{tool}.{field} description missing: {prop}"
+            );
+        }
+    }
+
+    #[test]
+    fn numeric_id_newtypes_deserialize_transparently_from_number() {
+        // The wire contract is unchanged: a plain JSON number still deserializes
+        // into the newtype, and it displays back as that number.
+        let p: issues::IssueGetParams =
+            serde_json::from_value(json!({"project_id": "42", "issue_iid": 7})).unwrap();
+        assert_eq!(p.issue_iid.to_string(), "7");
     }
 
     #[test]

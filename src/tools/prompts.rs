@@ -122,7 +122,7 @@ pub async fn review_mr(
         client,
         merge_requests::MrGetParams {
             project_id: args.project_id.clone(),
-            merge_request_iid: iid,
+            merge_request_iid: iid.into(),
         },
     )
     .await
@@ -140,7 +140,7 @@ pub async fn review_mr(
         client,
         discussions::MrDiscussionsListParams {
             project_id: args.project_id.clone(),
-            merge_request_iid: iid,
+            merge_request_iid: iid.into(),
             pagination: PaginationParams {
                 page: None,
                 per_page: Some(100),
@@ -202,7 +202,7 @@ pub async fn summarize_issue(
         client,
         issues::IssueGetParams {
             project_id: args.project_id.clone(),
-            issue_iid: iid,
+            issue_iid: iid.into(),
         },
     )
     .await
@@ -212,7 +212,7 @@ pub async fn summarize_issue(
         client,
         issue_notes::IssueNotesListParams {
             project_id: args.project_id.clone(),
-            issue_iid: iid,
+            issue_iid: iid.into(),
             order_by: None,
             sort: Some("asc".to_string()),
             pagination: PaginationParams {

@@ -1281,7 +1281,9 @@ pub struct WorkItemEmojiParams {
     pub namespace_path: String,
     #[schemars(description = "Work item IID (the number from its URL/reference, e.g. #42).")]
     pub work_item_iid: u64,
-    #[schemars(description = "Emoji name, e.g. \"thumbsup\", \"rocket\", \"eyes\".")]
+    #[schemars(
+        description = "Emoji name without colons, e.g. \"thumbsup\", \"rocket\", \"eyes\"."
+    )]
     pub name: String,
 }
 
@@ -1341,7 +1343,9 @@ pub struct WorkItemNoteEmojiParams {
         description = "Note global ID — the `id` from the notes list, e.g. \"gid://gitlab/Note/123\"."
     )]
     pub note_id: String,
-    #[schemars(description = "Emoji name, e.g. \"thumbsup\", \"rocket\", \"eyes\".")]
+    #[schemars(
+        description = "Emoji name without colons, e.g. \"thumbsup\", \"rocket\", \"eyes\"."
+    )]
     pub name: String,
 }
 

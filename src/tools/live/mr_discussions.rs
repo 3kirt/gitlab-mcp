@@ -23,7 +23,7 @@ async fn get_discussion(env: &LiveEnv, mr_iid: u64, discussion_id: &str) -> Valu
             &env.client,
             discussions::MrDiscussionGetParams {
                 project_id: env.project.clone().into(),
-                merge_request_iid: mr_iid,
+                merge_request_iid: mr_iid.into(),
                 discussion_id: discussion_id.to_string(),
             },
         )
@@ -38,7 +38,7 @@ async fn resolve(env: &LiveEnv, mr_iid: u64, discussion_id: &str, resolved: bool
             &env.client,
             discussions::MrDiscussionResolveParams {
                 project_id: env.project.clone().into(),
-                merge_request_iid: mr_iid,
+                merge_request_iid: mr_iid.into(),
                 discussion_id: discussion_id.to_string(),
                 resolved,
             },
@@ -64,7 +64,7 @@ async fn mr_discussions_crud_and_resolve() {
             &env.client,
             discussions::MrDiscussionCreateParams {
                 project_id: env.project.clone().into(),
-                merge_request_iid: mr_iid,
+                merge_request_iid: mr_iid.into(),
                 body: format!("{tag} thread root"),
                 commit_id: None,
                 position_base_sha: None,
@@ -93,7 +93,7 @@ async fn mr_discussions_crud_and_resolve() {
             &env.client,
             discussions::MrDiscussionNoteCreateParams {
                 project_id: env.project.clone().into(),
-                merge_request_iid: mr_iid,
+                merge_request_iid: mr_iid.into(),
                 discussion_id: discussion_id.clone(),
                 body: format!("{tag} reply"),
                 created_at: None,
@@ -118,7 +118,7 @@ async fn mr_discussions_crud_and_resolve() {
         &env.client,
         discussions::MrDiscussionsListParams {
             project_id: env.project.clone().into(),
-            merge_request_iid: mr_iid,
+            merge_request_iid: mr_iid.into(),
             pagination: pg(None, None),
         },
     )
@@ -150,9 +150,9 @@ async fn mr_discussions_crud_and_resolve() {
             &env.client,
             discussions::MrDiscussionNoteUpdateParams {
                 project_id: env.project.clone().into(),
-                merge_request_iid: mr_iid,
+                merge_request_iid: mr_iid.into(),
                 discussion_id: discussion_id.clone(),
-                note_id: reply_id,
+                note_id: reply_id.into(),
                 body: Some(format!("{tag} reply edited")),
                 resolved: None,
             },
@@ -167,9 +167,9 @@ async fn mr_discussions_crud_and_resolve() {
         &env.client,
         discussions::MrDiscussionNoteDeleteParams {
             project_id: env.project.clone().into(),
-            merge_request_iid: mr_iid,
+            merge_request_iid: mr_iid.into(),
             discussion_id: discussion_id.clone(),
-            note_id: reply_id,
+            note_id: reply_id.into(),
         },
     )
     .await

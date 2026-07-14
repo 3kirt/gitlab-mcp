@@ -32,7 +32,7 @@ async fn delete_mr(env: &LiveEnv, iid: u64) {
         &env.client,
         merge_requests::MrDeleteParams {
             project_id: env.project.clone().into(),
-            merge_request_iid: iid,
+            merge_request_iid: iid.into(),
         },
     )
     .await;
@@ -66,7 +66,7 @@ fn mr_create_params(
 fn mr_update_params(env: &LiveEnv, iid: u64) -> merge_requests::MrUpdateParams {
     merge_requests::MrUpdateParams {
         project_id: env.project.clone().into(),
-        merge_request_iid: iid,
+        merge_request_iid: iid.into(),
         title: None,
         description: None,
         state_event: None,
@@ -118,7 +118,7 @@ async fn merge_when_ready(env: &LiveEnv, iid: u64) -> Value {
             &env.client,
             merge_requests::MrGetParams {
                 project_id: env.project.clone().into(),
-                merge_request_iid: iid,
+                merge_request_iid: iid.into(),
             },
         )
         .await
@@ -135,7 +135,7 @@ async fn merge_when_ready(env: &LiveEnv, iid: u64) -> Value {
                 &env.client,
                 merge_requests::MrMergeParams {
                     project_id: env.project.clone().into(),
-                    merge_request_iid: iid,
+                    merge_request_iid: iid.into(),
                     merge_commit_message: None,
                     squash: None,
                     should_remove_source_branch: Some(true),
@@ -160,7 +160,7 @@ async fn get_mr_slimmed(env: &LiveEnv, iid: u64) -> Value {
         &env.client,
         merge_requests::MrGetParams {
             project_id: env.project.clone().into(),
-            merge_request_iid: iid,
+            merge_request_iid: iid.into(),
         },
     )
     .await
@@ -299,7 +299,7 @@ async fn mrs_create_get_update_delete_lifecycle() {
         &env.client,
         merge_requests::MrGetParams {
             project_id: env.project.clone().into(),
-            merge_request_iid: iid,
+            merge_request_iid: iid.into(),
         },
     )
     .await
@@ -475,7 +475,7 @@ async fn mr_closes_issue_embeds() {
                 &env.client,
                 issues::IssueGetParams {
                     project_id: env.project.clone().into(),
-                    issue_iid,
+                    issue_iid: issue_iid.into(),
                 },
             )
             .await
