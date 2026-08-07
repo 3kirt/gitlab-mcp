@@ -4,6 +4,26 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.36.0] — 2026-08-06
+
+Upgrades the MCP SDK to rmcp 3.x.
+
+### Changed
+- **rmcp upgraded 2.1 → 3.1** — `ServerHandler::call_tool` and
+  `read_resource` now return the new MRTR-aware response enums
+  (`CallToolResponse`/`ReadResourceResponse`); the two overridden handlers
+  were updated accordingly. The rest of the server (macro-generated
+  `list_tools`/`get_prompt`, the stdio transport, the tool/prompt routers)
+  needed no changes. `base64` bumped 0.22 → 0.23 alongside it to dedupe
+  against the version rmcp now pulls in, plus routine in-range bumps (clap,
+  schemars, serde_json, tokio, and transitive crates).
+- **`resources/list` now emits a SEP-2549 cache hint** (`ttl_ms` +
+  `cache_scope: Private`) matching the server's existing 60s recent-projects
+  cache, so a capable client can skip the round-trip entirely within that
+  window instead of the server silently absorbing the GitLab call. Mirrors
+  the cache-hint behavior rmcp 3.1's macro-generated `list_tools`/
+  `list_prompts` already emit for free.
+
 ## [0.35.0] — 2026-07-13
 
 Wikis, instance licenses, and a sweep of schema-quality cleanups
