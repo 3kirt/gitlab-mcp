@@ -247,6 +247,21 @@ const RECENT_PROJECTS_TTL: std::time::Duration = std::time::Duration::from_mins(
 /// See `GitlabMcpServer::recent_projects_cache`.
 type RecentProjectsCache = Arc<tokio::sync::Mutex<Option<(std::time::Instant, Vec<Resource>)>>>;
 
+/// Surfaces our server-side `recent_projects_cache` freshness as a SEP-2549
+/// cache hint, so a capable client can skip the round-trip entirely for the
+/// remainder of the window instead of us silently absorbing the GitLab call.
+/// Account-scoped data (the caller's own recently active projects), so the
+/// hint is `Private`, never `Public`.
+fn with_recent_projects_cache_hint(
+    result: ListResourcesResult,
+    fresh_for: std::time::Duration,
+) -> ListResourcesResult {
+    let ttl_ms = u64::try_from(fresh_for.as_millis()).unwrap_or(u64::MAX);
+    result
+        .with_ttl_ms(ttl_ms)
+        .with_cache_scope(CacheScope::Private)
+}
+
 /// Issue a list request, optionally walking every page.
 ///
 /// With `fetch_all == false` this is a thin pass-through to
@@ -834,7 +849,11 @@ impl ServerHandler for GitlabMcpServer {
         if let Some((fetched_at, items)) = cache.as_ref()
             && fetched_at.elapsed() < RECENT_PROJECTS_TTL
         {
-            return Ok(ListResourcesResult::with_all_items(items.clone()));
+            let remaining = RECENT_PROJECTS_TTL.saturating_sub(fetched_at.elapsed());
+            return Ok(with_recent_projects_cache_hint(
+                ListResourcesResult::with_all_items(items.clone()),
+                remaining,
+            ));
         }
         let items = match resources::list_recent_projects(client).await {
             Ok(items) => {
@@ -846,7 +865,10 @@ impl ServerHandler for GitlabMcpServer {
                 Vec::new()
             }
         };
-        Ok(ListResourcesResult::with_all_items(items))
+        Ok(with_recent_projects_cache_hint(
+            ListResourcesResult::with_all_items(items),
+            RECENT_PROJECTS_TTL,
+        ))
     }
 
     async fn list_resource_templates(
@@ -1198,6 +1220,27 @@ mod tests {
         let err = unwrap_404_or_403_as_empty_array(api_err(StatusCode::INTERNAL_SERVER_ERROR))
             .unwrap_err();
         assert!(matches!(err, GitlabError::Api { .. }));
+    }
+
+    // Resource list cache hints
+
+    #[test]
+    fn recent_projects_cache_hint_sets_ttl_and_private_scope() {
+        let result = with_recent_projects_cache_hint(
+            ListResourcesResult::with_all_items(vec![]),
+            std::time::Duration::from_secs(30),
+        );
+        assert_eq!(result.ttl_ms, Some(30_000));
+        assert_eq!(result.cache_scope, Some(CacheScope::Private));
+    }
+
+    #[test]
+    fn recent_projects_cache_hint_saturates_on_overflow() {
+        let result = with_recent_projects_cache_hint(
+            ListResourcesResult::with_all_items(vec![]),
+            std::time::Duration::MAX,
+        );
+        assert_eq!(result.ttl_ms, Some(u64::MAX));
     }
 
     // BodyBuilder
