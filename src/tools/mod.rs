@@ -897,7 +897,7 @@ impl ServerHandler for GitlabMcpServer {
         &self,
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> Result<ReadResourceResult, McpError> {
+    ) -> Result<ReadResourceResponse, McpError> {
         let client = self.get_client()?;
         let resource = resources::parse_uri(&request.uri).map_err(|reason| {
             McpError::resource_not_found(
@@ -906,7 +906,7 @@ impl ServerHandler for GitlabMcpServer {
             )
         })?;
         match resources::read(client, resource, &request.uri).await {
-            Ok(contents) => Ok(ReadResourceResult::new(contents)),
+            Ok(contents) => Ok(ReadResourceResult::new(contents).into()),
             Err(e) => {
                 let msg = format!("reading {}: {}", request.uri, e.to_tool_message());
                 tracing::error!("{msg}");
@@ -928,7 +928,7 @@ impl ServerHandler for GitlabMcpServer {
         &self,
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, McpError> {
+    ) -> Result<CallToolResponse, McpError> {
         let progress_ctx = context.meta.get_progress_token().map(|token| ProgressCtx {
             peer: context.peer.clone(),
             token,
