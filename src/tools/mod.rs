@@ -790,9 +790,17 @@ fn enrich_invalid_params(error: McpError, tool: Option<&Tool>) -> McpError {
 
 #[tool_handler]
 #[prompt_handler]
+// `#[tool_handler]`/`#[prompt_handler]` generate `async fn list_tools` /
+// `list_prompts` with no `.await` (as is our `list_resource_templates`); the
+// trait wants a future either way. `expect` (not `allow`) so this flags itself
+// for removal if rmcp's codegen stops tripping the lint.
+#[expect(
+    clippy::unused_async_trait_impl,
+    reason = "rmcp handler macros generate await-free async trait methods"
+)]
 impl ServerHandler for GitlabMcpServer {
-    fn get_info(&self) -> ServerInfo {
-        let mut info = ServerInfo::new(
+    fn get_info(&self) -> ServerConfig {
+        let mut info = ServerConfig::new(
             ServerCapabilities::builder()
                 .enable_tools()
                 .enable_resources()
@@ -1359,7 +1367,7 @@ mod tests {
     #[test]
     fn query_builder_opt_none_omits() {
         let params = QueryBuilder::new().opt("page", None::<u32>).into_params();
-        assert!(params.is_empty());
+        assert_eq!(params, Vec::<(&str, String)>::new());
     }
 
     #[test]
@@ -1379,7 +1387,7 @@ mod tests {
     #[test]
     fn query_builder_multi_none_omits() {
         let params = QueryBuilder::new().multi("labels[]", None).into_params();
-        assert!(params.is_empty());
+        assert_eq!(params, Vec::<(&str, String)>::new());
     }
 
     // json_list_result

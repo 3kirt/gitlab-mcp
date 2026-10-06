@@ -526,6 +526,6 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(items.as_array().unwrap().is_empty());
+        assert_eq!(items, serde_json::json!([]));
     }
 }

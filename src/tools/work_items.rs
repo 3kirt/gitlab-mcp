@@ -1916,7 +1916,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(result["nodes"].as_array().unwrap().is_empty());
+        assert_eq!(result["nodes"], serde_json::json!([]));
     }
 
     #[tokio::test]
@@ -2809,7 +2809,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(result["nodes"].as_array().unwrap().is_empty());
+        assert_eq!(result["nodes"], serde_json::json!([]));
     }
 
     #[tokio::test]

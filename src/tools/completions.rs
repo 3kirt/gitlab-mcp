@@ -220,7 +220,7 @@ mod tests {
         let c = complete_argument(&mock_client(&server), false, "branch", "fe", None)
             .await
             .unwrap();
-        assert!(c.values.is_empty());
+        assert_eq!(c.values, Vec::<String>::new());
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 
@@ -291,7 +291,7 @@ mod tests {
         let c = complete_argument(&mock_client(&server), false, "file_path", "src", None)
             .await
             .unwrap();
-        assert!(c.values.is_empty());
+        assert_eq!(c.values, Vec::<String>::new());
         assert!(server.received_requests().await.unwrap().is_empty());
     }
 }
