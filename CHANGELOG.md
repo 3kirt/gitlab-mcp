@@ -4,6 +4,25 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.37.0] — 2026-10-05
+
+Security and dependency refresh: rmcp 3.5 and Rust 1.99.
+
+### Changed
+- **rmcp upgraded 3.1 → 3.5** — `get_info` now returns `ServerConfig`, as
+  rmcp 3.5 deprecated the `ServerInfo` alias; no behavior change. Routine
+  in-range bumps to clap, reqwest, thiserror, tokio, and transitive crates.
+- **Builds clean on Rust 1.99** — its new `unused_async_trait_impl` lint
+  fires on the await-free `list_tools`/`list_prompts` that rmcp's handler
+  macros generate, so the `ServerHandler` impl carries a scoped `expect`;
+  test assertions moved to `assert_eq!` for the new `assert_is_empty` lint.
+
+### Fixed
+- **Security:** the refreshed lockfile resolves RUSTSEC-2026-0258 (h2:
+  unbounded empty DATA frames) and RUSTSEC-2026-0285 (rustls: TLS 1.3
+  handshake messages accepted across encryption-level boundaries), and
+  replaces a yanked `chacha20`.
+
 ## [0.36.0] — 2026-08-06
 
 Upgrades the MCP SDK to rmcp 3.x.
