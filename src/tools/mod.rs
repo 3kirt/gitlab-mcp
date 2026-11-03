@@ -186,6 +186,132 @@ async fn emit_page_progress(progress: u64, total: Option<u64>) {
     }
 }
 
+/// Run `fut` with progress notifications suppressed.
+///
+/// MCP requires `progress` to increase monotonically within one call, so a
+/// tool that reports progress in its own unit (e.g. [`wait_for_terminal`]'s
+/// elapsed seconds) must not let a nested [`paginate`] interleave item counts.
+pub(crate) async fn without_progress<F: std::future::Future>(fut: F) -> F::Output {
+    PROGRESS_CTX.scope(None, fut).await
+}
+
+// --------------------------------------------------------------------------
+// Blocking wait (pipelines / jobs)
+// --------------------------------------------------------------------------
+
+/// Statuses after which a pipeline or job will not change on its own.
+/// `manual` counts: the pipeline/job is blocked until someone acts on it.
+pub(crate) const TERMINAL_STATUSES: &[&str] =
+    &["success", "failed", "canceled", "skipped", "manual"];
+
+/// Default / maximum total wait for the `*_wait` tools, in seconds.
+pub(crate) const WAIT_DEFAULT_TIMEOUT_SECS: u64 = 600;
+pub(crate) const WAIT_MAX_TIMEOUT_SECS: u64 = 1800;
+/// Default / minimum / maximum poll interval for the `*_wait` tools, in seconds.
+/// The floor keeps a caller from hammering GitLab's rate limits.
+pub(crate) const WAIT_DEFAULT_INTERVAL_SECS: u64 = 15;
+pub(crate) const WAIT_MIN_INTERVAL_SECS: u64 = 5;
+pub(crate) const WAIT_MAX_INTERVAL_SECS: u64 = 300;
+
+/// Clamp caller-supplied `timeout_seconds` / `poll_interval_seconds` into the
+/// supported ranges, applying defaults when absent.
+pub(crate) fn wait_durations(
+    timeout_seconds: Option<u64>,
+    poll_interval_seconds: Option<u64>,
+) -> (std::time::Duration, std::time::Duration) {
+    let timeout = timeout_seconds
+        .unwrap_or(WAIT_DEFAULT_TIMEOUT_SECS)
+        .min(WAIT_MAX_TIMEOUT_SECS);
+    let interval = poll_interval_seconds
+        .unwrap_or(WAIT_DEFAULT_INTERVAL_SECS)
+        .clamp(WAIT_MIN_INTERVAL_SECS, WAIT_MAX_INTERVAL_SECS);
+    (
+        std::time::Duration::from_secs(timeout),
+        std::time::Duration::from_secs(interval),
+    )
+}
+
+/// Outcome of [`wait_for_terminal`].
+pub(crate) struct WaitOutcome {
+    /// The last object fetched (terminal, or the state at timeout).
+    pub value: Value,
+    pub timed_out: bool,
+    pub waited: std::time::Duration,
+}
+
+/// Poll `fetch` until the returned object's `status` is in
+/// [`TERMINAL_STATUSES`] or `timeout` elapses, sleeping `interval` between
+/// polls (never past the deadline, so the call can't overshoot `timeout` by
+/// more than one request). Emits a progress notification per poll with
+/// elapsed/total seconds and the current status. Fetch errors propagate;
+/// HTTP 429s are already retried inside the client.
+pub(crate) async fn wait_for_terminal<F, Fut>(
+    mut fetch: F,
+    timeout: std::time::Duration,
+    interval: std::time::Duration,
+) -> Result<WaitOutcome, GitlabError>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<Value, GitlabError>>,
+{
+    let start = tokio::time::Instant::now();
+    let deadline = start + timeout;
+    loop {
+        let value = fetch().await?;
+        let status = value
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_owned();
+        let now = tokio::time::Instant::now();
+        let waited = now - start;
+        let terminal = TERMINAL_STATUSES.contains(&status.as_str());
+        if terminal || now >= deadline {
+            return Ok(WaitOutcome {
+                value,
+                timed_out: !terminal,
+                waited,
+            });
+        }
+        emit_wait_progress(waited, timeout, &status).await;
+        tokio::time::sleep(interval.min(deadline - now)).await;
+    }
+}
+
+async fn emit_wait_progress(
+    waited: std::time::Duration,
+    timeout: std::time::Duration,
+    status: &str,
+) {
+    let ctx = PROGRESS_CTX
+        .try_with(std::clone::Clone::clone)
+        .ok()
+        .flatten();
+    if let Some(ctx) = ctx {
+        let mut param = ProgressNotificationParam::new(ctx.token, waited.as_secs_f64());
+        param.total = Some(timeout.as_secs_f64());
+        param.message = Some(format!(
+            "status: {status} ({}s / {}s)",
+            waited.as_secs(),
+            timeout.as_secs()
+        ));
+        let _ = ctx.peer.notify_progress(param).await;
+    }
+}
+
+/// Merge `timed_out` / `waited_seconds` into a wait result object.
+pub(crate) fn annotate_wait(outcome: WaitOutcome) -> Value {
+    let mut v = outcome.value;
+    if let Value::Object(map) = &mut v {
+        map.insert("timed_out".into(), Value::Bool(outcome.timed_out));
+        map.insert(
+            "waited_seconds".into(),
+            Value::from(outcome.waited.as_secs()),
+        );
+    }
+    v
+}
+
 // --------------------------------------------------------------------------
 // Shared helpers
 // --------------------------------------------------------------------------
@@ -987,13 +1113,38 @@ mod tests {
     // Router assembly
 
     #[test]
+    fn wait_durations_apply_defaults_and_clamp() {
+        use std::time::Duration;
+        assert_eq!(
+            wait_durations(None, None),
+            (
+                Duration::from_secs(WAIT_DEFAULT_TIMEOUT_SECS),
+                Duration::from_secs(WAIT_DEFAULT_INTERVAL_SECS)
+            )
+        );
+        // Timeout capped; interval floored.
+        assert_eq!(
+            wait_durations(Some(99_999), Some(1)),
+            (
+                Duration::from_secs(WAIT_MAX_TIMEOUT_SECS),
+                Duration::from_secs(WAIT_MIN_INTERVAL_SECS)
+            )
+        );
+        // Interval ceilinged.
+        assert_eq!(
+            wait_durations(Some(60), Some(9_999)).1,
+            Duration::from_secs(300)
+        );
+    }
+
+    #[test]
     fn combined_router_exposes_every_tool() {
         // `tool_router()` sums the per-domain sub-routers by hand, and the
         // merge silently overwrites on duplicate tool names — so this exact
         // count catches both a forgotten `+ Self::tool_router_<domain>()`
         // and a name collision. Update it when adding or removing tools.
         let tools = GitlabMcpServer::tool_router().list_all();
-        assert_eq!(tools.len(), 189);
+        assert_eq!(tools.len(), 191);
     }
 
     #[test]

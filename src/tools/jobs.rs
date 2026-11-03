@@ -112,6 +112,42 @@ pub async fn job_get(client: &GitlabClient, p: JobGetParams) -> Result<Value, Gi
 }
 
 // --------------------------------------------------------------------------
+// Wait for a job to finish
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct JobWaitParams {
+    pub project_id: crate::tools::ProjectId,
+    #[schemars(description = "Job ID")]
+    pub job_id: u64,
+    #[schemars(
+        description = "Maximum time to wait, in seconds (default 600, capped at 1800). On expiry the current state is returned with timed_out: true."
+    )]
+    pub timeout_seconds: Option<u64>,
+    #[schemars(description = "Seconds between status checks (default 15, clamped to 5..=300).")]
+    pub poll_interval_seconds: Option<u64>,
+}
+
+pub async fn job_wait(client: &GitlabClient, p: JobWaitParams) -> Result<Value, GitlabError> {
+    let (timeout, interval) =
+        crate::tools::wait_durations(p.timeout_seconds, p.poll_interval_seconds);
+    job_wait_with(client, &p.project_id, p.job_id, timeout, interval).await
+}
+
+/// [`job_wait`] with explicit durations, so tests can poll in milliseconds.
+async fn job_wait_with(
+    client: &GitlabClient,
+    project_id: &str,
+    job_id: u64,
+    timeout: std::time::Duration,
+    interval: std::time::Duration,
+) -> Result<Value, GitlabError> {
+    let path = format!("{}/jobs/{job_id}", project_path(project_id));
+    let outcome = crate::tools::wait_for_terminal(|| client.get(&path), timeout, interval).await?;
+    Ok(crate::tools::annotate_wait(outcome))
+}
+
+// --------------------------------------------------------------------------
 // Get job trace (log)
 // --------------------------------------------------------------------------
 
@@ -264,6 +300,17 @@ impl GitlabMcpServer {
     }
 
     #[tool(
+        description = "Wait for a GitLab CI job to finish (watch / poll / block until done). Polls server-side until the job reaches a terminal status (success, failed, canceled, skipped, manual) or timeout_seconds elapses (default 600, max 1800), then returns the job plus timed_out and waited_seconds. Never hangs past the timeout; on timeout returns the current state with timed_out: true, so call again to keep waiting. Emits progress notifications while waiting. Follow with gitlab_jobs_get_trace to read the log. For a whole pipeline use gitlab_pipelines_wait.",
+        annotations(read_only_hint = true, idempotent_hint = true)
+    )]
+    async fn gitlab_jobs_wait(
+        &self,
+        Parameters(p): Parameters<JobWaitParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(self, job_wait, p, "waiting for", "job")
+    }
+
+    #[tool(
         description = "Get the raw log output (trace) of a GitLab job as plain text.",
         annotations(read_only_hint = true)
     )]
@@ -324,5 +371,77 @@ impl GitlabMcpServer {
         Parameters(p): Parameters<JobPlayParams>,
     ) -> Result<CallToolResult, McpError> {
         delegate_json!(self, job_play, p, "triggering", "job")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use serde_json::json;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::job_wait_with;
+    use crate::test_util::mock_client;
+
+    #[tokio::test]
+    async fn job_wait_polls_until_terminal() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/jobs/9"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({ "id": 9, "status": "pending" })),
+            )
+            .up_to_n_times(1)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/jobs/9"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({ "id": 9, "status": "success" })),
+            )
+            .with_priority(2)
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let v = job_wait_with(
+            &mock_client(&server),
+            "42",
+            9,
+            Duration::from_secs(10),
+            Duration::from_millis(1),
+        )
+        .await
+        .unwrap();
+        assert_eq!(v["status"], "success");
+        assert_eq!(v["timed_out"], false);
+        assert!(v.get("jobs").is_none());
+    }
+
+    #[tokio::test]
+    async fn job_wait_times_out_with_current_state() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/jobs/9"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({ "id": 9, "status": "running" })),
+            )
+            .mount(&server)
+            .await;
+
+        let v = job_wait_with(
+            &mock_client(&server),
+            "42",
+            9,
+            Duration::from_millis(50),
+            Duration::from_millis(10),
+        )
+        .await
+        .unwrap();
+        assert_eq!(v["status"], "running");
+        assert_eq!(v["timed_out"], true);
     }
 }

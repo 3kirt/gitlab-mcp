@@ -102,6 +102,76 @@ pub async fn pipeline_get(
 }
 
 // --------------------------------------------------------------------------
+// Wait for a pipeline to finish
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct PipelineWaitParams {
+    pub project_id: crate::tools::ProjectId,
+    #[schemars(description = "Pipeline ID")]
+    pub pipeline_id: u64,
+    #[schemars(
+        description = "Maximum time to wait, in seconds (default 600, capped at 1800). On expiry the current state is returned with timed_out: true."
+    )]
+    pub timeout_seconds: Option<u64>,
+    #[schemars(description = "Seconds between status checks (default 15, clamped to 5..=300).")]
+    pub poll_interval_seconds: Option<u64>,
+}
+
+pub async fn pipeline_wait(
+    client: &GitlabClient,
+    p: PipelineWaitParams,
+) -> Result<Value, GitlabError> {
+    let (timeout, interval) =
+        crate::tools::wait_durations(p.timeout_seconds, p.poll_interval_seconds);
+    pipeline_wait_with(client, &p.project_id, p.pipeline_id, timeout, interval).await
+}
+
+/// [`pipeline_wait`] with explicit durations, so tests can poll in milliseconds.
+async fn pipeline_wait_with(
+    client: &GitlabClient,
+    project_id: &str,
+    pipeline_id: u64,
+    timeout: std::time::Duration,
+    interval: std::time::Duration,
+) -> Result<Value, GitlabError> {
+    let base = format!("{}/pipelines/{pipeline_id}", project_path(project_id));
+    let outcome = crate::tools::wait_for_terminal(|| client.get(&base), timeout, interval).await?;
+
+    // Per-job summary so the caller can jump straight to a job's trace. Fetched
+    // with progress suppressed: the wait already reports elapsed seconds, and
+    // MCP progress must stay monotonic in one unit.
+    let (jobs, _) = crate::tools::without_progress(crate::tools::paginate(
+        client,
+        &format!("{base}/jobs"),
+        &[],
+        true,
+    ))
+    .await?;
+    let summary: Vec<Value> = jobs
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|j| {
+                    json!({
+                        "id": j.get("id"),
+                        "name": j.get("name"),
+                        "stage": j.get("stage"),
+                        "status": j.get("status"),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut v = crate::tools::annotate_wait(outcome);
+    if let Value::Object(map) = &mut v {
+        map.insert("jobs".into(), Value::Array(summary));
+    }
+    Ok(v)
+}
+
+// --------------------------------------------------------------------------
 // Get latest pipeline
 // --------------------------------------------------------------------------
 
@@ -354,6 +424,17 @@ impl GitlabMcpServer {
     }
 
     #[tool(
+        description = "Wait for a GitLab pipeline to finish (watch / poll / block until done). Polls server-side until the pipeline reaches a terminal status (success, failed, canceled, skipped, manual) or timeout_seconds elapses (default 600, max 1800), then returns the pipeline plus timed_out, waited_seconds, and a per-job summary (id, name, stage, status) — pass a job id to gitlab_jobs_get_trace to read its log. Never hangs past the timeout; on timeout returns the current state with timed_out: true, so call again to keep waiting. Emits progress notifications while waiting. Well suited to a background subagent. For a single job use gitlab_jobs_wait.",
+        annotations(read_only_hint = true, idempotent_hint = true)
+    )]
+    async fn gitlab_pipelines_wait(
+        &self,
+        Parameters(p): Parameters<PipelineWaitParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(self, pipeline_wait, p, "waiting for", "pipeline")
+    }
+
+    #[tool(
         description = "Get the latest pipeline for a GitLab project. Optional: ref (branch or tag name; defaults to project default branch).",
         annotations(read_only_hint = true)
     )]
@@ -467,5 +548,139 @@ impl GitlabMcpServer {
         Parameters(p): Parameters<PipelineUpdateMetadataParams>,
     ) -> Result<CallToolResult, McpError> {
         delegate_update!(self, pipeline_update_metadata, p, "pipeline metadata")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use serde_json::json;
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    use super::pipeline_wait_with;
+    use crate::test_util::mock_client;
+
+    const MS: Duration = Duration::from_millis(1);
+
+    #[tokio::test]
+    async fn pipeline_wait_polls_until_terminal_and_summarizes_jobs() {
+        let server = MockServer::start().await;
+        // First two polls report "running"; afterwards the lower-priority
+        // "failed" mock answers.
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/pipelines/7"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({ "id": 7, "status": "running" })),
+            )
+            .up_to_n_times(2)
+            .with_priority(1)
+            .expect(2)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/pipelines/7"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({ "id": 7, "status": "failed" })),
+            )
+            .with_priority(2)
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/pipelines/7/jobs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([
+                { "id": 100, "name": "build", "stage": "build", "status": "success", "web_url": "x" },
+                { "id": 101, "name": "test", "stage": "test", "status": "failed" }
+            ])))
+            .mount(&server)
+            .await;
+
+        let v = pipeline_wait_with(&mock_client(&server), "42", 7, Duration::from_secs(10), MS)
+            .await
+            .unwrap();
+
+        assert_eq!(v["status"], "failed");
+        assert_eq!(v["timed_out"], false);
+        assert!(v["waited_seconds"].is_u64());
+        assert_eq!(
+            v["jobs"],
+            json!([
+                { "id": 100, "name": "build", "stage": "build", "status": "success" },
+                { "id": 101, "name": "test", "stage": "test", "status": "failed" }
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn pipeline_wait_treats_manual_as_terminal() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/pipelines/7"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({ "id": 7, "status": "manual" })),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/pipelines/7/jobs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&server)
+            .await;
+
+        let v = pipeline_wait_with(&mock_client(&server), "42", 7, Duration::from_secs(10), MS)
+            .await
+            .unwrap();
+        assert_eq!(v["timed_out"], false);
+        assert_eq!(v["jobs"], json!([]));
+    }
+
+    #[tokio::test]
+    async fn pipeline_wait_times_out_with_current_state() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/pipelines/7"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_json(json!({ "id": 7, "status": "running" })),
+            )
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/pipelines/7/jobs"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!([])))
+            .mount(&server)
+            .await;
+
+        let v = pipeline_wait_with(
+            &mock_client(&server),
+            "42",
+            7,
+            Duration::from_millis(50),
+            Duration::from_millis(10),
+        )
+        .await
+        .unwrap();
+        assert_eq!(v["status"], "running");
+        assert_eq!(v["timed_out"], true);
+    }
+
+    #[tokio::test]
+    async fn pipeline_wait_propagates_not_found() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/42/pipelines/7"))
+            .respond_with(ResponseTemplate::new(404).set_body_string("404 Not found"))
+            .mount(&server)
+            .await;
+
+        let err = pipeline_wait_with(&mock_client(&server), "42", 7, Duration::from_secs(10), MS)
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            crate::client::GitlabError::Api { status, .. } if status == reqwest::StatusCode::NOT_FOUND
+        ));
     }
 }

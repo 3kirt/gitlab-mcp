@@ -219,7 +219,9 @@ branches are excluded from destructive operations.
 
 List/get/get-latest, fetch pipeline variables, get full and summary test
 reports, create on a ref, retry/cancel/delete, and update pipeline metadata
-(e.g. name).
+(e.g. name). `gitlab_pipelines_wait` blocks until a pipeline reaches a terminal
+status (or a capped timeout), returning the final state plus a per-job summary —
+handy for handing a "watch the pipeline" step to a background subagent.
 
 ### Pipeline Schedules
 
@@ -230,7 +232,8 @@ listing pipelines triggered by a schedule, and CRUD on per-schedule variables
 ### Jobs
 
 List (project-wide, per-pipeline, and bridge/trigger jobs), get, fetch the raw
-trace log, cancel/retry/erase, and play a manual job.
+trace log, cancel/retry/erase, and play a manual job. `gitlab_jobs_wait` blocks
+until a single job finishes (or times out).
 
 ### Runners
 
