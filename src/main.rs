@@ -110,7 +110,9 @@ async fn main() -> anyhow::Result<()> {
     info!(mode = "stdio", gitlab_url = %url, "starting gitlab-mcp");
     let server = tools::GitlabMcpServer::new_stdio(url, token)?;
     server
-        .serve(rmcp::transport::io::stdio())
+        // Non-blocking pipe I/O on Linux when the client launches us over
+        // FIFOs; identical to `stdio()` everywhere else.
+        .serve(rmcp::transport::io::stdio_pipes())
         .await?
         .waiting()
         .await?;

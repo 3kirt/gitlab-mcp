@@ -195,6 +195,26 @@ pub(crate) async fn without_progress<F: std::future::Future>(fut: F) -> F::Outpu
     PROGRESS_CTX.scope(None, fut).await
 }
 
+/// Race a tool call against the client's `notifications/cancelled`.
+///
+/// rmcp only *signals* cancellation (via `RequestContext::ct`); it never
+/// aborts the handler future. Without this, a cancelled long-running call
+/// (`*_wait` polling, a `fetch_all` page walk) would keep hitting GitLab until
+/// it finished on its own. Dropping the tool future here also drops any
+/// in-flight `reqwest` request.
+async fn run_cancellable<T>(
+    call: impl std::future::Future<Output = Result<T, McpError>>,
+    cancelled: impl std::future::Future<Output = ()>,
+) -> Result<T, McpError> {
+    tokio::select! {
+        result = call => result,
+        () = cancelled => {
+            tracing::debug!("tool call cancelled by client");
+            Err(McpError::internal_error("tool call cancelled by client", None))
+        }
+    }
+}
+
 // --------------------------------------------------------------------------
 // Blocking wait (pipelines / jobs)
 // --------------------------------------------------------------------------
@@ -1090,10 +1110,11 @@ impl ServerHandler for GitlabMcpServer {
             token,
         });
         let tool_name = request.name.clone();
+        let ct = context.ct.clone();
         let result = PROGRESS_CTX
             .scope(progress_ctx, async move {
                 let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-                self.tool_router.call(tcc).await
+                run_cancellable(self.tool_router.call(tcc), ct.cancelled()).await
             })
             .await;
         match result {
@@ -1111,6 +1132,37 @@ mod tests {
     use serde_json::json;
 
     // Router assembly
+
+    #[tokio::test]
+    async fn run_cancellable_drops_call_on_cancel() {
+        // A call that never completes on its own must be abandoned as soon as
+        // the cancel signal fires, and its future dropped.
+        struct DropFlag(Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for DropFlag {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = DropFlag(dropped.clone());
+        let call = async move {
+            let _flag = flag;
+            std::future::pending::<Result<(), McpError>>().await
+        };
+        let err = run_cancellable(call, std::future::ready(()))
+            .await
+            .unwrap_err();
+        assert!(err.message.contains("cancelled"));
+        assert!(dropped.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn run_cancellable_passes_through_without_cancel() {
+        let out = run_cancellable(async { Ok::<_, McpError>(7) }, std::future::pending::<()>())
+            .await
+            .unwrap();
+        assert_eq!(out, 7);
+    }
 
     #[test]
     fn wait_durations_apply_defaults_and_clamp() {
