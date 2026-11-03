@@ -4,6 +4,62 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.38.0] — 2026-11-02
+
+Blocking wait tools for pipelines and jobs, client-cancellation support, and
+a code-quality and security pass.
+
+### Added
+- **`gitlab_pipelines_wait` and `gitlab_jobs_wait`** (#13) — block until a
+  pipeline or job reaches a terminal status (`success`, `failed`,
+  `canceled`, `skipped`, `manual`) or a timeout elapses, so an agent can
+  hand "watch the pipeline" to a background subagent without leaving MCP.
+  Polling happens server-side and never runs past the timeout (default
+  600s, max 1800s; poll interval default 15s, clamped to 5–300s). On
+  timeout the current state comes back with `timed_out: true`. Responses add
+  `timed_out` and `waited_seconds`; the pipeline variant also returns a
+  per-job summary (`id`/`name`/`stage`/`status`) ready for
+  `gitlab_jobs_get_trace`. Progress notifications report elapsed seconds
+  while waiting.
+
+### Changed
+- **Tool calls honor client cancellation** — rmcp only signals
+  `notifications/cancelled`; it never aborts the running handler. Every tool
+  call now races that signal, so a cancelled wait or `fetch_all` stops
+  immediately and drops its in-flight GitLab request.
+- **Non-blocking stdio on Linux** — the server uses rmcp's
+  `stdio_pipes()` transport (identical to `stdio()` on other platforms);
+  the rmcp floor is raised to 3.6, and the lockfile picks up rmcp 3.8.
+- **Compact JSON output** — tool, resource, and prompt payloads are no
+  longer pretty-printed; indentation was pure token cost for the LLM reader.
+- **`project_id` description** now says to pass the namespace path as-is
+  (it previously said "URL-encoded", inviting double encoding).
+- Declares `rust-version = "1.91"` and the SPDX license `GPL-3.0-only`.
+
+### Fixed
+- **Security:** the refreshed lockfile resolves RUSTSEC-2026-0346, -0347,
+  -0348, and -0349 (rustls), RUSTSEC-2026-0382 (rustls-webpki: distrusted
+  intermediates accepted), RUSTSEC-2026-0383 (webpki-root-certs), and the
+  RUSTSEC-2026-0386 unsoundness warning (tokio).
+- **Pre-encoded project paths no longer 404** — a `project_id` such as
+  `group%2Fproject` was double-encoded to `%252F`; namespace IDs are now
+  decoded before encoding.
+- **An explicit `--config` path that doesn't exist is an error** instead of
+  being silently ignored (which surfaced later as a misleading "URL not
+  set").
+- **No panic on a non-object GitLab response** when embedding linked
+  issues, closing MRs, or epic issues; a panicking tool task never answered
+  the client.
+- The `PRIVATE-TOKEN` header is marked sensitive, and the config's `Debug`
+  output redacts the token.
+
+### Documentation
+- **Live tests can read credentials from a gitignored `.env`** (template:
+  `.env.example`); environment variables still take precedence, and a
+  world-readable `.env` is rejected. New live tests cover the wait tools
+  against real gitlab.com pipelines.
+- CI now lints all targets under both feature sets and runs `cargo audit`.
+
 ## [0.37.0] — 2026-10-05
 
 Security and dependency refresh: rmcp 3.5 and Rust 1.99.
