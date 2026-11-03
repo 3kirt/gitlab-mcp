@@ -110,7 +110,7 @@ pub async fn epic_get(client: &GitlabClient, p: EpicGetParams) -> Result<Value, 
     // Supplement with the epic's child issues — the REST epic body only carries
     // child epics under hierarchy, not the classic epic→issue associations.
     let issues = unwrap_404_as_empty_array(client.get(&format!("{grp}/epics/{iid}/issues")).await)?;
-    epic["issues"] = issues;
+    crate::tools::set_field(&mut epic, "issues", issues);
     Ok(epic)
 }
 

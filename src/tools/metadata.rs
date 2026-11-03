@@ -89,7 +89,7 @@ impl GitlabMcpServer {
             "description": tool.description,
             "input_schema": &*tool.input_schema,
         });
-        let text = serde_json::to_string_pretty(&payload)
+        let text = serde_json::to_string(&payload)
             .map_err(|e| McpError::internal_error(format!("marshalling response: {e}"), None))?;
         Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
     }

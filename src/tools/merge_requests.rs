@@ -105,8 +105,8 @@ pub async fn mr_get(client: &GitlabClient, p: MrGetParams) -> Result<Value, Gitl
         async { unwrap_404_as_empty_array(client.get(&closes_path).await) },
         async { unwrap_404_or_403_as_empty_array(client.get(&related_path).await) },
     )?;
-    mr["closes_issues"] = closes_issues;
-    mr["related_issues"] = related_issues;
+    crate::tools::set_field(&mut mr, "closes_issues", closes_issues);
+    crate::tools::set_field(&mut mr, "related_issues", related_issues);
     Ok(mr)
 }
 

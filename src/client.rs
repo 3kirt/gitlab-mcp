@@ -87,11 +87,14 @@ pub struct GitlabClient {
 
 impl GitlabClient {
     pub fn new(base_url: impl Into<String>, token: impl AsRef<str>) -> anyhow::Result<Self> {
-        let token_value = header::HeaderValue::from_str(token.as_ref()).map_err(|_| {
+        let mut token_value = header::HeaderValue::from_str(token.as_ref()).map_err(|_| {
             anyhow::anyhow!(
                 "GitLab token contains characters not valid in HTTP headers (must be visible ASCII)"
             )
         })?;
+        // Keeps the token out of `Debug` output and out of HTTP/2 HPACK
+        // dynamic tables (where header values could otherwise be inferred).
+        token_value.set_sensitive(true);
 
         let mut headers = header::HeaderMap::new();
         // GitLab uses the PRIVATE-TOKEN header for personal access tokens.

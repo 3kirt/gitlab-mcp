@@ -3,28 +3,53 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, anyhow, bail};
 use serde::Deserialize;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Default, Deserialize)]
 struct RawConfig {
     url: Option<String>,
     token: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
     file_url: Option<String>,
     file_token: Option<String>,
 }
 
+/// Hand-written so a stray `?config` in a log line can never print the token.
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("file_url", &self.file_url)
+            .field(
+                "file_token",
+                &self.file_token.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
+}
+
 impl Config {
     /// Load configuration from path (default: `~/.gitlab_mcp.json`).
-    /// A missing file is not an error.
+    ///
+    /// A missing *default* file is not an error (env vars may supply
+    /// everything), but a path given explicitly via `--config` must exist —
+    /// otherwise a typo would surface later as a misleading "URL not set".
     pub fn load(path: Option<&Path>) -> anyhow::Result<Self> {
+        let explicit = path.is_some();
         let resolved = match path {
             Some(p) => p.to_path_buf(),
             None => default_config_path()?,
         };
 
-        if !resolved.exists() {
+        // `try_exists` (unlike `exists`) surfaces I/O errors such as a
+        // permission-denied parent directory instead of reporting "absent".
+        let present = resolved
+            .try_exists()
+            .with_context(|| format!("checking config file {}", resolved.display()))?;
+        if !present {
+            if explicit {
+                bail!("config file {} does not exist", resolved.display());
+            }
             return Ok(Self {
                 file_url: None,
                 file_token: None,
@@ -82,7 +107,7 @@ fn default_config_path() -> anyhow::Result<PathBuf> {
     Ok(PathBuf::from(home).join(".gitlab_mcp.json"))
 }
 
-#[allow(unused_variables)]
+#[cfg_attr(not(unix), expect(unused_variables))]
 fn check_file_permissions(path: &Path) -> anyhow::Result<()> {
     #[cfg(unix)]
     {
@@ -120,7 +145,25 @@ fn enforce_https(url: &str) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{enforce_https, first_non_empty};
+    use super::{Config, enforce_https, first_non_empty};
+
+    #[test]
+    fn explicit_missing_config_path_is_an_error() {
+        let err =
+            Config::load(Some(std::path::Path::new("/nonexistent/gitlab_mcp.json"))).unwrap_err();
+        assert!(err.to_string().contains("does not exist"), "{err}");
+    }
+
+    #[test]
+    fn debug_redacts_token() {
+        let cfg = Config {
+            file_url: Some("https://gitlab.example.com".into()),
+            file_token: Some("glpat-secret".into()),
+        };
+        let shown = format!("{cfg:?}");
+        assert!(!shown.contains("glpat-secret"), "{shown}");
+        assert!(shown.contains("<redacted>"), "{shown}");
+    }
 
     #[test]
     fn empty_env_value_falls_back_to_file_value() {

@@ -89,8 +89,8 @@ pub async fn issue_get(client: &GitlabClient, p: IssueGetParams) -> Result<Value
         async { unwrap_404_as_empty_array(client.get(&links_path).await) },
         async { unwrap_404_as_empty_array(client.get(&closed_by_path).await) },
     )?;
-    issue["linked_issues"] = links;
-    issue["closed_by"] = closed_by;
+    crate::tools::set_field(&mut issue, "linked_issues", links);
+    crate::tools::set_field(&mut issue, "closed_by", closed_by);
     Ok(issue)
 }
 

@@ -52,11 +52,11 @@ fn gitlab_err(what: &str, e: &GitlabError) -> McpError {
 
 /// Slim + pretty-print a payload for embedding, matching the tool output shape.
 fn pretty(v: Value) -> String {
-    serde_json::to_string_pretty(&slim::slim_get(v)).unwrap_or_else(|e| format!("<error: {e}>"))
+    serde_json::to_string(&slim::slim_get(v)).unwrap_or_else(|e| format!("<error: {e}>"))
 }
 
 fn pretty_list(v: Value) -> String {
-    serde_json::to_string_pretty(&slim::slim_list(v)).unwrap_or_else(|e| format!("<error: {e}>"))
+    serde_json::to_string(&slim::slim_list(v)).unwrap_or_else(|e| format!("<error: {e}>"))
 }
 
 /// Cut an embedded block at `max_chars` (on a char boundary) with a notice.
@@ -378,7 +378,7 @@ impl GitlabMcpServer {
         &self,
         Parameters(args): Parameters<ReviewMrArgs>,
     ) -> Result<GetPromptResult, McpError> {
-        review_mr(self.get_client()?, args).await
+        review_mr(&self.client, args).await
     }
 
     #[prompt(
@@ -391,7 +391,7 @@ impl GitlabMcpServer {
         &self,
         Parameters(args): Parameters<SummarizeIssueArgs>,
     ) -> Result<GetPromptResult, McpError> {
-        summarize_issue(self.get_client()?, args).await
+        summarize_issue(&self.client, args).await
     }
 
     #[prompt(
@@ -403,7 +403,7 @@ impl GitlabMcpServer {
         &self,
         Parameters(args): Parameters<CreateMrDescriptionArgs>,
     ) -> Result<GetPromptResult, McpError> {
-        create_mr_description(self.get_client()?, args).await
+        create_mr_description(&self.client, args).await
     }
 }
 

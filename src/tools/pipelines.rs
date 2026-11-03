@@ -165,9 +165,7 @@ async fn pipeline_wait_with(
         .unwrap_or_default();
 
     let mut v = crate::tools::annotate_wait(outcome);
-    if let Value::Object(map) = &mut v {
-        map.insert("jobs".into(), Value::Array(summary));
-    }
+    crate::tools::set_field(&mut v, "jobs", Value::Array(summary));
     Ok(v)
 }
 

@@ -34,7 +34,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - run: cargo clippy --locked -- -D warnings
+      # Mirrors `make lint`: all targets (tests included) under both feature
+      # sets, so test code and the live suite are linted too.
+      - run: cargo clippy --all-targets --locked -- -D warnings
+
+      - run: cargo clippy --all-targets --features live-tests --locked -- -D warnings
 
       - run: cargo fmt --check
 
@@ -46,3 +50,16 @@ jobs:
           if git grep -nE 'glpat-[A-Za-z0-9_-]{10,}' -- . | grep -vE 'glpat-x{10,}'; then
             echo "A GitLab personal access token appears to be committed"; exit 1
           fi
+
+  audit:
+    name: Security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      # Fails on any RustSec vulnerability advisory against Cargo.lock.
+      - run: cargo audit

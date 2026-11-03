@@ -1,15 +1,12 @@
 use reqwest::StatusCode;
 use rmcp::{
     ErrorData as McpError, Peer, RoleServer, ServerHandler,
-    handler::server::router::{prompt::PromptRouter, tool::ToolRouter},
-    model::*,
-    prompt_handler,
-    service::{NotificationContext, RequestContext},
+    handler::server::router::tool::ToolRouter, model::*, prompt_handler, service::RequestContext,
     tool_handler,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use crate::client::{GitlabClient, GitlabError, ListResult, PaginationMeta};
 
@@ -21,7 +18,7 @@ use crate::client::{GitlabClient, GitlabError, ListResult, PaginationMeta};
 
 macro_rules! delegate_json {
     ($self:expr, $domain_fn:path, $p:expr, $verb:literal, $noun:literal) => {{
-        let client = $self.get_client()?;
+        let client = &$self.client;
         match $domain_fn(client, $p).await {
             Ok(v) => $crate::tools::json_result(v),
             Err(e) => {
@@ -35,7 +32,7 @@ macro_rules! delegate_json {
 
 macro_rules! delegate_list {
     ($self:expr, $domain_fn:path, $p:expr, $noun:literal) => {{
-        let client = $self.get_client()?;
+        let client = &$self.client;
         match $domain_fn(client, $p).await {
             Ok((v, meta)) => $crate::tools::json_list_result(v, meta),
             Err(e) => {
@@ -69,7 +66,7 @@ macro_rules! delegate_update {
 /// message instead of a JSON body.
 macro_rules! delegate_unit {
     ($self:expr, $domain_fn:path, $p:expr, $verb:literal, $noun:literal, $ok_msg:expr) => {{
-        let client = $self.get_client()?;
+        let client = &$self.client;
         match $domain_fn(client, $p).await {
             Ok(()) => Ok(rmcp::model::CallToolResult::success(vec![
                 rmcp::model::ContentBlock::text($ok_msg),
@@ -99,7 +96,7 @@ macro_rules! delegate_delete {
 /// For domain functions returning plain text (`String`) rather than JSON.
 macro_rules! delegate_text {
     ($self:expr, $domain_fn:path, $p:expr, $verb:literal, $noun:literal) => {{
-        let client = $self.get_client()?;
+        let client = &$self.client;
         match $domain_fn(client, $p).await {
             Ok(text) => Ok(rmcp::model::CallToolResult::success(vec![
                 rmcp::model::ContentBlock::text(text),
@@ -322,14 +319,24 @@ async fn emit_wait_progress(
 /// Merge `timed_out` / `waited_seconds` into a wait result object.
 pub(crate) fn annotate_wait(outcome: WaitOutcome) -> Value {
     let mut v = outcome.value;
-    if let Value::Object(map) = &mut v {
-        map.insert("timed_out".into(), Value::Bool(outcome.timed_out));
-        map.insert(
-            "waited_seconds".into(),
-            Value::from(outcome.waited.as_secs()),
-        );
-    }
+    set_field(&mut v, "timed_out", Value::Bool(outcome.timed_out));
+    set_field(
+        &mut v,
+        "waited_seconds",
+        Value::from(outcome.waited.as_secs()),
+    );
     v
+}
+
+/// Add `key` to a JSON object response, e.g. to embed a supplemental fetch.
+///
+/// Use this instead of `v["key"] = …`: `serde_json`'s `IndexMut` *panics*
+/// when `v` isn't an object (or null), and a panic in a tool kills its task
+/// without ever answering the client. A non-object response is left as-is.
+pub(crate) fn set_field(v: &mut Value, key: &str, field: Value) {
+    if let Value::Object(map) = v {
+        map.insert(key.to_owned(), field);
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -351,7 +358,9 @@ pub(crate) struct PaginationParams {
 
 pub fn json_result(v: Value) -> Result<CallToolResult, McpError> {
     let v = slim::slim_get(v);
-    let text = serde_json::to_string_pretty(&v)
+    // Compact, not pretty: the reader is an LLM, and indentation whitespace
+    // is pure token cost (typically 15–25% of a response).
+    let text = serde_json::to_string(&v)
         .map_err(|e| McpError::internal_error(format!("marshalling response: {e}"), None))?;
     Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
 }
@@ -368,7 +377,7 @@ pub fn json_list_result(v: Value, meta: PaginationMeta) -> Result<CallToolResult
         items: slim::slim_list(v),
         meta,
     };
-    let text = serde_json::to_string_pretty(&envelope)
+    let text = serde_json::to_string(&envelope)
         .map_err(|e| McpError::internal_error(format!("marshalling response: {e}"), None))?;
     Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
 }
@@ -466,10 +475,10 @@ pub async fn paginate(
         // `total` is the X-Total header when GitLab supplied it, else unknown.
         emit_page_progress(all.len() as u64, meta.total).await;
 
-        if n < FETCH_ALL_PER_PAGE || next_page.is_none() {
+        let Some(next) = next_page.filter(|_| n == FETCH_ALL_PER_PAGE) else {
             break;
-        }
-        page = next_page.unwrap();
+        };
+        page = next;
     }
 
     let count = all.len() as u64;
@@ -525,11 +534,16 @@ const PATH_SEGMENT_ENCODE_SET: &percent_encoding::AsciiSet = &percent_encoding::
 /// URL-encode a namespace ID (project or group) for use in REST API paths.
 /// Numeric IDs pass through unchanged; path-style IDs like
 /// "mygroup/myrepo" are percent-encoded ("mygroup%2Fmyrepo").
+///
+/// The input is percent-*decoded* first, so a caller that pre-encoded the path
+/// ("mygroup%2Fmyrepo") gets the same result instead of a double-encoded
+/// `%252F` that GitLab would 404 on. That is lossless: GitLab namespace paths
+/// can only contain letters, digits, `_`, `-`, `.`, and `/` — never `%`.
 pub(crate) fn encode_namespace_id(id: &str) -> String {
     if id.chars().all(|c| c.is_ascii_digit()) {
         id.to_string()
     } else {
-        encode_path_segment(id)
+        encode_path_segment(&percent_encoding::percent_decode_str(id).decode_utf8_lossy())
     }
 }
 
@@ -542,9 +556,10 @@ pub(crate) fn encode_path_segment(s: &str) -> String {
 }
 
 /// A GitLab **project** identifier accepted by project-scoped tools: a numeric
-/// ID or a URL-encoded namespace path. This newtype exists so the parameter
-/// description — otherwise duplicated across ~130 `*Params` structs — lives in
-/// exactly one place: its [`schemars::JsonSchema`] impl below. It is
+/// ID or a namespace path (URL-encoded by [`project_path`], not the caller).
+/// This newtype exists so the parameter description — otherwise duplicated
+/// across ~130 `*Params` structs — lives in exactly one place: its
+/// [`schemars::JsonSchema`] impl below. It is
 /// `#[serde(transparent)]` over a plain string (wire shape unchanged) and
 /// `Deref`s to `str`, so existing `project_path(&p.project_id)` call sites keep
 /// working unchanged via deref coercion.
@@ -597,7 +612,7 @@ macro_rules! namespace_id_newtype {
 namespace_id_newtype!(
     ProjectId,
     "ProjectId",
-    "Project ID (numeric) or URL-encoded namespace path (e.g. \"42\" or \"mygroup/myproject\")"
+    "Project ID (numeric) or full namespace path, passed as-is (e.g. \"42\" or \"mygroup/myproject\"; no need to URL-encode)"
 );
 namespace_id_newtype!(
     GroupId,
@@ -821,39 +836,24 @@ impl BodyBuilder {
 
 #[derive(Clone)]
 pub struct GitlabMcpServer {
-    client: Arc<OnceLock<GitlabClient>>,
+    // `GitlabClient` wraps a `reqwest::Client`, which is internally
+    // reference-counted, so cloning the server shares one connection pool.
+    client: GitlabClient,
     // Used by the `call_tool` override below; reused per call rather than
-    // rebuilt via `Self::tool_router()` each time.
+    // rebuilt via `Self::tool_router()` each time. (No `prompt_router` field:
+    // `#[prompt_handler]` calls the generated `prompt_router()` function.)
     tool_router: ToolRouter<Self>,
-    // Initialised by `new_stdio` but never read: `#[prompt_handler]` calls the
-    // `prompt_router()` *function* (generated by the `#[prompt_router]` block
-    // in `prompts.rs`), not this field. `expect` (not `allow`) so that if a
-    // future rmcp starts reading the field, the unfulfilled-expectation lint
-    // flags this for removal.
-    #[expect(dead_code)]
-    prompt_router: PromptRouter<Self>,
-    peer: Arc<OnceLock<Peer<RoleServer>>>,
     // See `list_resources`: caches the recent-projects listing briefly.
     recent_projects_cache: RecentProjectsCache,
 }
 
 impl GitlabMcpServer {
     pub fn new_stdio(base_url: String, token: String) -> anyhow::Result<Self> {
-        let cell = OnceLock::new();
-        let _ = cell.set(GitlabClient::new(base_url, token)?);
         Ok(Self {
-            client: Arc::new(cell),
+            client: GitlabClient::new(base_url, token)?,
             tool_router: Self::tool_router(),
-            prompt_router: Self::prompt_router(),
-            peer: Arc::new(OnceLock::new()),
             recent_projects_cache: Arc::new(tokio::sync::Mutex::new(None)),
         })
-    }
-
-    fn get_client(&self) -> Result<&GitlabClient, McpError> {
-        self.client
-            .get()
-            .ok_or_else(|| McpError::internal_error("GitLab client not initialized", None))
     }
 }
 
@@ -977,10 +977,6 @@ impl ServerHandler for GitlabMcpServer {
         info
     }
 
-    async fn on_initialized(&self, context: NotificationContext<RoleServer>) {
-        let _ = self.peer.set(context.peer);
-    }
-
     /// The full resource space isn't enumerable, but client resource pickers
     /// only surface `resources/list`, so return the projects that plausibly
     /// matter: the caller's recently active member projects. Everything else
@@ -996,7 +992,7 @@ impl ServerHandler for GitlabMcpServer {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, McpError> {
-        let client = self.get_client()?;
+        let client = &self.client;
         // Lock held across the fetch on purpose: concurrent lists coalesce
         // into one GitLab request instead of racing.
         let mut cache = self.recent_projects_cache.lock().await;
@@ -1044,7 +1040,7 @@ impl ServerHandler for GitlabMcpServer {
         request: CompleteRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<CompleteResult, McpError> {
-        let client = self.get_client()?;
+        let client = &self.client;
         let for_resource_uri = matches!(request.r#ref, Reference::Resource(_));
         let context_args = request.context.as_ref().and_then(|c| c.arguments.as_ref());
         let completion = completions::complete_argument(
@@ -1074,7 +1070,7 @@ impl ServerHandler for GitlabMcpServer {
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResponse, McpError> {
-        let client = self.get_client()?;
+        let client = &self.client;
         let resource = resources::parse_uri(&request.uri).map_err(|reason| {
             McpError::resource_not_found(
                 format!("unsupported resource URI \"{}\": {reason}", request.uri),
@@ -1278,7 +1274,7 @@ mod tests {
             pid["description"]
                 .as_str()
                 .unwrap()
-                .contains("URL-encoded namespace path"),
+                .contains("full namespace path, passed as-is"),
             "project_id description missing: {pid}"
         );
 
@@ -1548,6 +1544,34 @@ mod tests {
     }
 
     // encode_namespace_id
+
+    #[test]
+    fn encode_namespace_id_does_not_double_encode() {
+        assert_eq!(encode_namespace_id("mygroup%2Fmyrepo"), "mygroup%2Fmyrepo");
+        assert_eq!(
+            encode_namespace_id("mygroup%2fsub%2Frepo"),
+            "mygroup%2Fsub%2Frepo"
+        );
+        assert_eq!(encode_namespace_id("mygroup/myrepo"), "mygroup%2Fmyrepo");
+    }
+
+    #[test]
+    fn set_field_ignores_non_objects() {
+        let mut obj = serde_json::json!({ "id": 1 });
+        set_field(&mut obj, "extra", serde_json::json!([]));
+        assert_eq!(obj, serde_json::json!({ "id": 1, "extra": [] }));
+
+        // `v["k"] = …` would panic on these.
+        for mut v in [
+            serde_json::json!([1]),
+            serde_json::json!("s"),
+            serde_json::json!(3),
+        ] {
+            let before = v.clone();
+            set_field(&mut v, "extra", Value::Null);
+            assert_eq!(v, before);
+        }
+    }
 
     #[test]
     fn encode_namespace_id_numeric_passthrough() {

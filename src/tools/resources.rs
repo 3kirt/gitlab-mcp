@@ -334,7 +334,7 @@ pub async fn list_recent_projects(client: &GitlabClient) -> Result<Vec<Resource>
 /// JSON resources go through the same `slim_get` shaping as the tool results,
 /// so a resource read and a single-get tool call show the same object.
 fn json_contents(v: Value, uri: &str) -> Result<ResourceContents, GitlabError> {
-    let text = serde_json::to_string_pretty(&slim::slim_get(v))
+    let text = serde_json::to_string(&slim::slim_get(v))
         .map_err(|e| GitlabError::Other(format!("marshalling response: {e}")))?;
     Ok(ResourceContents::text(text, uri).with_mime_type("application/json"))
 }

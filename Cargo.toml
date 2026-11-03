@@ -2,8 +2,9 @@
 name = "gitlab-mcp"
 version = "0.37.0"
 edition = "2024"
+rust-version = "1.91"
 description = "An MCP server that exposes the GitLab API as tools for Claude and other MCP clients"
-license = "GPL-3.0"
+license = "GPL-3.0-only"
 repository = "https://github.com/3kirt/gitlab-mcp"
 keywords = ["gitlab", "mcp", "claude", "api", "llm"]
 categories = ["command-line-utilities", "api-bindings"]
