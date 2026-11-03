@@ -192,7 +192,7 @@ for `~/.gitlab_mcp.json`. Only the live tests read this file.
 
 ## Coverage
 
-The live suite is being grown domain-by-domain. Covered today: Issues (including
+The live suite is being grown domain-by-domain. Covered today: the pipeline/job wait tools (a throwaway `.gitlab-ci.yml` + API-triggered pipeline: one manual-only, one real job on a gitlab.com runner; skipped with a notice if the account can't run CI), Issues (including
 issue links, issue notes, and issue discussions), Merge Requests, MR Discussions,
 Branches, Repository Files, Snippets (personal snippets), Emoji Reactions
 (the issue, issue-note, and MR awardable types — MR-note and snippet awardables

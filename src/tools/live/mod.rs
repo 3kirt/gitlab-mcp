@@ -36,6 +36,7 @@ mod issues;
 mod licenses;
 mod merge_requests;
 mod mr_discussions;
+mod pipelines;
 mod prompts;
 mod repository_files;
 mod resources;
