@@ -3,6 +3,11 @@ TODO.md
 .claude/settings.local.json
 .mcp.*.json
 
+# Live-test credentials (see .env.example); never commit a real token.
+.env
+.env.*
+!.env.example
+
 # Added by cargo
 
 /target

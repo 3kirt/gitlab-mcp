@@ -16,15 +16,100 @@ pub(super) struct LiveEnv {
 }
 
 pub(super) fn live_env() -> Option<LiveEnv> {
-    let url = std::env::var("GITLAB_URL").ok()?;
-    let token = std::env::var("GITLAB_TOKEN").ok()?;
-    if url.is_empty() || token.is_empty() {
-        return None;
-    }
+    let url = live_var("GITLAB_URL")?;
+    let token = live_var("GITLAB_TOKEN")?;
     let project =
-        std::env::var("GITLAB_TEST_PROJECT").unwrap_or_else(|_| "3kirt1/gitlab-mcp-testing".into());
+        live_var("GITLAB_TEST_PROJECT").unwrap_or_else(|| "3kirt1/gitlab-mcp-testing".into());
     let client = GitlabClient::new(url, token).expect("build live client");
     Some(LiveEnv { client, project })
+}
+
+/// Gitignored `KEY=VALUE` file at the crate root that supplies live-test
+/// settings (`GITLAB_URL`, `GITLAB_TOKEN`, `GITLAB_TEST_PROJECT`) when they
+/// aren't set in the environment. See `.env.example`. Only the live harness
+/// reads it — the server binary uses the environment / `~/.gitlab_mcp.json`.
+const ENV_FILE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/.env");
+
+/// A live-test setting: the environment variable wins, then [`ENV_FILE`].
+/// Blank values count as unset (cf. `config::first_non_empty`).
+fn live_var(key: &str) -> Option<String> {
+    let non_blank = |v: &String| !v.trim().is_empty();
+    std::env::var(key)
+        .ok()
+        .filter(non_blank)
+        .or_else(|| env_file_vars().get(key).filter(|v| non_blank(v)).cloned())
+}
+
+/// [`ENV_FILE`]'s contents, parsed once per test binary. A missing file is
+/// empty; an unreadable or world-readable one panics with a fix-it message
+/// rather than silently skipping every test.
+fn env_file_vars() -> &'static std::collections::HashMap<String, String> {
+    static VARS: std::sync::OnceLock<std::collections::HashMap<String, String>> =
+        std::sync::OnceLock::new();
+    VARS.get_or_init(|| {
+        let path = std::path::Path::new(ENV_FILE);
+        let contents = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                return std::collections::HashMap::default();
+            }
+            Err(e) => panic!("reading {}: {e}", path.display()),
+        };
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(path)
+                .unwrap_or_else(|e| panic!("checking {}: {e}", path.display()))
+                .permissions()
+                .mode();
+            assert!(
+                mode & 0o004 == 0,
+                "{} holds a GitLab token but is world-readable; run: chmod 600 {}",
+                path.display(),
+                path.display()
+            );
+        }
+        parse_env_file(&contents)
+    })
+}
+
+/// Minimal dotenv parsing: `KEY=VALUE` per line, `#` comments and blank lines
+/// ignored, an optional leading `export `, and one pair of matching surrounding
+/// quotes stripped from the value. No interpolation or escapes.
+fn parse_env_file(contents: &str) -> std::collections::HashMap<String, String> {
+    contents
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return None;
+            }
+            let line = line.strip_prefix("export ").unwrap_or(line);
+            let (key, value) = line.split_once('=')?;
+            let value = value.trim();
+            let value = ['"', '\'']
+                .iter()
+                .find_map(|q| value.strip_prefix(*q)?.strip_suffix(*q))
+                .unwrap_or(value);
+            Some((key.trim().to_owned(), value.to_owned()))
+        })
+        .collect()
+}
+
+#[test]
+fn parse_env_file_handles_comments_export_and_quotes() {
+    let vars = parse_env_file(
+        "# live-test credentials\n\
+         \n\
+         GITLAB_URL=https://gitlab.com\n\
+         export GITLAB_TOKEN=\"glpat-xxxxxxxxxxxxxxxxxxxx\"\n\
+         GITLAB_TEST_PROJECT = 'grp/proj'\n\
+         not a pair\n",
+    );
+    assert_eq!(vars.len(), 3);
+    assert_eq!(vars["GITLAB_URL"], "https://gitlab.com");
+    assert_eq!(vars["GITLAB_TOKEN"], "glpat-xxxxxxxxxxxxxxxxxxxx");
+    assert_eq!(vars["GITLAB_TEST_PROJECT"], "grp/proj");
 }
 
 /// Bind a `LiveEnv` or return early (skipping) when credentials are absent.
@@ -35,7 +120,9 @@ macro_rules! skip_unless_live {
         match $crate::tools::live::harness::live_env() {
             Some(env) => env,
             None => {
-                eprintln!("SKIP: set GITLAB_URL + GITLAB_TOKEN to run live tests");
+                eprintln!(
+                    "SKIP: set GITLAB_URL + GITLAB_TOKEN (environment or .env) to run live tests"
+                );
                 return;
             }
         }

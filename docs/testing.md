@@ -170,6 +170,19 @@ GITLAB_TEST_PROJECT=3kirt1/gitlab-mcp-testing \
   cargo test --features live-tests -- --test-threads=1
 ```
 
+Or keep the settings in a gitignored `.env` file at the repo root, so neither
+the token nor the command line needs retyping:
+
+```sh
+cp .env.example .env && chmod 600 .env   # then fill in GITLAB_TOKEN
+make live-test
+```
+
+The harness reads `.env` for any of `GITLAB_URL`, `GITLAB_TOKEN`, and
+`GITLAB_TEST_PROJECT` not already set in the environment (the environment
+wins, per variable). It refuses a world-readable `.env`, like the server does
+for `~/.gitlab_mcp.json`. Only the live tests read this file.
+
 - `GITLAB_TEST_PROJECT` is optional; defaults to `3kirt1/gitlab-mcp-testing`.
 - `--test-threads=1` avoids interleaving create/delete traffic against the same
   project. (Each test is self-isolated by `run_tag()`, but serial keeps output
