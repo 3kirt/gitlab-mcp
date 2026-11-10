@@ -72,32 +72,45 @@ If `cargo fmt --check` fails, run `cargo fmt` to fix formatting, then re-run
 The release must also pass the live suite under `src/tools/live/`, which verifies
 the tools against a real GitLab instance (the one risk the unit tests structurally
 cannot cover — see `docs/testing.md`). These are gated behind the `live-tests`
-cargo feature and read `GITLAB_URL` / `GITLAB_TOKEN` from the environment.
+cargo feature and read `GITLAB_URL` / `GITLAB_TOKEN` (and optionally
+`GITLAB_TEST_PROJECT`) from the environment, falling back per variable to a
+gitignored `.env` at the repo root.
 
-**Critical:** without those env vars the live tests *silently skip and still report
+**Critical:** without credentials the live tests *silently skip and still report
 `ok`*, which verifies nothing. So the release process must run them with real
 credentials and confirm they actually executed.
 
-1. Obtain credentials for the test project. They are not in the shell environment
-   by default; source them from the same place the server uses — typically the
-   `gitlab-mcp` MCP server definition in `~/.claude.json`, or `~/.gitlab_mcp.json`.
-   If you cannot obtain a `GITLAB_URL` and `GITLAB_TOKEN`, **stop and ask the user**
-   — do not treat a skipped run as a pass.
+1. Credentials come from the repo-root `.env` (template: `.env.example`), which
+   the live harness reads directly — no need to export anything. Check it exists
+   (`test -f .env`) **without printing its contents**. If it is missing, **stop
+   and ask the user** to create it (`cp .env.example .env && chmod 600 .env`, then
+   fill in the token) — do not treat a skipped run as a pass. Don't go digging
+   for the token elsewhere (e.g. `~/.claude.json`). If the run fails with a
+   "world-readable" panic, `chmod 600 .env` and re-run.
 
 2. Run the suite serially (it creates and deletes real resources in the test
    project, so parallel runs against the same project can interfere):
 
    ```
-   GITLAB_URL=<url> GITLAB_TOKEN=<token> GITLAB_TEST_PROJECT=3kirt1/gitlab-mcp-testing \
-     cargo test --features live-tests --locked live:: -- --test-threads=1 --nocapture
+   cargo test --features live-tests --locked live:: -- --test-threads=1 --nocapture
    ```
 
-3. Confirm from the output that the tests **ran**, not skipped: the summary must
-   show the full live-suite count passing (17 as of this writing — count the
-   `mod` lines in `src/tools/live/mod.rs` if unsure, several modules hold more
-   than one test) and **no** `SKIP: set GITLAB_URL + GITLAB_TOKEN` notices. If any
-   live test fails — or the run skipped — stop and report; do not proceed to
-   tagging.
+   (`make live-test` is equivalent.) It takes several minutes.
+
+3. Confirm from the output that the tests **ran**, not skipped:
+   - the `test result` line shows **0 failed** and a passed count equal to the
+     number of live tests — count them rather than trusting a fixed number:
+     `grep -c '#\[tokio::test\]' src/tools/live/*.rs | awk -F: '{s+=$2} END {print s}'`
+     (the harness's one plain `#[test]` parser test runs too, so expect that
+     count + 1);
+   - there are **no** `SKIP: set GITLAB_URL + GITLAB_TOKEN` notices.
+
+   Some tests skip *by design* and still count as a pass: the License tests print
+   `SKIP license_…: … 403` without an admin token, and the pipeline tests print
+   `SKIP pipeline_create: … identity verification` if the account can't run CI
+   (the test account is CI-verified, so report that one to the user if it
+   appears). If any live test fails — or the run skipped for missing
+   credentials — stop and report; do not proceed to tagging.
 
 ### 7. Update CHANGELOG.md
 
