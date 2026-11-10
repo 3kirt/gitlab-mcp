@@ -4,6 +4,30 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.38.1] — 2026-11-09
+
+Security dependency update.
+
+### Fixed
+- **rmcp upgraded to 3.9.0 (RUSTSEC-2026-0462)** — the advisory covers
+  unbounded response-body buffering in rmcp's Streamable HTTP *client*
+  (rmcp ≤3.8.0). gitlab-mcp compiles only the stdio server features, so
+  shipped binaries were not exposed, but `cargo audit` failed on the
+  lockfile. The `Cargo.toml` floor is now `3.9`, so a fresh resolve can't
+  land on a vulnerable version.
+- **`resources/list` cache hint stays parseable** — an overflowing TTL used
+  to saturate `ttlMs` to `u64::MAX`, which rmcp clients (parsing it as
+  `i64`) reject. The hint is now capped at the 60s cache lifetime.
+
+### Changed
+- CI and release workflows use `actions/checkout@v5` (Node.js 20
+  deprecation).
+
+### Documentation
+- The release process reads live-test credentials from the gitignored
+  `.env` and computes the expected live-test count instead of hard-coding
+  it.
+
 ## [0.38.0] — 2026-11-02
 
 Blocking wait tools for pipelines and jobs, client-cancellation support, and
