@@ -407,11 +407,17 @@ type RecentProjectsCache = Arc<tokio::sync::Mutex<Option<(std::time::Instant, Ve
 /// remainder of the window instead of us silently absorbing the GitLab call.
 /// Account-scoped data (the caller's own recently active projects), so the
 /// hint is `Private`, never `Public`.
+///
+/// The hint is capped at [`RECENT_PROJECTS_TTL`] (our cache never stays fresh
+/// longer). Never saturate to `u64::MAX`: rmcp clients deserialize `ttlMs` as
+/// `i64`, so an out-of-range value makes the whole `resources/list` reply
+/// unparseable for them.
 fn with_recent_projects_cache_hint(
     result: ListResourcesResult,
     fresh_for: std::time::Duration,
 ) -> ListResourcesResult {
-    let ttl_ms = u64::try_from(fresh_for.as_millis()).unwrap_or(u64::MAX);
+    // The cap is one minute, so the millisecond count always fits.
+    let ttl_ms = u64::try_from(fresh_for.min(RECENT_PROJECTS_TTL).as_millis()).unwrap_or(0);
     result
         .with_ttl_ms(ttl_ms)
         .with_cache_scope(CacheScope::Private)
@@ -1442,12 +1448,14 @@ mod tests {
     }
 
     #[test]
-    fn recent_projects_cache_hint_saturates_on_overflow() {
+    fn recent_projects_cache_hint_caps_at_cache_ttl() {
         let result = with_recent_projects_cache_hint(
             ListResourcesResult::with_all_items(vec![]),
             std::time::Duration::MAX,
         );
-        assert_eq!(result.ttl_ms, Some(u64::MAX));
+        assert_eq!(result.ttl_ms, Some(60_000));
+        // The value must survive an i64 round-trip (rmcp clients parse ttlMs as i64).
+        assert!(i64::try_from(result.ttl_ms.unwrap()).is_ok());
     }
 
     // BodyBuilder
