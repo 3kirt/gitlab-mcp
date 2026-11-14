@@ -1,0 +1,113 @@
+name: Scheduled
+
+# Weekly checks for things that break without a code change: new advisories,
+# a new stable/beta toolchain, gpg releases, and the live GitLab API. A
+# failure opens (or comments on) one `scheduled-failure` tracking issue.
+# Shared shape with netbox-mcp and proxmox-mcp; the `live` job is per-repo.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install
+      - uses: taiki-e/install-action@4a76afe23f9e08d2d9550fb56e556444e8611d21 # v2.90.4
+        with:
+          tool: cargo-deny
+      - run: make deny
+
+  msrv:
+    name: MSRV
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: make msrv
+
+  toolchain-drift:
+    name: Toolchain drift (${{ matrix.toolchain }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, beta]
+    env:
+      # Overrides the rust-toolchain.toml pin: an early warning that the next
+      # pin bump will need work, without ever breaking a release.
+      RUSTUP_TOOLCHAIN: ${{ matrix.toolchain }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install ${{ matrix.toolchain }} --profile minimal --component clippy,rustfmt
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: make lint test
+
+  real-gpg:
+    name: Real GnuPG (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Weekly on both, so a runner-image gpg update is caught even
+        # without a push (ci.yml covers ubuntu on every push).
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install GnuPG (macOS)
+        if: runner.os == 'macOS'
+        run: brew install gnupg
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: make test-real-gpg
+
+  live:
+    name: Live suite (gitlab.com)
+    runs-on: ubuntu-latest
+    env:
+      GITLAB_URL: ${{ secrets.GITLAB_URL }}
+      GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+      GITLAB_TEST_PROJECT: ${{ secrets.GITLAB_TEST_PROJECT }}
+      # A missing secret fails the run instead of silently skipping it.
+      LIVE_REQUIRED: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # Serial: it creates and deletes real resources in the test project.
+      - run: make live-test
+
+  notify:
+    name: Report failure
+    needs: [deny, msrv, toolchain-drift, real-gpg, live]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Open or update the tracking issue
+        run: |
+          gh label create scheduled-failure --color B60205 \
+            --description "Scheduled CI is failing" 2>/dev/null || true
+          issue="$(gh issue list --label scheduled-failure --state open \
+            --json number --jq '.[0].number // empty')"
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body "Still failing: $RUN_URL"
+          else
+            gh issue create --label scheduled-failure --title "Scheduled CI failing" \
+              --body "The weekly scheduled run failed: $RUN_URL"
+          fi

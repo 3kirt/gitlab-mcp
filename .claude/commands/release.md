@@ -32,10 +32,11 @@ Run these two checks:
 
 ```
 cargo outdated
-cargo audit
+make deny
 ```
 
-**Security (`cargo audit`):** If any vulnerabilities are reported, stop immediately and
+**Security (`make deny`):** cargo-deny checks advisories, banned crates
+(aws-lc), sources, and licenses (`deny.toml`). If any vulnerabilities are reported, stop immediately and
 report them to the user. Do not proceed to the quality gate or tagging until the
 vulnerabilities are resolved.
 
@@ -45,32 +46,38 @@ dependencies are behind, ask the user whether to update them before continuing;
 transitive-only updates are informational and do not require confirmation. Either
 way, proceed to the quality gate once the user has been informed.
 
-If `cargo outdated` or `cargo audit` are not installed, install them first:
+If `cargo outdated` or `cargo deny` are not installed, install them first:
 
 ```
-cargo install cargo-outdated
-cargo install cargo-audit
+cargo install --locked cargo-outdated
+cargo install --locked cargo-deny
 ```
+
+### 4b. Check the toolchain pin
+
+`rust-toolchain.toml` pins an exact Rust version (shared with netbox-mcp and
+proxmox-mcp). Compare it with the latest stable (`rustup check`, or the
+weekly Scheduled run's toolchain-drift job). If a newer stable exists, tell
+the user and offer to bump the pin first (a separate commit, after `make
+check` passes on it); otherwise continue on the pin.
 
 ### 5. Run the full quality gate — every check must pass
 
-Run these commands. If any fails, stop and report the error; do not proceed to
+Run the gate. If it fails, stop and report the error; do not proceed to
 tagging.
 
 ```
-cargo test --all --locked
-make lint
-cargo fmt --check
-cargo build --release
+make check
+make test-real-gpg
 ```
 
-`make lint` runs clippy over all targets and both feature sets (plain
-`cargo clippy` skips tests and the `live-tests` code), plus the same
-committed-token scan CI runs (`make secrets-scan`), so neither fails only
-after the push.
+`make check` is the same set of make targets CI runs: `fmt-check`, `lint`
+(secrets scan + clippy over all targets and both feature sets + fmt), `test`
+(unit + launch-path), `deny`, a release build, and `smoke` (executes the
+release binary: `--version` + MCP initialize/tools/list). `make
+test-real-gpg` drives the local real gpg with throwaway keyrings.
 
-If `cargo fmt --check` fails, run `cargo fmt` to fix formatting, then re-run
-`cargo fmt --check` to confirm it passes before continuing.
+If `fmt-check` fails, run `cargo fmt`, then re-run `make check`.
 
 ### 6. Run the live integration tests — they must actually run and pass
 
@@ -97,10 +104,11 @@ credentials and confirm they actually executed.
    project, so parallel runs against the same project can interfere):
 
    ```
-   cargo test --features live-tests --locked live:: -- --test-threads=1 --nocapture
+   LIVE_REQUIRED=1 make live-test
    ```
 
-   (`make live-test` is equivalent.) It takes several minutes.
+   `LIVE_REQUIRED=1` makes a missing-credentials skip panic instead of
+   passing. It takes several minutes.
 
 3. Confirm from the output that the tests **ran**, not skipped:
    - the `test result` line shows **0 failed** and a passed count equal to the
@@ -119,9 +127,12 @@ credentials and confirm they actually executed.
 
 ### 7. Update CHANGELOG.md
 
-Read `CHANGELOG.md`. Add a new section for the new version at the top of the
-changelog (immediately after the `# Changelog` heading and any introductory
-prose, before the previous release). Use today's date.
+Read `CHANGELOG.md` (Keep a Changelog format, shared with netbox-mcp and
+proxmox-mcp). Rename the `## [Unreleased]` section to
+`## [<new version>] - YYYY-MM-DD` (today, ASCII hyphen), keeping any entries
+already in it, then add a fresh empty `## [Unreleased]` above it. No `---`
+separators. The release workflow publishes this section as the release notes
+and fails if it is missing or empty (`scripts/changelog-section.sh`).
 
 Derive the content by reading the git log since the previous release tag:
 
@@ -147,7 +158,7 @@ git commit -m "Bump version to <new version>"
 ### 9. Tag the release
 
 ```
-git tag v<new version>
+git tag -a v<new version> -m v<new version>
 ```
 
 ### 10. Confirm before pushing
@@ -168,9 +179,13 @@ harness. Users get the released binary launched by Claude Code from
 expansion. Check that path once the release workflow has published the
 assets:
 
-1. Wait for the Release workflow to finish and confirm the GitHub release
-   has all four platform binaries plus `checksums.txt`:
+1. Watch the Release workflow (`gh run watch` on its run) and confirm the
+   GitHub release has all four platform binaries plus `checksums.txt`:
    `gh release view v<new version> --json assets --jq '.assets[].name'`.
+   Download this host's asset and `checksums.txt` into a fresh scratch
+   directory, check it (`shasum -a 256 -c --ignore-missing checksums.txt`),
+   verify its provenance (`gh attestation verify <asset> --repo
+   3kirt/gitlab-mcp`), and run `make smoke BIN=<downloaded asset>`.
 2. Ask the user to update the plugin (`/plugin` → update, then
    `/reload-plugins`).
 3. Call a read-only tool through the plugin's server

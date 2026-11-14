@@ -1,0 +1,8 @@
+[toolchain]
+# Pinned so a new stable clippy can't break CI or a release with no code
+# change. scheduled.yml builds on current stable + beta as the early warning;
+# the release command offers to bump this. Keep in step with netbox-mcp and
+# proxmox-mcp.
+channel = "1.100.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

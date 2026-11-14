@@ -26,7 +26,12 @@ rmcp = { version = "3.9", features = [
     "transport-io",
 ] }
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.13.4", default-features = false, features = ["json", "query", "rustls"] }
+# `rustls-no-provider` + rustls's `ring` feature: ring instead of reqwest's
+# default aws-lc-rs provider (aws-lc-sys carries OpenSSL-style license terms
+# that are GPL-incompatible; deny.toml bans it). The provider is installed in
+# `client::http_client`.
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "query", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "1.0"

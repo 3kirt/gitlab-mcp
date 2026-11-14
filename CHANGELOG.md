@@ -2,9 +2,36 @@
 
 All notable changes to gitlab-mcp are documented here.
 
----
+## [Unreleased]
 
-## [0.39.1] — 2026-11-14
+### Changed
+- **TLS uses rustls's ring provider instead of aws-lc-rs**: aws-lc-sys's
+  license is GPL-incompatible. `deny.toml` bans aws-lc so it can't come back.
+- **CI/CD harmonized with netbox-mcp and proxmox-mcp**:
+  - Every CI job calls a make target.
+  - The release workflow verifies the tag (versions match, tag on main,
+    CHANGELOG section present), runs the full CI suite, and smoke-tests each
+    of the four binaries before publishing.
+  - Releases now carry build-provenance attestations, and their notes come
+    from the CHANGELOG.
+  - A weekly scheduled run covers cargo-deny, the minimum Rust version,
+    stable/beta toolchain drift, real GnuPG on ubuntu and macOS, and the live suite.
+    Failures open a tracking issue.
+  - The toolchain is pinned in `rust-toolchain.toml`, actions are pinned by
+    commit SHA, and Dependabot is enabled.
+- **cargo-deny replaces cargo-audit**, checking advisories, bans, sources and
+  licenses.
+- CHANGELOG headings use the Keep a Changelog format.
+
+### Added
+- **Real-GnuPG tests** (`make test-real-gpg`) catch changes in the status
+  codes newer gpg versions emit.
+- **Artifact smoke test** (`make smoke`, `scripts/smoke.py`) runs a built
+  binary through `--version` and an MCP tools/list round-trip.
+- **`LIVE_REQUIRED=1`** makes the live suite fail instead of silently passing
+  when credentials are missing.
+
+## [0.39.1] - 2026-11-14
 
 Fixes the plugin ignoring a GPG-encrypted token.
 
@@ -30,9 +57,7 @@ Fixes the plugin ignoring a GPG-encrypted token.
 - `docs/testing.md` describes the launch-path layer and when to add to it; the
   release process gains a final check through the updated plugin's own server.
 
----
-
-## [0.39.0] — 2026-11-14
+## [0.39.0] - 2026-11-14
 
 GPG-encrypted token storage with unattended operation, and a rewritten README.
 
@@ -83,9 +108,7 @@ GPG-encrypted token storage with unattended operation, and a rewritten README.
   `GITLAB_TOKEN` out of the MCP client config so it doesn't override the
   encrypted token. Covers Linux (including WSL) and macOS.
 
----
-
-## [0.38.1] — 2026-11-09
+## [0.38.1] - 2026-11-09
 
 Security dependency update.
 
@@ -109,7 +132,7 @@ Security dependency update.
   `.env` and computes the expected live-test count instead of hard-coding
   it.
 
-## [0.38.0] — 2026-11-02
+## [0.38.0] - 2026-11-02
 
 Blocking wait tools for pipelines and jobs, client-cancellation support, and
 a code-quality and security pass.
@@ -165,7 +188,7 @@ a code-quality and security pass.
   against real gitlab.com pipelines.
 - CI now lints all targets under both feature sets and runs `cargo audit`.
 
-## [0.37.0] — 2026-10-05
+## [0.37.0] - 2026-10-05
 
 Security and dependency refresh: rmcp 3.5 and Rust 1.99.
 
@@ -184,7 +207,7 @@ Security and dependency refresh: rmcp 3.5 and Rust 1.99.
   handshake messages accepted across encryption-level boundaries), and
   replaces a yanked `chacha20`.
 
-## [0.36.0] — 2026-08-06
+## [0.36.0] - 2026-08-06
 
 Upgrades the MCP SDK to rmcp 3.x.
 
@@ -204,7 +227,7 @@ Upgrades the MCP SDK to rmcp 3.x.
   the cache-hint behavior rmcp 3.1's macro-generated `list_tools`/
   `list_prompts` already emit for free.
 
-## [0.35.0] — 2026-07-13
+## [0.35.0] - 2026-07-13
 
 Wikis, instance licenses, and a sweep of schema-quality cleanups
 (176 → 189 tools).
@@ -246,7 +269,7 @@ Wikis, instance licenses, and a sweep of schema-quality cleanups
   updating a page in a directory without passing its full path-style title
   moves the page to the wiki root.
 
-## [0.34.0] — 2026-07-06
+## [0.34.0] - 2026-07-06
 
 Make the server a first-class Claude Code citizen: an installable plugin,
 discoverable resources, and an out-of-the-box repository setup.
@@ -299,7 +322,7 @@ discoverable resources, and an out-of-the-box repository setup.
   integration provides beyond tools (prompt slash commands, `@`-mentionable
   `gitlab://` resources, argument completion).
 
-## [0.33.0] — 2026-07-05
+## [0.33.0] - 2026-07-05
 
 Add MCP prompts and completions, completing the MCP capability surface
 (tools + resources + prompts + completions).
@@ -324,7 +347,7 @@ Add MCP prompts and completions, completing the MCP capability surface
   suggestions until the client supplies `project_id` in the completion
   context; a full page of 20 sets `hasMore`.
 
-## [0.32.0] — 2026-07-05
+## [0.32.0] - 2026-07-05
 
 Add MCP Resources: read-only GitLab data clients can pre-load as context
 via `gitlab://` URIs, without a tool call.
@@ -342,7 +365,7 @@ via `gitlab://` URIs, without a tool call.
   or literal slashes. Unparseable URIs and GitLab 404s surface as MCP
   `resource_not_found`. Covered by wiremock unit tests and two live tests.
 
-## [0.31.0] — 2026-07-04
+## [0.31.0] - 2026-07-04
 
 Upgrade to rmcp 2.x and add per-tool behavior annotations for MCP clients.
 
@@ -365,7 +388,7 @@ Upgrade to rmcp 2.x and add per-tool behavior annotations for MCP clients.
 - `resolve_work_item_gids` now reuses the shared `map_names_to_ids` helper
   instead of a hand-rolled lookup loop.
 
-## [0.30.0] — 2026-06-25
+## [0.30.0] - 2026-06-25
 
 Drops the deprecated MCP logging feature and moves to rmcp 1.8.
 
@@ -384,7 +407,7 @@ Drops the deprecated MCP logging feature and moves to rmcp 1.8.
   client over the MCP logging channel. The error is still returned in-band as the
   tool result, so MCP clients see no change.
 
-## [0.29.0] — 2026-06-25
+## [0.29.0] - 2026-06-25
 
 Maintenance release — a security fix for a transitive dependency.
 
@@ -396,7 +419,7 @@ Maintenance release — a security fix for a transitive dependency.
 ### Changed
 - **anyhow 1.0.102 → 1.0.103** — routine in-range patch bump.
 
-## [0.28.0] — 2026-06-18
+## [0.28.0] - 2026-06-18
 
 Request tracing — opt-in debug logging to diagnose GitLab API failures against a
 real instance.
@@ -416,7 +439,7 @@ real instance.
   - The `PRIVATE-TOKEN` is never logged (headers are excluded), and REST request
     bodies are not logged either.
 
-## [0.27.0] — 2026-06-15
+## [0.27.0] - 2026-06-15
 
 Users API — a read-only tool family for looking up GitLab users and their SSH keys.
 
@@ -437,7 +460,7 @@ Users API — a read-only tool family for looking up GitLab users and their SSH 
   `id`/`username`/`name` — `gitlab_users_get` now returns the full profile while
   nested user *references* inside any response are still collapsed as before.
 
-## [0.26.0] — 2026-06-14
+## [0.26.0] - 2026-06-14
 
 GraphQL Work Items — a full tool family for GitLab's unified successor to the
 deprecating Issues/Epics REST APIs.
@@ -474,9 +497,7 @@ deprecating Issues/Epics REST APIs.
   `ProjectId` / `GroupId` newtypes instead of being copy-pasted across ~130 tool
   parameter structs. No change to the wire format or accepted values.
 
----
-
-## [0.25.0] — 2026-06-11
+## [0.25.0] - 2026-06-11
 
 LLM-interaction reliability improvements from issue #10.
 
@@ -501,9 +522,7 @@ LLM-interaction reliability improvements from issue #10.
   snippet tools already said `snippet_id`). The old `id` spelling is still
   accepted as a deserialization alias, so existing callers keep working.
 
----
-
-## [0.24.0] — 2026-06-11
+## [0.24.0] - 2026-06-11
 
 ### Fixed
 - **URL path-segment encoding** — branch names and file paths containing characters beyond `/` (spaces, `%`, `{`, `}`, `#`, `?`, and others) are now correctly percent-encoded using the `percent-encoding` crate with a full RFC 3986 path-segment character set. Previously only forward slashes were encoded, so branches like `fix/some issue` would produce malformed URLs.
@@ -514,9 +533,7 @@ LLM-interaction reliability improvements from issue #10.
 - **HTTP status-check de-duplicated** — a `check_status()` helper in `src/client.rs` replaces five copies of the same 4-line error-extraction block in `list`, `post_void`, `get_text`, `delete`, and `handle_response`.
 - **Shared test fixture** — `mock_client()` extracted to a new `src/test_util.rs`, eliminating a copy of the function from every domain module's test section.
 
----
-
-## [0.23.0] — 2026-06-07
+## [0.23.0] - 2026-06-07
 
 This release is test infrastructure, documentation, and developer process only —
 there are no changes to tool behaviour or output.
@@ -541,9 +558,7 @@ there are no changes to tool behaviour or output.
 - Added `docs/testing.md` documenting the two-layer testing strategy — wiremock
   unit tests vs. live integration tests, and what each layer verifies.
 
----
-
-## [0.22.0] — 2026-06-07
+## [0.22.0] - 2026-06-07
 
 ### Fixed
 - **Error logging on two tools** — failures from `gitlab_mrs_unapprove` and
@@ -561,9 +576,7 @@ there are no changes to tool behaviour or output.
   copy-paste drift across the domain modules. No change to tool behaviour or
   output.
 
----
-
-## [0.21.0] — 2026-06-04
+## [0.21.0] - 2026-06-04
 
 ### Changed
 - **Comment-tool descriptions rewritten for discoverability** — the issue, merge
@@ -577,9 +590,7 @@ there are no changes to tool behaviour or output.
 - Added a "Writing tool descriptions" section to `CLAUDE.md` codifying the
   intent-led, synonym-bridging description principles for future tools.
 
----
-
-## [0.20.0] — 2026-06-01
+## [0.20.0] - 2026-06-01
 
 ### Added
 - **`fetch_all` auto-pagination** — every list tool now accepts an optional
@@ -593,9 +604,7 @@ there are no changes to tool behaviour or output.
   supplied a `progressToken`, with `progress`/`total` as absolute item counts
   (`total` reported when GitLab provides `X-Total`, otherwise omitted).
 
----
-
-## [0.19.0] — 2026-05-29
+## [0.19.0] - 2026-05-29
 
 ### Added
 - **MCP logging protocol** — the server now declares the `logging` capability
@@ -619,9 +628,7 @@ there are no changes to tool behaviour or output.
 - Testing protocol: note MCP logging wire behaviour is covered by the rmcp
   conformance suite; add Section 93 (MCP Logging) with three smoke tests.
 
----
-
-## [0.18.0] — 2026-05-28
+## [0.18.0] - 2026-05-28
 
 ### Added
 - **Issue Discussions** — six new tools mirroring the existing MR
@@ -642,9 +649,7 @@ there are no changes to tool behaviour or output.
   `mr_approvals`, `epic_issues`, `groups`, `projects`, `runners`, and
   `issue_discussions`, plus the new seed-placeholder lookups.
 
----
-
-## [0.17.0] — 2026-05-27
+## [0.17.0] - 2026-05-27
 
 ### Added
 - **Runners domain (read-only)** — seven new tools covering all runner scopes:
@@ -670,9 +675,7 @@ there are no changes to tool behaviour or output.
 - Release skill updated to include dependency audit (`cargo outdated`) and
   security check (`cargo audit`) steps before the quality gate.
 
----
-
-## [0.16.0] — 2026-05-27
+## [0.16.0] - 2026-05-27
 
 ### Added
 - **Epic-issue linking** — two new tools: `gitlab_epics_issue_assign`
@@ -706,9 +709,7 @@ there are no changes to tool behaviour or output.
   plus a Projects universal-invariants table. Workflow H now exercises
   epic-issue assign and remove as part of the epic lifecycle.
 
----
-
-## [0.15.0] — 2026-05-26
+## [0.15.0] - 2026-05-26
 
 ### Added
 - **Groups domain (read-only)** — two new tools: `gitlab_groups_list` and
@@ -723,9 +724,7 @@ there are no changes to tool behaviour or output.
 - Testing protocol extended with Sections 77–78 (Groups list and get) and
   the groups universal-invariants table.
 
----
-
-## [0.14.0] — 2026-05-25
+## [0.14.0] - 2026-05-25
 
 ### Added
 - **Emoji Reactions domain** — twenty-four new tools covering GitLab's
@@ -754,9 +753,7 @@ there are no changes to tool behaviour or output.
   per-case PASS/FAIL results. Forbids shell/curl invocations — every
   GitLab interaction must go through an MCP tool call.
 
----
-
-## [0.13.0] — 2026-05-24
+## [0.13.0] - 2026-05-24
 
 ### Added
 - **Snippets domain** — ten new tools: `gitlab_snippets_list`,
@@ -777,9 +774,7 @@ there are no changes to tool behaviour or output.
 - Testing protocol extended with seed step 12, Sections 63–70 (Snippets list,
   get, raw, file raw, create, update, delete, user agent detail), and Workflow L.
 
----
-
-## [0.12.0] — 2026-05-24
+## [0.12.0] - 2026-05-24
 
 ### Added
 - `gitlab_mrs_get` now embeds `closes_issues` (issues that will be closed when the MR
@@ -791,9 +786,7 @@ there are no changes to tool behaviour or output.
 ### Documentation
 - Testing protocol extended with coverage for `mr_get` and `issue_get` embedded arrays.
 
----
-
-## [0.11.0] — 2026-05-24
+## [0.11.0] - 2026-05-24
 
 ### Added
 - **Search domain** — three new tools: `gitlab_search_global`, `gitlab_search_group`,
@@ -816,9 +809,7 @@ there are no changes to tool behaviour or output.
   (Pipeline Schedules + variables, plus Workflow J), and Sections 60–62
   (Search global/group/project, plus Workflow K).
 
----
-
-## [0.10.0] — 2026-05-24
+## [0.10.0] - 2026-05-24
 
 ### Added
 - **Issue links domain** — four new tools: `gitlab_issues_links_list`,
@@ -852,9 +843,7 @@ there are no changes to tool behaviour or output.
 - Testing protocol updated with EE 18.x regression notes for epics and
   removed widget references.
 
----
-
-## [0.9.0] — 2026-05-21
+## [0.9.0] - 2026-05-21
 
 ### Added
 - **Epics domain** — five REST-style tools for group-level epics, backed by
@@ -885,9 +874,7 @@ there are no changes to tool behaviour or output.
   section covering list, get, create, update (including parent clearing via
   iid=0), and delete against the seeded test group.
 
----
-
-## [0.8.0] — 2026-05-20
+## [0.8.0] - 2026-05-20
 
 ### Added
 - **Work Items domain** — five new tools covering tasks, epics, tickets,
@@ -914,9 +901,7 @@ there are no changes to tool behaviour or output.
 - Testing protocol: added Work Items coverage across seed setup, sections 45–47,
   workflow H, and §46.6 covering the unknown-username error path.
 
----
-
-## [0.7.0] — 2026-05-20
+## [0.7.0] - 2026-05-20
 
 ### Changed
 - Issue list responses now strip ten additional low-signal fields: `assignees`,
@@ -930,9 +915,7 @@ there are no changes to tool behaviour or output.
 - `--help` output expanded with environment variable documentation and quickstart
   setup instructions
 
----
-
-## [0.6.0] — 2026-05-19
+## [0.6.0] - 2026-05-19
 
 ### Added
 - **Issue Notes domain** — five new tools covering full CRUD on issue comments:
@@ -948,9 +931,7 @@ there are no changes to tool behaviour or output.
 - CLAUDE.md: added `discussions.rs` and `issue_notes.rs` to key modules section
 - Testing protocol: added seed step 6, sections 38–42, and workflow G for Issue Notes
 
----
-
-## [0.5.0] — 2026-05-19
+## [0.5.0] - 2026-05-19
 
 ### Added
 - **MR Discussions domain** — seven new tools for merge request code review workflows:
@@ -961,9 +942,7 @@ there are no changes to tool behaviour or output.
 - Diff-note position support in `gitlab_mrs_discussions_create` — inline code comments
   can be anchored to a specific file, line, and commit range
 
----
-
-## [0.4.0] — 2026-05-19
+## [0.4.0] - 2026-05-19
 
 ### Changed
 - All list endpoints now return a pagination envelope instead of a bare array:
@@ -973,9 +952,7 @@ there are no changes to tool behaviour or output.
   `total`, `total_pages`, and `next_page` are omitted when GitLab does not supply them.
   **Breaking change** — callers that indexed the array directly must now read `response["items"]`.
 
----
-
-## [0.3.1] — 2026-05-19
+## [0.3.1] - 2026-05-19
 
 ### Added
 - Date range filters on all list endpoints: `created_after`, `created_before`,
@@ -986,9 +963,7 @@ there are no changes to tool behaviour or output.
   `head_pipeline`, `diff_stats`, `time_stats`, `_links`, and `references` stripped;
   null fields removed; user objects collapsed to `{id, username, name}`
 
----
-
-## [0.3.0] — 2026-05-18
+## [0.3.0] - 2026-05-18
 
 ### Changed
 - HTTP transport disabled pending a secure OAuth implementation (stdio only)
@@ -996,9 +971,7 @@ there are no changes to tool behaviour or output.
 ### Removed
 - HTTP transport source files and associated dead dependencies
 
----
-
-## [0.2.0] — 2026-05-18
+## [0.2.0] - 2026-05-18
 
 ### Added
 - **Commits domain** — 15 tools: list, create, get, diff, refs, sequence check,
@@ -1027,16 +1000,12 @@ there are no changes to tool behaviour or output.
 - Delegation macros deduplicated via a shared `delegate_json!` core
 - `GitlabClient` method names cleaned up
 
----
-
-## [0.1.1] — 2026-05-17
+## [0.1.1] - 2026-05-17
 
 ### Fixed
 - Formatting: applied `cargo fmt` to resolve CI lint failure introduced in v0.1.0
 
----
-
-## [0.1.0] — 2026-05-17
+## [0.1.0] - 2026-05-17
 
 Initial release.
 
