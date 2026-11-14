@@ -4,6 +4,34 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [0.39.1] — 2026-11-14
+
+Fixes the plugin ignoring a GPG-encrypted token.
+
+### Fixed
+- **Plugin installs now use the `pass_entry` token** — v0.39.0's plugin config
+  passed `"GITLAB_TOKEN": "${GITLAB_TOKEN}"`. With the variable unset, Claude
+  Code passes that placeholder through literally, so the server took it as a
+  real token, ignored the configured `pass_entry`, and every call got a 401.
+  The server now treats an unexpanded `${NAME}` / `${NAME:-…}` value like a
+  blank one (logging a warning that names the variable), and the plugin
+  config, the repo's `.mcp.json`, and the README example use
+  `"${GITLAB_TOKEN:-}"`, which expands to empty when unset. That also drops
+  Claude Code's "missing variable" warning.
+
+### Changed
+- **Launch-path tests** — `tests/launch_path.rs` spawns the built binary over
+  MCP stdio with a pass-entry config and checks that GitLab receives the pass
+  token whether `GITLAB_TOKEN` is unset, empty, or a literal placeholder. A
+  unit test also lints the shipped and documented MCP configs so every `${VAR}`
+  has a `:-` default. Both fail against v0.39.0.
+
+### Documentation
+- `docs/testing.md` describes the launch-path layer and when to add to it; the
+  release process gains a final check through the updated plugin's own server.
+
+---
+
 ## [0.39.0] — 2026-11-14
 
 GPG-encrypted token storage with unattended operation, and a rewritten README.
