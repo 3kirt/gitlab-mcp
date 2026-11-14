@@ -4,7 +4,9 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
-## [Unreleased]
+## [0.39.0] — 2026-11-14
+
+GPG-encrypted token storage with unattended operation, and a rewritten README.
 
 ### Added
 - **GPG-encrypted token storage (pass-compatible)** — set `"pass_entry"` in the
@@ -19,9 +21,15 @@ All notable changes to gitlab-mcp are documented here.
   localized messages.
 - **`gitlab-mcp login` / `logout` / `unlock` / `status` subcommands** — `login`
   verifies the token against GitLab, encrypts it, updates the config, and
-  removes any plaintext token. `status` reports the token source and whether
-  the key is unlocked, by querying gpg-agent over its Assuan socket, without
-  decrypting anything.
+  removes any plaintext token. It stores each GitLab instance under its own
+  entry (`gitlab-mcp/<host>`), so logging in to a second instance never
+  overwrites the first one's token. `status` reports the token source and
+  whether the key is unlocked, by querying gpg-agent over its Assuan socket,
+  without decrypting anything.
+- **Rotated tokens are picked up without a restart** — after a 401 the server
+  re-reads the pass entry once. If that fails (e.g. the agent cache has
+  expired), it keeps reporting GitLab's real 401 rather than a misleading
+  "locked".
 - `"gpg"`, `"password_store_dir"` and `"gnupg_home"` config keys: the gpg
   binary, store root and keyring, for MCP clients that launch servers with a
   minimal `PATH` or without shell-only `PASSWORD_STORE_DIR` / `GNUPGHOME`
@@ -30,6 +38,10 @@ All notable changes to gitlab-mcp are documented here.
 ### Changed
 - A config file that sets both `"token"` and `"pass_entry"` is rejected.
 - `--config` is accepted after a subcommand as well as before it.
+- `resources/list` returns the unlock message when the token is locked, instead
+  of an unexplained empty list, and a fallback empty list no longer carries the
+  60s cache hint.
+- rmcp upgraded to 3.10.0.
 
 ### Documentation
 - **README tool reference replaced by a capability overview** — the
@@ -38,10 +50,10 @@ All notable changes to gitlab-mcp are documented here.
   parameter conventions; tools describe themselves to the client, and
   `gitlab_tool_schema_get` returns any tool's schema.
 - **Setup guide for GPG-encrypted tokens** — the README walks through
-  creating an encryption key, configuring gpg-agent (cache lifetimes and a
-  graphical pinentry, since the server has no terminal), storing the token,
-  and keeping `GITLAB_TOKEN` out of the MCP client config so it doesn't
-  override the encrypted token.
+  creating an encryption key, configuring gpg-agent (cache lifetimes, and
+  when a graphical pinentry is needed), storing the token, and keeping
+  `GITLAB_TOKEN` out of the MCP client config so it doesn't override the
+  encrypted token. Covers Linux (including WSL) and macOS.
 
 ---
 
