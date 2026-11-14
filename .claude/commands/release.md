@@ -59,10 +59,15 @@ tagging.
 
 ```
 cargo test --all --locked
-cargo clippy --locked -- -D warnings
+make lint
 cargo fmt --check
 cargo build --release
 ```
+
+`make lint` runs clippy over all targets and both feature sets (plain
+`cargo clippy` skips tests and the `live-tests` code), plus the same
+committed-token scan CI runs (`make secrets-scan`), so neither fails only
+after the push.
 
 If `cargo fmt --check` fails, run `cargo fmt` to fix formatting, then re-run
 `cargo fmt --check` to confirm it passes before continuing.

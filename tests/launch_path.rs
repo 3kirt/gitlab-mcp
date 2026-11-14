@@ -21,7 +21,7 @@ use tokio::process::Command;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-const PASS_TOKEN: &str = "glpat-from-pass-entry";
+const PASS_TOKEN: &str = "token-from-pass-entry";
 const STEP_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// A stand-in for `gpg --decrypt` that prints the token with the status lines
