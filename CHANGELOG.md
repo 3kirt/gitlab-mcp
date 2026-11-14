@@ -4,6 +4,11 @@ All notable changes to gitlab-mcp are documented here.
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-11-14
+
+Fixes for GPG-encrypted tokens, the TLS switch to ring, and a release
+pipeline that tests every published binary.
+
 ### Changed
 - **TLS uses rustls's ring provider instead of aws-lc-rs**: aws-lc-sys's
   license is GPL-incompatible. `deny.toml` bans aws-lc so it can't come back.
@@ -22,6 +27,9 @@ All notable changes to gitlab-mcp are documented here.
 - **cargo-deny replaces cargo-audit**, checking advisories, bans, sources and
   licenses.
 - CHANGELOG headings use the Keep a Changelog format.
+- **`make lint` runs the committed-token scan** (`make secrets-scan`), the
+  same check CI runs, so a token-like test fixture fails locally before a
+  push.
 
 ### Added
 - **Real-GnuPG tests** (`make test-real-gpg`) catch changes in the status

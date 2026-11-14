@@ -1,6 +1,6 @@
 [package]
 name = "gitlab-mcp"
-version = "0.39.1"
+version = "0.40.0"
 edition = "2024"
 rust-version = "1.91"
 description = "An MCP server that exposes the GitLab API as tools for Claude and other MCP clients"
