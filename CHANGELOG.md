@@ -31,6 +31,27 @@ All notable changes to gitlab-mcp are documented here.
 - **`LIVE_REQUIRED=1`** makes the live suite fail instead of silently passing
   when credentials are missing.
 
+### Fixed
+- **Rotated tokens work on the first call.** After `gitlab-mcp login`
+  rotates the token, the first rejected request re-reads the pass entry and
+  retries once with the new token, instead of failing.
+- **No repeated gpg runs after a failed re-read.** If re-reading a rejected
+  token failed (e.g. the gpg-agent cache had expired), every later request
+  re-ran gpg. It now runs once per rejection.
+- **Unlock and login advice names the right config and keyring.** The
+  "run `gitlab-mcp unlock`" message now includes the server's own `--config`
+  and GnuPG home, shell-quoted.
+- **Temp files are no longer symlink-followable.** Writing the config and
+  the encrypted token now creates its temp file exclusively (owner-only), so
+  a symlink planted at the predictable name is never followed or deleted.
+- **`login` can't half-initialise the store.** It checks that the config
+  can be written before asking for the token.
+- **`status` ignores unusable subkeys.** An expired, revoked, disabled or
+  invalid encryption subkey no longer reports "unlocked".
+- **gpg's own error is shown.** A gpg that exits early (e.g. no public key
+  for the recipient) reports that error instead of "Broken pipe".
+- Fixed an intermittent ~10s stall in the hung-gpg timeout test on macOS.
+
 ## [0.39.1] - 2026-11-14
 
 Fixes the plugin ignoring a GPG-encrypted token.
