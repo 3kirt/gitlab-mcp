@@ -37,6 +37,11 @@ All notable changes to gitlab-mcp are documented here.
   missing). The README now summarizes what each area can do and the shared
   parameter conventions; tools describe themselves to the client, and
   `gitlab_tool_schema_get` returns any tool's schema.
+- **Setup guide for GPG-encrypted tokens** — the README walks through
+  creating an encryption key, configuring gpg-agent (cache lifetimes and a
+  graphical pinentry, since the server has no terminal), storing the token,
+  and keeping `GITLAB_TOKEN` out of the MCP client config so it doesn't
+  override the encrypted token.
 
 ---
 

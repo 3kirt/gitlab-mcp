@@ -84,10 +84,53 @@ For self-hosted GitLab instances, replace `https://gitlab.com` with your instanc
 
 ### GPG-encrypted token (pass)
 
+*Requires gitlab-mcp v0.39.0 or later, on Linux (including WSL) or macOS.*
+
 Instead of a plaintext `token`, gitlab-mcp can keep the token GPG-encrypted in a
 [`pass`](https://www.passwordstore.org/)-compatible password store
 (`~/.password-store`, or `$PASSWORD_STORE_DIR`). Only `gpg` is required; the
 `pass` CLI is optional, but `pass show` reads the entry if you have it.
+
+#### 1. Set up GnuPG
+
+Install GnuPG if you don't have it: your package manager on Linux, or Homebrew
+or GPG Suite on macOS.
+
+You need a GPG key that can encrypt. Run `gpg --list-secret-keys` and look for
+a key whose subkey shows `[E]`. If you don't have one, create it:
+
+```sh
+gpg --quick-gen-key "Your Name <you@example.com>" default default 2y
+```
+
+Then configure gpg-agent in `~/.gnupg/gpg-agent.conf` (or under `$GNUPGHOME`
+if you set it). The default cache lifetimes (10 minutes, 2 hours at most) are
+short for unattended use. This caches an unlock for an
+8-hour work day:
+
+```
+default-cache-ttl 28800
+max-cache-ttl 28800
+```
+
+Apply changes with `gpgconf --kill gpg-agent`; the agent restarts on its next
+use.
+
+**Which pinentry.** `gitlab-mcp unlock` prompts through gpg-agent's pinentry
+(the server itself never prompts). In a normal terminal, a terminal pinentry
+works as long as gpg knows the terminal: add `export GPG_TTY=$(tty)` to your
+shell profile. To unlock from somewhere without a real
+terminal, such as an agent's shell (Claude Code's `!` prefix), you need a
+graphical pinentry, set with a `pinentry-program <path>` line in
+`gpg-agent.conf`:
+
+| Platform | Graphical pinentry |
+|---|---|
+| Linux | `pinentry-gnome3` or `pinentry-qt` from your package manager |
+| macOS | `pinentry-mac` (Homebrew); it can also save the passphrase in the Keychain |
+| Linux under WSL | `pinentry-gtk2` or `pinentry-qt`, which display through WSLg on Windows 11; without WSLg, unlock from a WSL terminal instead |
+
+#### 2. Store the token
 
 ```sh
 gitlab-mcp login --gpg-id <your-key-id>   # first time: no .gpg-id in the store yet
@@ -101,16 +144,41 @@ config file. It also removes any plaintext `token` from that file:
 ```json
 {
   "url": "https://gitlab.com",
-  "pass_entry": "gitlab-mcp/gitlab.com"
+  "pass_entry": "gitlab-mcp/gitlab.com",
+  "password_store_dir": "/home/you/.password-store"
 }
 ```
 
-**Unattended operation.** The server decrypts the token on first use and never
-prompts (gpg runs with `--pinentry-mode error`), so it starts even while your
-key is locked. Until gpg-agent has your passphrase cached, tool calls fail with
-a message asking you to unlock. Your agent can relay that, and the next call
-after you unlock succeeds without restarting the server. After that first
-decrypt the token stays in memory for the life of the server process.
+Because the plaintext token is removed, every gitlab-mcp the config is used
+with must be v0.39.0 or later; an older one can't start without a token.
+
+#### 3. Leave `GITLAB_TOKEN` out of your MCP client config
+
+`GITLAB_TOKEN` takes precedence over `pass_entry`. If your MCP client config
+passes it (for example via `--env GITLAB_TOKEN=…` in `claude mcp add`), the
+server uses that value and never touches the encrypted token. Pass only
+`GITLAB_URL`, or nothing, since the config file has the URL. A
+`"${GITLAB_TOKEN}"` placeholder is fine as long as the variable isn't
+exported, because an empty value counts as unset.
+
+Run `gitlab-mcp status` to check which token source applies:
+
+```
+GitLab URL:   https://gitlab.com
+Token source: pass entry gitlab-mcp/gitlab.com (/home/you/.password-store/gitlab-mcp/gitlab.com.gpg)
+Recipients:   0123456789ABCDEF0123456789ABCDEF01234567
+gpg-agent:    unlocked (passphrase cached in gpg-agent)
+```
+
+#### Day to day
+
+The server decrypts the token on first use and never prompts (gpg runs with
+`--pinentry-mode error`), so it starts even while your key is locked. Until
+gpg-agent has your passphrase cached, tool calls fail with a message asking
+you to unlock. Your agent relays that, and the next call after you unlock
+succeeds without restarting the server. After that first decrypt the token
+stays in memory for the life of the server process, so the cache only matters
+when a server starts.
 
 ```sh
 gitlab-mcp unlock   # caches the passphrase in gpg-agent (prompts if needed)
@@ -118,9 +186,11 @@ gitlab-mcp status   # token source, recipients, locked/unlocked; never decrypts
 gitlab-mcp logout   # deletes the encrypted entry
 ```
 
-How long an unlock lasts is up to gpg-agent (`default-cache-ttl` /
-`max-cache-ttl` in `~/.gnupg/gpg-agent.conf`). On macOS, `pinentry-mac` lets
-`unlock` prompt from anywhere and can store the passphrase in the Keychain.
+Plugin installs keep the binary under
+`~/.cache/gitlab-mcp/v<version>/gitlab-mcp` (or `$XDG_CACHE_HOME/gitlab-mcp/…`).
+Run `login`/`unlock` from there if `gitlab-mcp` isn't on your `PATH`.
+
+#### Config keys
 
 | Config key | Description |
 |---|---|
@@ -132,11 +202,6 @@ How long an unlock lasts is up to gpg-agent (`default-cache-ttl` /
 `login` records the store and keyring it used. That way a server started by a
 GUI client, which doesn't see variables exported only in your shell, reads the
 same ones. `~/` is expanded in these values.
-
-`GITLAB_TOKEN` still takes precedence over a `pass_entry`. Plugin installs keep
-the binary under `~/.cache/gitlab-mcp/v<version>/gitlab-mcp` (or
-`$XDG_CACHE_HOME/gitlab-mcp/…`); run `login`/`unlock` from there if
-`gitlab-mcp` isn't on your `PATH`.
 
 ---
 
@@ -172,6 +237,9 @@ claude mcp add --transport stdio \
   --env GITLAB_TOKEN=your-personal-access-token \
   gitlab -- gitlab-mcp
 ```
+
+With a [GPG-encrypted token](#gpg-encrypted-token-pass), drop the
+`--env GITLAB_TOKEN=…` line: an explicit token overrides the encrypted one.
 
 To share the configuration with your team, commit a `.mcp.json` in the repo
 root instead. Claude Code expands `${VAR}` (and `${VAR:-default}`) in `env`
