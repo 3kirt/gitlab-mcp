@@ -43,6 +43,7 @@ pub struct EntryArgs {
 /// Verify a token, encrypt it into the store, and point the config at it.
 pub async fn login(config_path: Option<&Path>, args: LoginArgs) -> anyhow::Result<()> {
     let cfg = Config::load_or_empty(config_path)?;
+    let url_from_env = args.url.is_none() && config::env_var("GITLAB_URL").is_some();
     let url = match args.url {
         Some(u) => {
             config::enforce_https(&u)?;
@@ -50,12 +51,31 @@ pub async fn login(config_path: Option<&Path>, args: LoginArgs) -> anyhow::Resul
         }
         None => cfg.resolve_url()?,
     };
-    let entry_name = match args.entry.or_else(|| cfg.pass_entry().map(str::to_owned)) {
-        Some(name) => name,
-        None => default_entry_name(&url)?,
-    };
+    let entry_name = choose_entry_name(args.entry, &cfg, &url)?;
     let store = cfg.pass_store()?;
     let entry = store.entry(&entry_name)?;
+
+    // Settle every local precondition before prompting for the secret or
+    // calling GitLab, so a missing .gpg-id doesn't waste a token entry.
+    let (recipients, init_id) = match (entry.recipients()?, args.gpg_id) {
+        (Some(_), Some(_)) => bail!(
+            "the password store at {} already has a .gpg-id; drop --gpg-id",
+            store.root().display()
+        ),
+        (Some(ids), None) => (ids, None),
+        (None, Some(id)) => {
+            let id = id.trim().to_string();
+            if id.is_empty() {
+                bail!("--gpg-id is empty");
+            }
+            (vec![id.clone()], Some(id))
+        }
+        (None, None) => bail!(
+            "no .gpg-id in the password store at {}; pass --gpg-id <KEY_ID> to choose \
+             the GPG key to encrypt to (see `gpg --list-secret-keys`)",
+            store.root().display()
+        ),
+    };
 
     let token = read_token_input(args.token_stdin)?;
     let user = GitlabClient::new(&url, &token)?
@@ -64,33 +84,33 @@ pub async fn login(config_path: Option<&Path>, args: LoginArgs) -> anyhow::Resul
         .map_err(|e| anyhow!("GitLab rejected the token: {}", e.to_tool_message()))?;
     let username = user["username"].as_str().unwrap_or("<unknown>");
 
-    let recipients = match (entry.recipients()?, args.gpg_id) {
-        (Some(_), Some(_)) => bail!(
-            "the password store at {} already has a .gpg-id; drop --gpg-id",
-            store.root().display()
-        ),
-        (Some(ids), None) => ids,
-        (None, Some(id)) => {
-            store.init(&id)?;
-            eprintln!(
-                "Initialised password store at {} for {id}",
-                store.root().display()
-            );
-            vec![id]
-        }
-        (None, None) => bail!(
-            "no .gpg-id in the password store at {}; pass --gpg-id <KEY_ID> to choose \
-             the GPG key to encrypt to (see `gpg --list-secret-keys`)",
-            store.root().display()
-        ),
-    };
     entry.write_token(&token, &recipients).await?;
+    // Only now, with encryption to that key proven, record it as the store's
+    // recipient: a mistyped --gpg-id must not leave a .gpg-id behind that
+    // blocks every later login.
+    if let Some(id) = &init_id {
+        store.init(id)?;
+        eprintln!(
+            "Initialised password store at {} for {id}",
+            store.root().display()
+        );
+    }
 
     let path = config::config_path(config_path)?;
+    let previous_url = cfg.file_url().map(str::to_owned);
     let mut removed_plaintext = false;
     config::update_file(&path, |obj| {
         obj.insert("url".into(), url.clone().into());
         obj.insert("pass_entry".into(), entry_name.clone().into());
+        // Pin the store and keyring login used, so a server launched without
+        // this shell's PASSWORD_STORE_DIR / GNUPGHOME reads the same ones.
+        obj.insert(
+            "password_store_dir".into(),
+            store.root().display().to_string().into(),
+        );
+        if let Some(home) = store.homedir() {
+            obj.insert("gnupg_home".into(), home.display().to_string().into());
+        }
         removed_plaintext = obj.remove("token").is_some();
     })?;
 
@@ -103,13 +123,45 @@ pub async fn login(config_path: Option<&Path>, args: LoginArgs) -> anyhow::Resul
         "Updated {} (\"pass_entry\": \"{entry_name}\").",
         path.display()
     );
+    if let Some(prev) = previous_url.filter(|p| !same_instance(p, &url)) {
+        let why = if url_from_env {
+            " (from GITLAB_URL)"
+        } else {
+            ""
+        };
+        eprintln!("Changed \"url\" from {prev} to {url}{why}.");
+    }
     if removed_plaintext {
         eprintln!("Removed the plaintext \"token\" from the config file.");
     }
-    if std::env::var("GITLAB_TOKEN").is_ok_and(|v| !v.trim().is_empty()) {
-        eprintln!("Note: GITLAB_TOKEN is set in this environment and takes precedence.");
-    }
+    note_env_token_precedence();
     Ok(())
+}
+
+/// The entry to write: `--entry`, else the config's `pass_entry` *if* the
+/// config is for this same GitLab instance, else `gitlab-mcp/<host>`.
+/// Reusing another host's entry would overwrite that host's token.
+fn choose_entry_name(explicit: Option<String>, cfg: &Config, url: &str) -> anyhow::Result<String> {
+    if let Some(name) = explicit {
+        return Ok(name);
+    }
+    match (cfg.pass_entry(), cfg.file_url()) {
+        (Some(name), Some(file_url)) if same_instance(file_url, url) => Ok(name.to_owned()),
+        _ => default_entry_name(url),
+    }
+}
+
+fn same_instance(a: &str, b: &str) -> bool {
+    a.trim().trim_end_matches('/') == b.trim().trim_end_matches('/')
+}
+
+fn note_env_token_precedence() {
+    if config::env_var("GITLAB_TOKEN").is_some() {
+        eprintln!(
+            "Note: GITLAB_TOKEN is set in this shell and takes precedence over the pass \
+             entry for servers started from it."
+        );
+    }
 }
 
 /// Delete the stored token. The config's `pass_entry` is left in place, so
@@ -129,9 +181,12 @@ pub fn logout(config_path: Option<&Path>, args: &EntryArgs) -> anyhow::Result<()
 
 /// Get the token's passphrase into gpg-agent's cache, prompting if needed.
 pub async fn unlock(config_path: Option<&Path>) -> anyhow::Result<()> {
-    let TokenSource::Pass(entry) = Config::load(config_path)?.resolve_token()? else {
-        bail!("the token is not stored in pass, so there is nothing to unlock");
+    // The configured entry, not `resolve_token()`: GITLAB_TOKEN in this shell
+    // says nothing about the (GUI-launched) server asking to be unlocked.
+    let Some(entry) = Config::load(config_path)?.configured_pass_entry()? else {
+        bail!("no \"pass_entry\" in the config file, so there is nothing to unlock");
     };
+    note_env_token_precedence();
     match entry.read_token().await {
         Ok(_) => {
             eprintln!("Already unlocked.");
@@ -159,17 +214,34 @@ pub async fn status(config_path: Option<&Path>) -> anyhow::Result<()> {
         Ok(url) => eprintln!("GitLab URL:   {url}"),
         Err(e) => eprintln!("GitLab URL:   error: {e}"),
     }
-    let source = match cfg.resolve_token() {
-        Ok(s) => s,
+    let source = cfg.resolve_token();
+    match &source {
+        Ok(s) => eprintln!("Token source: {}", s.describe()),
+        Err(e) => eprintln!("Token source: error: {e}"),
+    }
+    // Report the configured entry even when GITLAB_TOKEN shadows it here: a
+    // server started without that variable still uses it.
+    let entry = match cfg.configured_pass_entry() {
+        Ok(Some(entry)) => entry,
+        Ok(None) => return Ok(()),
         Err(e) => {
-            eprintln!("Token source: error: {e}");
+            eprintln!("Pass entry:   error: {e}");
             return Ok(());
         }
     };
-    eprintln!("Token source: {}", source.describe());
-    let TokenSource::Pass(entry) = source else {
-        return Ok(());
-    };
+    if !matches!(source, Ok(TokenSource::Pass(_))) {
+        eprintln!(
+            "Pass entry:   {} ({})",
+            entry.name(),
+            entry.path().display()
+        );
+    }
+    if matches!(source, Ok(TokenSource::Env(_))) {
+        eprintln!(
+            "Note:         GITLAB_TOKEN in this shell takes precedence; servers started \
+             without it use the pass entry."
+        );
+    }
     if !entry.path().exists() {
         eprintln!("Entry:        missing (run `gitlab-mcp login`)");
         return Ok(());
@@ -197,11 +269,11 @@ pub async fn status(config_path: Option<&Path>) -> anyhow::Result<()> {
 async fn agent_state(store: &crate::credentials::PassStore, recipients: &[String]) -> String {
     use crate::credentials::agent;
     let result = async {
-        let grips = agent::encryption_keygrips(store.gpg(), recipients).await?;
+        let grips = agent::encryption_keygrips(store, recipients).await?;
         if grips.is_empty() {
             return Ok(agent::AgentState::NoSecretKey);
         }
-        let socket = agent::agent_socket(&store.gpgconf()).await?;
+        let socket = agent::agent_socket(store).await?;
         Ok::<_, String>(
             agent::query_socket(&socket, &grips)
                 .await?
@@ -252,7 +324,39 @@ fn read_token_input(from_stdin: bool) -> anyhow::Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::default_entry_name;
+    use super::{choose_entry_name, default_entry_name};
+    use crate::config::Config;
+
+    fn cfg(json: &str) -> (tempfile::TempDir, Config) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("c.json");
+        std::fs::write(&path, json).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        let cfg = Config::load(Some(&path)).unwrap();
+        (dir, cfg)
+    }
+
+    #[test]
+    fn existing_entry_is_reused_only_for_the_same_instance() {
+        let (_d, c) = cfg(r#"{"url":"https://gitlab.com/","pass_entry":"mine/gl"}"#);
+        assert_eq!(
+            choose_entry_name(None, &c, "https://gitlab.com").unwrap(),
+            "mine/gl"
+        );
+        // A different host must not overwrite gitlab.com's token.
+        assert_eq!(
+            choose_entry_name(None, &c, "https://gitlab.work.com").unwrap(),
+            "gitlab-mcp/gitlab.work.com"
+        );
+        assert_eq!(
+            choose_entry_name(Some("x/y".into()), &c, "https://gitlab.work.com").unwrap(),
+            "x/y"
+        );
+    }
 
     #[test]
     fn default_entry_name_uses_host_and_port() {

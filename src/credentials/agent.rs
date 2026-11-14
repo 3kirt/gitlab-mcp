@@ -14,7 +14,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
-use tokio::process::Command;
+
+use super::PassStore;
 
 const AGENT_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -75,10 +76,14 @@ pub fn summarize(infos: &[Option<KeyInfo>]) -> AgentState {
 
 /// Keygrips of the encryption-capable (sub)keys for `recipients`, from
 /// `gpg --list-secret-keys --with-colons --with-keygrip`.
-pub async fn encryption_keygrips(gpg: &Path, recipients: &[String]) -> Result<Vec<String>, String> {
+pub async fn encryption_keygrips(
+    store: &PassStore,
+    recipients: &[String],
+) -> Result<Vec<String>, String> {
     let output = tokio::time::timeout(
         AGENT_TIMEOUT,
-        Command::new(gpg)
+        store
+            .gpg_command()
             .args([
                 "--batch",
                 "--no-tty",
@@ -93,7 +98,7 @@ pub async fn encryption_keygrips(gpg: &Path, recipients: &[String]) -> Result<Ve
     )
     .await
     .map_err(|_| "timed out listing secret keys".to_string())?
-    .map_err(|e| format!("running {}: {e}", gpg.display()))?;
+    .map_err(|e| format!("running gpg: {e}"))?;
     // A recipient with no secret key makes gpg exit non-zero while still
     // listing the others, so parse whatever came out rather than failing.
     Ok(parse_encryption_keygrips(&String::from_utf8_lossy(
@@ -126,19 +131,20 @@ fn parse_encryption_keygrips(colons: &str) -> Vec<String> {
 }
 
 /// The agent's socket path, from `gpgconf --list-dirs agent-socket`.
-pub async fn agent_socket(gpgconf: &Path) -> Result<PathBuf, String> {
+pub async fn agent_socket(store: &PassStore) -> Result<PathBuf, String> {
     let output = tokio::time::timeout(
         AGENT_TIMEOUT,
-        Command::new(gpgconf)
+        store
+            .gpgconf_command()
             .args(["--list-dirs", "agent-socket"])
             .kill_on_drop(true)
             .output(),
     )
     .await
     .map_err(|_| "timed out running gpgconf".to_string())?
-    .map_err(|e| format!("running {}: {e}", gpgconf.display()))?;
+    .map_err(|e| format!("running gpgconf: {e}"))?;
     if !output.status.success() {
-        return Err(format!("{} --list-dirs failed", gpgconf.display()));
+        return Err("gpgconf --list-dirs failed".into());
     }
     let raw = String::from_utf8_lossy(&output.stdout);
     Ok(PathBuf::from(percent_unescape(raw.trim())))

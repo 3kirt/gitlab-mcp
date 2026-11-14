@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, anyhow, bail};
 use serde::Deserialize;
 
-use crate::credentials::{PassEntry, PassStore};
+use crate::credentials::{PassEntry, PassStore, StoreLocation};
 
 #[derive(Default, Deserialize)]
 struct RawConfig {
@@ -13,6 +13,10 @@ struct RawConfig {
     pass_entry: Option<String>,
     /// Path to the gpg binary (default: `gpg` from PATH).
     gpg: Option<String>,
+    /// Password-store root (default: `$PASSWORD_STORE_DIR`, else `~/.password-store`).
+    password_store_dir: Option<String>,
+    /// GnuPG home (default: `$GNUPGHOME`, else gpg's own default).
+    gnupg_home: Option<String>,
 }
 
 #[derive(Clone)]
@@ -21,6 +25,8 @@ pub struct Config {
     file_token: Option<String>,
     file_pass_entry: Option<String>,
     file_gpg: Option<String>,
+    file_password_store_dir: Option<String>,
+    file_gnupg_home: Option<String>,
 }
 
 /// Hand-written so a stray `?config` in a log line can never print the token.
@@ -34,6 +40,8 @@ impl std::fmt::Debug for Config {
             )
             .field("file_pass_entry", &self.file_pass_entry)
             .field("file_gpg", &self.file_gpg)
+            .field("file_password_store_dir", &self.file_password_store_dir)
+            .field("file_gnupg_home", &self.file_gnupg_home)
             .finish()
     }
 }
@@ -106,13 +114,19 @@ impl Config {
     }
 
     fn from_raw(raw: RawConfig) -> Self {
-        let non_blank = |v: Option<String>| v.filter(|s| !s.trim().is_empty());
         Self {
             file_url: raw.url,
             file_token: raw.token,
             file_pass_entry: non_blank(raw.pass_entry),
             file_gpg: non_blank(raw.gpg),
+            file_password_store_dir: non_blank(raw.password_store_dir),
+            file_gnupg_home: non_blank(raw.gnupg_home),
         }
+    }
+
+    /// The config file's own `url` (ignoring `GITLAB_URL`).
+    pub fn file_url(&self) -> Option<&str> {
+        self.file_url.as_deref().filter(|u| !u.trim().is_empty())
     }
 
     /// Resolve the GitLab base URL: GITLAB_URL env var, then config file, then error.
@@ -129,8 +143,7 @@ impl Config {
     /// plaintext `token` or its `pass_entry` (setting both is an error, since
     /// either silently shadowing the other would be surprising), then error.
     pub fn resolve_token(&self) -> anyhow::Result<TokenSource> {
-        let non_blank = |v: Option<String>| v.filter(|s| !s.trim().is_empty());
-        if let Some(t) = non_blank(std::env::var("GITLAB_TOKEN").ok()) {
+        if let Some(t) = env_var("GITLAB_TOKEN") {
             return Ok(TokenSource::Env(t));
         }
         match (non_blank(self.file_token.clone()), &self.file_pass_entry) {
@@ -151,9 +164,25 @@ impl Config {
         self.file_pass_entry.as_deref()
     }
 
-    /// The password store, honoring the config's `gpg` override.
+    /// The config's `pass_entry` as an entry, regardless of `GITLAB_TOKEN`.
+    /// `unlock`/`status` use this: a shell exporting GITLAB_TOKEN (common for
+    /// `glab` users) must not hide the entry a GUI-launched server, started
+    /// without that variable, is trying to decrypt.
+    pub fn configured_pass_entry(&self) -> anyhow::Result<Option<PassEntry>> {
+        self.file_pass_entry
+            .as_deref()
+            .map(|name| Ok(self.pass_store()?.entry(name)?))
+            .transpose()
+    }
+
+    /// The password store, honoring the config's `gpg`, `password_store_dir`
+    /// and `gnupg_home` over the process environment.
     pub fn pass_store(&self) -> anyhow::Result<PassStore> {
-        PassStore::from_env(self.file_gpg.as_deref())
+        PassStore::resolve(&StoreLocation {
+            gpg: self.file_gpg.as_deref(),
+            store_dir: self.file_password_store_dir.as_deref(),
+            gnupg_home: self.file_gnupg_home.as_deref(),
+        })
     }
 }
 
@@ -215,8 +244,17 @@ pub fn update_file(
 /// user hasn't exported the variable, and failing here with the "not set"
 /// error beats starting up and sending empty auth headers.
 fn first_non_empty(env_val: Option<String>, file_val: Option<String>) -> Option<String> {
-    let non_blank = |v: Option<String>| v.filter(|s| !s.trim().is_empty());
     non_blank(env_val).or_else(|| non_blank(file_val))
+}
+
+/// Blank-means-unset, the one rule for every env var and config value.
+fn non_blank(v: Option<String>) -> Option<String> {
+    v.filter(|s| !s.trim().is_empty())
+}
+
+/// An environment variable, treating set-but-blank as unset.
+pub fn env_var(name: &str) -> Option<String> {
+    non_blank(std::env::var(name).ok())
 }
 
 /// The config file path: `path` if given, else `~/.gitlab_mcp.json`.
@@ -288,6 +326,8 @@ mod tests {
             file_token: Some("glpat-secret".into()),
             file_pass_entry: None,
             file_gpg: None,
+            file_password_store_dir: None,
+            file_gnupg_home: None,
         };
         let shown = format!("{cfg:?}");
         assert!(!shown.contains("glpat-secret"), "{shown}");
@@ -353,14 +393,14 @@ mod tests {
             url: None,
             token: token.map(Into::into),
             pass_entry: pass_entry.map(Into::into),
-            gpg: None,
+            ..RawConfig::default()
         })
     }
 
     // These resolve without GITLAB_TOKEN set; skip if the developer's shell
     // exports it (env vars are process-global, so tests can't unset it).
     fn gitlab_token_env_set() -> bool {
-        std::env::var("GITLAB_TOKEN").is_ok_and(|v| !v.trim().is_empty())
+        super::env_var("GITLAB_TOKEN").is_some()
     }
 
     #[test]

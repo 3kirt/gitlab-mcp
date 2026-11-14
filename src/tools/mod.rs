@@ -1013,20 +1013,28 @@ impl ServerHandler for GitlabMcpServer {
                 remaining,
             ));
         }
-        let items = match resources::list_recent_projects(client).await {
+        match resources::list_recent_projects(client).await {
             Ok(items) => {
                 *cache = Some((std::time::Instant::now(), items.clone()));
-                items
+                Ok(with_recent_projects_cache_hint(
+                    ListResourcesResult::with_all_items(items),
+                    RECENT_PROJECTS_TTL,
+                ))
             }
+            // A locked GPG key is a normal, user-fixable state with a pass
+            // token: surface the "run `gitlab-mcp unlock`" message instead of
+            // an unexplained empty list.
+            Err(e @ GitlabError::Credentials(_)) => {
+                Err(McpError::internal_error(e.to_tool_message(), None))
+            }
+            // Anything else degrades to an empty list (a broken listing must
+            // not make the server look down) — with no cache hint, so the
+            // client retries rather than caching the failure.
             Err(e) => {
                 tracing::warn!("listing recent projects: {}", e.to_tool_message());
-                Vec::new()
+                Ok(ListResourcesResult::with_all_items(Vec::new()))
             }
-        };
-        Ok(with_recent_projects_cache_hint(
-            ListResourcesResult::with_all_items(items),
-            RECENT_PROJECTS_TTL,
-        ))
+        }
     }
 
     async fn list_resource_templates(

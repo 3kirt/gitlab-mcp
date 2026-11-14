@@ -66,28 +66,85 @@ pub enum PassError {
 pub struct PassStore {
     root: PathBuf,
     gpg: PathBuf,
+    /// GnuPG home passed as `--homedir` to gpg/gpgconf; `None` leaves gpg's
+    /// own lookup (`$GNUPGHOME`, else `~/.gnupg`).
+    homedir: Option<PathBuf>,
     timeout: Duration,
 }
 
+/// Where the store and keyring live, as configured. Each `None` falls back
+/// to the process environment, then the default. The config values exist
+/// because MCP clients launched from a GUI (e.g. from the macOS Dock) don't
+/// inherit shell-only `PASSWORD_STORE_DIR` / `GNUPGHOME` exports; `login`
+/// records what it used so the server reads the same store and keyring.
+#[derive(Debug, Default, Clone)]
+pub struct StoreLocation<'a> {
+    /// gpg binary (default: `gpg` from `PATH`, which a minimal client
+    /// `PATH` may lack, e.g. `/opt/homebrew/bin`).
+    pub gpg: Option<&'a str>,
+    /// Store root (else `$PASSWORD_STORE_DIR`, else `~/.password-store`,
+    /// the same lookup `pass` does).
+    pub store_dir: Option<&'a str>,
+    /// GnuPG home (else `$GNUPGHOME`, else gpg's default `~/.gnupg`).
+    pub gnupg_home: Option<&'a str>,
+}
+
 impl PassStore {
-    /// The store at `$PASSWORD_STORE_DIR` (when set and non-empty), else
-    /// `~/.password-store` — the same lookup `pass` does. `gpg` overrides the
-    /// gpg binary (default: `gpg` from `PATH`), for MCP clients that spawn the
-    /// server with a minimal `PATH` that lacks e.g. `/opt/homebrew/bin`.
-    pub fn from_env(gpg: Option<&str>) -> anyhow::Result<Self> {
-        let root = match std::env::var("PASSWORD_STORE_DIR") {
-            Ok(dir) if !dir.trim().is_empty() => PathBuf::from(dir),
-            _ => crate::config::home_dir()?.join(".password-store"),
+    pub fn resolve(loc: &StoreLocation<'_>) -> anyhow::Result<Self> {
+        let root = match loc.store_dir {
+            Some(dir) => expand_tilde(dir)?,
+            None => match crate::config::env_var("PASSWORD_STORE_DIR") {
+                Some(dir) => PathBuf::from(dir),
+                None => crate::config::home_dir()?.join(".password-store"),
+            },
         };
-        Ok(Self::new(root, gpg.unwrap_or("gpg")))
+        let homedir = match loc.gnupg_home {
+            Some(dir) => Some(expand_tilde(dir)?),
+            None => crate::config::env_var("GNUPGHOME").map(PathBuf::from),
+        };
+        let gpg = loc
+            .gpg
+            .map_or_else(|| Ok(PathBuf::from("gpg")), expand_tilde)?;
+        Ok(Self::new(root, gpg).with_homedir(homedir))
     }
 
     pub fn new(root: impl Into<PathBuf>, gpg: impl Into<PathBuf>) -> Self {
         Self {
             root: root.into(),
             gpg: gpg.into(),
+            homedir: None,
             timeout: GPG_TIMEOUT,
         }
+    }
+
+    #[must_use]
+    pub fn with_homedir(mut self, homedir: Option<PathBuf>) -> Self {
+        self.homedir = homedir;
+        self
+    }
+
+    /// The GnuPG home this store pins gpg to, if any.
+    pub fn homedir(&self) -> Option<&Path> {
+        self.homedir.as_deref()
+    }
+
+    /// A `gpg` command with `--homedir` applied.
+    pub fn gpg_command(&self) -> Command {
+        let mut cmd = Command::new(&self.gpg);
+        if let Some(home) = &self.homedir {
+            cmd.arg("--homedir").arg(home);
+        }
+        cmd
+    }
+
+    /// A `gpgconf` command with `--homedir` applied (so the agent socket it
+    /// reports belongs to the same keyring).
+    pub fn gpgconf_command(&self) -> Command {
+        let mut cmd = Command::new(self.gpgconf());
+        if let Some(home) = &self.homedir {
+            cmd.arg("--homedir").arg(home);
+        }
+        cmd
     }
 
     #[cfg(test)]
@@ -100,13 +157,9 @@ impl PassStore {
         &self.root
     }
 
-    pub fn gpg(&self) -> &Path {
-        &self.gpg
-    }
-
     /// `gpgconf` from the same directory as an explicitly located `gpg`
     /// (so a `gpg` override covers both), else `gpgconf` from `PATH`.
-    pub fn gpgconf(&self) -> PathBuf {
+    fn gpgconf(&self) -> PathBuf {
         match self.gpg.parent() {
             Some(dir) if !dir.as_os_str().is_empty() => dir.join("gpgconf"),
             _ => PathBuf::from("gpgconf"),
@@ -181,7 +234,9 @@ impl PassEntry {
             });
         }
 
-        let child = Command::new(&self.store.gpg)
+        let child = self
+            .store
+            .gpg_command()
             .args([
                 "--batch",
                 "--quiet",
@@ -247,10 +302,12 @@ impl PassEntry {
             if id_file.is_file() {
                 let contents = std::fs::read_to_string(&id_file)
                     .map_err(|e| io_err("reading", &id_file, &e))?;
+                // Like pass 1.7.3+: everything from `#` on is a comment, so
+                // `KEYID # work key` names KEYID.
                 let ids: Vec<String> = contents
                     .lines()
-                    .map(str::trim)
-                    .filter(|l| !l.is_empty() && !l.starts_with('#'))
+                    .map(|l| l.split('#').next().unwrap_or("").trim())
+                    .filter(|l| !l.is_empty())
                     .map(str::to_string)
                     .collect();
                 if ids.is_empty() {
@@ -282,7 +339,7 @@ impl PassEntry {
             .map_or_else(|| "entry".into(), |n| n.to_string_lossy().into_owned());
         let tmp = dir.join(format!(".{file_name}.tmp{}", std::process::id()));
 
-        let mut cmd = Command::new(&self.store.gpg);
+        let mut cmd = self.store.gpg_command();
         cmd.args(["--batch", "--quiet", "--yes", "--no-tty", "--encrypt"]);
         for r in recipients {
             cmd.arg("--recipient").arg(r);
@@ -348,7 +405,9 @@ impl PassEntry {
     /// passphrase so the server's non-interactive reads succeed.
     pub async fn unlock_interactive(&self) -> Result<(), PassError> {
         let path = self.path();
-        let status = Command::new(&self.store.gpg)
+        let status = self
+            .store
+            .gpg_command()
             .args(["--quiet", "--decrypt", "--"])
             .arg(&path)
             .stdout(Stdio::null())
@@ -364,6 +423,15 @@ impl PassEntry {
                 path.display()
             )))
         }
+    }
+}
+
+/// Expand a leading `~/` (config values are often hand-written that way).
+fn expand_tilde(path: &str) -> anyhow::Result<PathBuf> {
+    match path.strip_prefix("~/") {
+        Some(rest) => Ok(crate::config::home_dir()?.join(rest)),
+        None if path == "~" => crate::config::home_dir(),
+        None => Ok(PathBuf::from(path)),
     }
 }
 
@@ -682,7 +750,11 @@ mod tests {
         assert_eq!(entry.recipients().unwrap().unwrap(), vec!["ROOT"]);
 
         std::fs::create_dir_all(dir.path().join("a")).unwrap();
-        std::fs::write(dir.path().join("a/.gpg-id"), "# comment\nK1\n\nK2\n").unwrap();
+        std::fs::write(
+            dir.path().join("a/.gpg-id"),
+            "# comment\nK1 # work key\n\nK2\n   # indented comment\n",
+        )
+        .unwrap();
         assert_eq!(entry.recipients().unwrap().unwrap(), vec!["K1", "K2"]);
     }
 
@@ -736,6 +808,46 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let entry = PassStore::new(dir.path(), "gpg").entry("t").unwrap();
         assert!(matches!(entry.remove(), Err(PassError::NotFound { .. })));
+    }
+
+    #[tokio::test]
+    async fn homedir_is_passed_to_gpg() {
+        let dir = tempfile::tempdir().unwrap();
+        let store =
+            PassStore::new(dir.path(), fake_gpg()).with_homedir(Some(dir.path().join("gnupg")));
+        let entry = store.entry("t").unwrap();
+        entry.write_token("glpat-x", &["K1".into()]).await.unwrap();
+        let args_file = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| p.to_string_lossy().ends_with(".args"))
+            .unwrap();
+        let args = std::fs::read_to_string(args_file).unwrap();
+        let want = format!("--homedir {}", dir.path().join("gnupg").display());
+        assert!(args.contains(&want), "{args}");
+    }
+
+    #[test]
+    fn configured_location_beats_environment() {
+        let store = PassStore::resolve(&StoreLocation {
+            gpg: Some("/opt/gpg/bin/gpg"),
+            store_dir: Some("/stores/pass"),
+            gnupg_home: Some("/keys/gnupg"),
+        })
+        .unwrap();
+        assert_eq!(store.root(), Path::new("/stores/pass"));
+        assert_eq!(store.homedir(), Some(Path::new("/keys/gnupg")));
+        assert_eq!(store.gpgconf(), PathBuf::from("/opt/gpg/bin/gpgconf"));
+    }
+
+    #[test]
+    fn tilde_expands_to_home() {
+        let home = crate::config::home_dir().unwrap();
+        assert_eq!(
+            expand_tilde("~/.password-store").unwrap(),
+            home.join(".password-store")
+        );
+        assert_eq!(expand_tilde("/abs").unwrap(), PathBuf::from("/abs"));
     }
 
     #[test]

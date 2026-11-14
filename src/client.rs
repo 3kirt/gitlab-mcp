@@ -111,33 +111,58 @@ enum Auth {
 struct PassToken {
     entry: PassEntry,
     // Held across the decrypt so concurrent requests run gpg once, not N times.
-    cached: tokio::sync::Mutex<Option<header::HeaderValue>>,
+    state: tokio::sync::Mutex<TokenState>,
+}
+
+#[derive(Default)]
+struct TokenState {
+    value: Option<header::HeaderValue>,
+    /// GitLab rejected `value` (401): re-read the entry before the next
+    /// request, in case the token was rotated with `gitlab-mcp login`.
+    stale: bool,
 }
 
 impl PassToken {
     async fn header(&self) -> Result<header::HeaderValue, GitlabError> {
-        let mut cached = self.cached.lock().await;
-        if let Some(value) = cached.as_ref() {
+        let mut state = self.state.lock().await;
+        if let Some(value) = state.value.as_ref()
+            && !state.stale
+        {
             return Ok(value.clone());
         }
-        let token = self
-            .entry
-            .read_token()
-            .await
-            .map_err(|e| GitlabError::Credentials(e.to_string()))?;
-        let value = token_header(&token).map_err(|e| {
-            GitlabError::Credentials(format!("{e} (from pass entry {})", self.entry.name()))
-        })?;
-        debug!(target: LOG_TARGET, entry = self.entry.name(), "decrypted GitLab token from pass");
-        *cached = Some(value.clone());
-        drop(cached);
-        Ok(value)
+        let read = self.entry.read_token().await;
+        let result = match (read, state.value.as_ref()) {
+            (Ok(token), _) => {
+                let value = token_header(&token).map_err(|e| {
+                    GitlabError::Credentials(format!("{e} (from pass entry {})", self.entry.name()))
+                })?;
+                debug!(target: LOG_TARGET, entry = self.entry.name(), "decrypted GitLab token from pass");
+                state.value = Some(value.clone());
+                state.stale = false;
+                Ok(value)
+            }
+            // The re-read after a 401 failed (typically: gpg-agent's cache has
+            // expired since the first decrypt). Keep sending the rejected
+            // token so the caller sees GitLab's real auth error rather than a
+            // misleading "locked"; the re-read is retried on the next request.
+            (Err(e), Some(old)) => {
+                debug!(target: LOG_TARGET, error = %e, "re-reading rejected token failed; reusing it");
+                Ok(old.clone())
+            }
+            (Err(e), None) => Err(GitlabError::Credentials(e.to_string())),
+        };
+        drop(state);
+        result
     }
 
-    /// Forget the token (after a 401) so the next request re-reads the entry,
-    /// picking up a token rotated with `gitlab-mcp login`.
-    async fn invalidate(&self) {
-        *self.cached.lock().await = None;
+    /// GitLab answered 401 to a request sent with `used`. Mark the token for
+    /// re-reading — but only if it's still the current one, so a 401 for an
+    /// already-replaced token can't discard its fresh successor.
+    async fn mark_rejected(&self, used: &header::HeaderValue) {
+        let mut state = self.state.lock().await;
+        if state.value.as_ref() == Some(used) {
+            state.stale = true;
+        }
     }
 }
 
@@ -182,7 +207,7 @@ impl GitlabClient {
             base_url: base_url.into(),
             auth: Auth::Pass(Arc::new(PassToken {
                 entry,
-                cached: tokio::sync::Mutex::new(None),
+                state: tokio::sync::Mutex::new(TokenState::default()),
             })),
         })
     }
@@ -317,9 +342,12 @@ impl GitlabClient {
         &self,
         builder: reqwest::RequestBuilder,
     ) -> Result<reqwest::Response, GitlabError> {
-        let builder = match &self.auth {
-            Auth::Static => builder,
-            Auth::Pass(token) => builder.header("PRIVATE-TOKEN", token.header().await?),
+        let (builder, sent_token) = match &self.auth {
+            Auth::Static => (builder, None),
+            Auth::Pass(token) => {
+                let value = token.header().await?;
+                (builder.header("PRIVATE-TOKEN", value.clone()), Some(value))
+            }
         };
         let mut attempt: u32 = 0;
         loop {
@@ -347,9 +375,9 @@ impl GitlabClient {
                 continue;
             }
             if resp.status() == StatusCode::UNAUTHORIZED
-                && let Auth::Pass(token) = &self.auth
+                && let (Auth::Pass(token), Some(sent)) = (&self.auth, &sent_token)
             {
-                token.invalidate().await;
+                token.mark_rejected(sent).await;
             }
             return Ok(resp);
         }
@@ -1066,6 +1094,28 @@ mod tests {
             // Rotated in the store (e.g. via `gitlab-mcp login`) — picked up.
             std::fs::write(&file, ok_snippet("glpat-rotated")).unwrap();
             client.get("/api/v4/user").await.unwrap();
+        }
+
+        #[tokio::test]
+        async fn rejected_token_with_locked_key_reports_the_real_401() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/api/v4/user"))
+                .and(header("PRIVATE-TOKEN", "glpat-revoked"))
+                .respond_with(ResponseTemplate::new(401))
+                .mount(&server)
+                .await;
+            let (_dir, file, client) = pass_client(&server);
+
+            std::fs::write(&file, ok_snippet("glpat-revoked")).unwrap();
+            assert!(client.get("/api/v4/user").await.is_err());
+            // gpg-agent's cache expires; the 401 must not turn into "locked".
+            std::fs::write(&file, LOCKED_SNIPPET).unwrap();
+            let err = client.get("/api/v4/user").await.unwrap_err();
+            assert!(
+                matches!(err, GitlabError::Api { status, .. } if status == StatusCode::UNAUTHORIZED),
+                "{err}"
+            );
         }
     }
 }

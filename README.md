@@ -125,6 +125,12 @@ How long an unlock lasts is up to gpg-agent (`default-cache-ttl` /
 |---|---|
 | `pass_entry` | Store entry holding the token (mutually exclusive with `token`) |
 | `gpg` | Full path to `gpg`, for MCP clients that launch servers with a minimal `PATH` (e.g. `/opt/homebrew/bin/gpg`); `gpgconf` is looked up next to it |
+| `password_store_dir` | Store root; overrides `$PASSWORD_STORE_DIR` (written by `login`) |
+| `gnupg_home` | GnuPG home passed to gpg as `--homedir`; overrides `$GNUPGHOME` (written by `login` when one is set) |
+
+`login` records the store and keyring it used. That way a server started by a
+GUI client, which doesn't see variables exported only in your shell, reads the
+same ones. `~/` is expanded in these values.
 
 `GITLAB_TOKEN` still takes precedence over both. Plugin installs keep the
 binary under `~/.cache/gitlab-mcp/v<version>/gitlab-mcp`; run `login`/`unlock`

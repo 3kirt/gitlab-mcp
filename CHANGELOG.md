@@ -22,8 +22,10 @@ All notable changes to gitlab-mcp are documented here.
   removes any plaintext token. `status` reports the token source and whether
   the key is unlocked, by querying gpg-agent over its Assuan socket, without
   decrypting anything.
-- `"gpg"` config key: full path to gpg for MCP clients that launch servers with
-  a minimal `PATH`.
+- `"gpg"`, `"password_store_dir"` and `"gnupg_home"` config keys: the gpg
+  binary, store root and keyring, for MCP clients that launch servers with a
+  minimal `PATH` or without shell-only `PASSWORD_STORE_DIR` / `GNUPGHOME`
+  exports. `login` records the store and keyring it used.
 
 ### Changed
 - A config file that sets both `"token"` and `"pass_entry"` is rejected.
