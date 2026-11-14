@@ -606,6 +606,9 @@ exit 2
 ";
 }
 
+#[cfg(all(test, unix))]
+mod real_gpg_tests;
+
 #[cfg(test)]
 mod tests {
     use super::test_support::{LOCKED_SNIPPET, fake_gpg, ok_snippet};

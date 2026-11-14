@@ -1206,7 +1206,8 @@ mod tests {
         // `tool_router()` sums the per-domain sub-routers by hand, and the
         // merge silently overwrites on duplicate tool names — so this exact
         // count catches both a forgotten `+ Self::tool_router_<domain>()`
-        // and a name collision. Update it when adding or removing tools.
+        // and a name collision. Update it when adding or removing tools —
+        // together with EXPECTED_TOOLS in scripts/smoke.py.
         let tools = GitlabMcpServer::tool_router().list_all();
         assert_eq!(tools.len(), 191);
     }

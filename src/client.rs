@@ -180,6 +180,11 @@ fn token_header(token: &str) -> anyhow::Result<header::HeaderValue> {
 }
 
 fn http_client(headers: header::HeaderMap) -> anyhow::Result<Client> {
+    // reqwest is built with `rustls-no-provider`, so rustls needs a
+    // process-wide crypto provider before any client is built. Installing
+    // fails only when one is already installed (a second client, or tests),
+    // which is fine.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     Ok(Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
         .timeout(REQUEST_TIMEOUT)

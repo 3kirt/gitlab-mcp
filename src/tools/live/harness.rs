@@ -112,14 +112,28 @@ fn parse_env_file_handles_comments_export_and_quotes() {
     assert_eq!(vars["GITLAB_TEST_PROJECT"], "grp/proj");
 }
 
-/// Bind a `LiveEnv` or return early (skipping) when credentials are absent.
-/// Defined here and re-exported so every area module can `use` it; the body
-/// references `live_env` by absolute path so callers need not import it.
+/// Whether a missing-credentials skip must fail instead (`LIVE_REQUIRED=1`,
+/// set by the scheduled CI live job and the release process). Without it a
+/// credential-less run "passes" while verifying nothing. Intentional
+/// per-test skips (license 403, CI identity verification) are unaffected.
+pub(super) fn live_required() -> bool {
+    std::env::var("LIVE_REQUIRED").is_ok_and(|v| v == "1")
+}
+
+/// Bind a `LiveEnv` or return early (skipping) when credentials are absent —
+/// or panic under `LIVE_REQUIRED=1`. Defined here and re-exported so every
+/// area module can `use` it; the body references the harness by absolute
+/// path so callers need not import it.
 macro_rules! skip_unless_live {
     () => {
         match $crate::tools::live::harness::live_env() {
             Some(env) => env,
             None => {
+                assert!(
+                    !$crate::tools::live::harness::live_required(),
+                    "LIVE_REQUIRED=1 but GITLAB_URL + GITLAB_TOKEN are not set \
+                     (environment or .env)"
+                );
                 eprintln!(
                     "SKIP: set GITLAB_URL + GITLAB_TOKEN (environment or .env) to run live tests"
                 );

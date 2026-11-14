@@ -1,0 +1,39 @@
+# cargo-deny policy (`make deny`), shared with netbox-mcp and proxmox-mcp.
+# Replaces cargo-audit: advisories plus banned crates, sources, and licenses.
+
+[graph]
+all-features = true
+
+[advisories]
+# Vulnerabilities always fail; unmaintained/unsound notices are reported but
+# only fail for crates we depend on directly (cargo-deny's "workspace" scope).
+unmaintained = "workspace"
+yanked = "deny"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+# aws-lc carries OpenSSL-style license terms that are GPL-incompatible; TLS
+# uses rustls's ring provider instead (see Cargo.toml).
+deny = [
+    { crate = "aws-lc-sys", reason = "GPL-incompatible license; use rustls's ring provider" },
+    { crate = "aws-lc-rs", reason = "pulls in aws-lc-sys; use rustls's ring provider" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+
+[licenses]
+# Only GPL-3.0-compatible licenses that actually occur in the graph. Add a new
+# one only after checking its GPL-3.0 compatibility — don't just append.
+allow = [
+    "GPL-3.0-only",        # this crate
+    "MIT",
+    "Apache-2.0",
+    "ISC",
+    "BSD-3-Clause",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0", # webpki-roots' root-certificate data
+]
+confidence-threshold = 0.9

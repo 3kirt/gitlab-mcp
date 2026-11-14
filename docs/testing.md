@@ -218,6 +218,9 @@ for `~/.gitlab_mcp.json`. Only the live tests read this file.
   and rate-limiting predictable.)
 - The credentials must belong to an account with write access to the test
   project — tests create and delete real issues there.
+- Without credentials every live test prints `SKIP` and *passes*. Set
+  `LIVE_REQUIRED=1` (the release process and the weekly Scheduled workflow
+  do) to make that a failure instead.
 
 ## Coverage
 
@@ -242,12 +245,33 @@ against gitlab.com the rejection path is what's verified). Not yet automated: pi
 gitlab.com account, so epic operations return `403`/`404` there; epics can only be
 exercised live once a Premium test instance is available.
 
+## Real GnuPG and artifact smoke tests
+
+Two more layers sit outside `cargo test`'s default run:
+
+- **Real GnuPG** (`src/credentials/real_gpg_tests.rs`, `make test-real-gpg`):
+  `#[ignore]`d tests that generate throwaway keys with the machine's real gpg
+  and check success (`DECRYPTION_OKAY`), a locked key (code 85, then
+  success once the agent cache is primed), and a missing secret key (code
+  17). The rest of the suite uses the fake gpg, which only replays status
+  lines captured from GnuPG 2.4, so this layer catches drift in what newer
+  gpg versions emit. CI runs it on ubuntu on every push; the weekly
+  Scheduled run covers ubuntu + macOS.
+- **Artifact smoke** (`scripts/smoke.py`, `make smoke BIN=…`): runs a built
+  binary with dummy credentials and no network, checking `--version` and an
+  MCP initialize + tools/list round-trip with the exact tool count. `make
+  check` runs it on the local release build, and the release workflow runs it
+  on each of the four published binaries before upload.
+
 ## Command reference
 
 ```sh
-cargo test --all --locked                  # unit tests (live tests excluded)
-cargo test --features live-tests …         # + live tests (needs credentials; see above)
-cargo clippy --features live-tests --tests --locked -- -D warnings
+make test                 # unit + launch-path tests (live tests excluded)
+make test-real-gpg        # real-GnuPG tests (needs gpg on PATH)
+make live-test            # live suite (needs credentials; see above)
+make lint                 # secrets scan + clippy (both feature sets) + fmt
+make smoke                # execute target/release/gitlab-mcp
+make check                # the full pre-release gate
 ```
 
 ## Adding a new domain to the live layer
