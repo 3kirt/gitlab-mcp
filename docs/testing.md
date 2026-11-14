@@ -6,6 +6,7 @@ replaces the other; together they cover the whole surface.
 | Layer | Lives in | Hits network? | Verifies |
 |---|---|---|---|
 | **Unit tests** | `#[cfg(test)] mod tests` in each `src/**.rs` | No (wiremock or pure logic) | Our code against *our* assumptions — request construction, response transforms, slimming, pagination, config parsing |
+| **Launch-path tests** | `tests/launch_path.rs` | Localhost only (wiremock) | The *built binary* as an MCP client launches it — process environment, config file, stdio transport |
 | **Live integration tests** | `src/tools/live/` (feature-gated) | Yes — a real GitLab instance | Fidelity to the *actual* GitLab API — param names, body shapes, response shapes, tier/licensing behavior |
 
 ## Why two layers
@@ -27,7 +28,7 @@ would have happily accepted `"blocks"` — because the mock was our assumption.
 
 ## Layer 1 — Unit tests
 
-191 tests today, run by default with `cargo test`. Two flavors:
+Run by default with `cargo test`. Two flavors:
 
 **Pure-logic tests** — no HTTP. Cover the transform/builder helpers directly:
 `src/tools/slim.rs` (field stripping, user collapsing), `src/config.rs` (config
@@ -74,6 +75,34 @@ What these reliably cover:
 To add unit coverage for a new domain, copy the `mock_client` helper and the
 `Mock::given(...).and(path(...)).respond_with(...)` shape from any existing
 module's `mod tests`.
+
+## Layer 1b — Launch-path tests
+
+Unit tests call domain functions directly, so they never see what an MCP client
+puts in the server's *process environment*. v0.39.0 shipped a bug that lived
+exactly there: for `"GITLAB_TOKEN": "${GITLAB_TOKEN}"` with the variable unset,
+Claude Code passes the placeholder text through literally. The server took it
+as a real token, so a configured `pass_entry` was never used and every call got
+a 401. Every unit test passed, and so did the live suite, which builds its own
+client from `.env`.
+
+`tests/launch_path.rs` spawns the built binary (`CARGO_BIN_EXE_gitlab-mcp`)
+with a pass-entry config, a fake `gpg`, and a wiremock GitLab, speaks MCP over
+its stdio (`initialize` → `tools/call`), and asserts the request that reaches
+GitLab carries the token decrypted from the pass entry. It runs once for each
+way a client can hand over `GITLAB_TOKEN`: unset, empty, and as a literal
+placeholder. The child's `HOME`, `PASSWORD_STORE_DIR` and `GNUPGHOME` are
+isolated so the developer's own setup can't leak in.
+
+A companion unit test, `shipped_mcp_configs_default_every_placeholder` in
+`src/config.rs`, parses `plugin/.mcp.json`, the repo's `.mcp.json`, and the
+README's MCP JSON examples, and fails if any `env` value uses `${VAR}` without a
+`:-` default (write `${VAR:-}`, which expands to empty when unset).
+
+**When to add a launch-path test:** whenever behavior depends on how the server
+is *started*: env vars, config-file discovery, argument parsing, or anything a
+client config sets. When you add a credential or config source, add its cases
+here.
 
 ## Layer 2 — Live integration tests
 

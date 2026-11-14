@@ -158,8 +158,10 @@ with must be v0.39.0 or later; an older one can't start without a token.
 passes it (for example via `--env GITLAB_TOKEN=…` in `claude mcp add`), the
 server uses that value and never touches the encrypted token. Pass only
 `GITLAB_URL`, or nothing, since the config file has the URL. A
-`"${GITLAB_TOKEN}"` placeholder is fine as long as the variable isn't
-exported, because an empty value counts as unset.
+`"${GITLAB_TOKEN:-}"` placeholder is fine as long as the variable isn't
+exported: it expands to an empty value, which counts as unset. (Without the
+`:-`, Claude Code passes the placeholder through literally when the variable
+is unset; gitlab-mcp v0.39.1+ ignores that too.)
 
 Run `gitlab-mcp status` to check which token source applies:
 
@@ -254,7 +256,7 @@ users just export `GITLAB_TOKEN` before starting Claude Code:
       "args": [],
       "env": {
         "GITLAB_URL": "${GITLAB_URL:-https://gitlab.com}",
-        "GITLAB_TOKEN": "${GITLAB_TOKEN}"
+        "GITLAB_TOKEN": "${GITLAB_TOKEN:-}"
       }
     }
   }

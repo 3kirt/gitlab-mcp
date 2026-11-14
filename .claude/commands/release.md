@@ -154,3 +154,25 @@ push both to origin. If they confirm, run:
 git push origin main
 git push origin v<new version>
 ```
+
+### 11. Verify the release through the plugin
+
+The tests above run the binary from the checkout, launched by the test
+harness. Users get the released binary launched by Claude Code from
+`plugin/.mcp.json`, through the bootstrap script and Claude Code's `${VAR}`
+expansion. Check that path once the release workflow has published the
+assets:
+
+1. Wait for the Release workflow to finish and confirm the GitHub release
+   has all four platform binaries plus `checksums.txt`:
+   `gh release view v<new version> --json assets --jq '.assets[].name'`.
+2. Ask the user to update the plugin (`/plugin` → update, then
+   `/reload-plugins`).
+3. Call a read-only tool through the plugin's server
+   (`mcp__plugin_gitlab-mcp_gitlab__gitlab_metadata_get`) and confirm it
+   succeeds. If the user's setup uses a `pass_entry`, confirm the server
+   process has no real `GITLAB_TOKEN` (check the variable's presence and
+   length; never print its value), so the call actually exercised the pass
+   path.
+
+If the call fails, report it to the user as a release regression.

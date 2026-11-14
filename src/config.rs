@@ -131,8 +131,8 @@ impl Config {
 
     /// Resolve the GitLab base URL: GITLAB_URL env var, then config file, then error.
     pub fn resolve_url(&self) -> anyhow::Result<String> {
-        let url = first_non_empty(std::env::var("GITLAB_URL").ok(), self.file_url.clone())
-            .ok_or_else(|| {
+        let url =
+            first_non_empty(env_var("GITLAB_URL"), self.file_url.clone()).ok_or_else(|| {
                 anyhow!("GitLab URL not set: provide GITLAB_URL or set \"url\" in config file")
             })?;
         enforce_https(&url)?;
@@ -239,22 +239,51 @@ pub fn update_file(
         .with_context(|| format!("writing config file {}", target.display()))
 }
 
-/// The first non-blank value wins. A set-but-empty env var counts as unset:
-/// MCP clients expanding `${GITLAB_TOKEN}` in a shared config pass "" when the
-/// user hasn't exported the variable, and failing here with the "not set"
-/// error beats starting up and sending empty auth headers.
+/// The first value that is actually set wins (see [`non_blank`]).
 fn first_non_empty(env_val: Option<String>, file_val: Option<String>) -> Option<String> {
     non_blank(env_val).or_else(|| non_blank(file_val))
 }
 
-/// Blank-means-unset, the one rule for every env var and config value.
+/// The one "is this value set?" rule for every env var and config value:
+/// blank counts as unset, and so does an unexpanded `${VAR}` placeholder.
+/// MCP clients substitute `${GITLAB_TOKEN}` in a shared config from the
+/// user's environment, and when the variable isn't exported Claude Code
+/// passes the placeholder through *literally*. Taking that as a real token
+/// would shadow a `pass_entry` and fail every call with a 401; treating it
+/// as unset falls through to the config file, as an empty value does.
 fn non_blank(v: Option<String>) -> Option<String> {
-    v.filter(|s| !s.trim().is_empty())
+    v.filter(|s| !is_unset_value(s))
 }
 
-/// An environment variable, treating set-but-blank as unset.
+fn is_unset_value(s: &str) -> bool {
+    let t = s.trim();
+    t.is_empty() || is_unexpanded_placeholder(t)
+}
+
+/// `${NAME}` or `${NAME:-…}` exactly, as left behind by a client that didn't
+/// substitute it. No real token or URL has this shape.
+fn is_unexpanded_placeholder(t: &str) -> bool {
+    t.strip_prefix("${")
+        .and_then(|rest| rest.strip_suffix('}'))
+        .is_some_and(|inner| {
+            let name = inner.split_once(":-").map_or(inner, |(n, _)| n);
+            !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        })
+}
+
+/// An environment variable, treating blank values and unexpanded `${…}`
+/// placeholders as unset.
 pub fn env_var(name: &str) -> Option<String> {
-    non_blank(std::env::var(name).ok())
+    let raw = std::env::var(name).ok()?;
+    if is_unexpanded_placeholder(raw.trim()) {
+        tracing::warn!(
+            variable = name,
+            "ignoring unexpanded placeholder (the MCP client did not substitute it; \
+             the variable is not set in its environment)"
+        );
+        return None;
+    }
+    non_blank(Some(raw))
 }
 
 /// The config file path: `path` if given, else `~/.gitlab_mcp.json`.
@@ -310,7 +339,10 @@ pub fn enforce_https(url: &str) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, RawConfig, TokenSource, enforce_https, first_non_empty, update_file};
+    use super::{
+        Config, RawConfig, TokenSource, enforce_https, first_non_empty, is_unexpanded_placeholder,
+        update_file,
+    };
 
     #[test]
     fn explicit_missing_config_path_is_an_error() {
@@ -340,6 +372,8 @@ mod tests {
         assert_eq!(first_non_empty(s("env"), s("file")), s("env"));
         assert_eq!(first_non_empty(s(""), s("file")), s("file"));
         assert_eq!(first_non_empty(s("  "), s("file")), s("file"));
+        // What Claude Code passes for `"${GITLAB_TOKEN}"` when it's unset.
+        assert_eq!(first_non_empty(s("${GITLAB_TOKEN}"), s("file")), s("file"));
         assert_eq!(first_non_empty(None, s("file")), s("file"));
         assert_eq!(first_non_empty(s(""), s("")), None);
         assert_eq!(first_non_empty(None, None), None);
@@ -482,5 +516,94 @@ mod tests {
                 .unwrap()
                 .contains("https://a")
         );
+    }
+
+    #[test]
+    // `${X:-}` etc. are shell-style placeholders under test, not format args.
+    #[allow(clippy::literal_string_with_formatting_args)]
+    fn unexpanded_placeholders_are_recognised() {
+        for p in [
+            "${GITLAB_TOKEN}",
+            "${GITLAB_URL:-https://gitlab.com}",
+            "${A_1}",
+            "${X:-}",
+        ] {
+            assert!(is_unexpanded_placeholder(p), "{p}");
+        }
+        for v in [
+            "glpat-abc",
+            "https://gitlab.com",
+            "${}",
+            "$GITLAB_TOKEN",
+            "${GITLAB_TOKEN",
+            "x${GITLAB_TOKEN}",
+            "${not valid}",
+        ] {
+            assert!(!is_unexpanded_placeholder(v), "{v}");
+        }
+    }
+
+    #[test]
+    fn placeholder_in_config_file_counts_as_unset() {
+        if gitlab_token_env_set() {
+            return;
+        }
+        let err = raw(Some("${GITLAB_TOKEN}"), None)
+            .resolve_token()
+            .err()
+            .unwrap();
+        assert!(err.to_string().contains("not set"), "{err}");
+    }
+
+    /// Every MCP client config we ship or document must give each `${VAR}`
+    /// in `env` a `:-` default. Claude Code passes a bare `${VAR}` through
+    /// *literally* when the variable is unset, which shadowed `pass_entry`
+    /// with a bogus token in v0.39.0. (The server now ignores such values
+    /// too, but the configs shouldn't depend on that.)
+    #[test]
+    fn shipped_mcp_configs_default_every_placeholder() {
+        let root = env!("CARGO_MANIFEST_DIR");
+        let mut configs: Vec<(String, serde_json::Value)> = ["plugin/.mcp.json", ".mcp.json"]
+            .iter()
+            .map(|f| {
+                let text = std::fs::read_to_string(format!("{root}/{f}")).unwrap();
+                ((*f).to_string(), serde_json::from_str(&text).unwrap())
+            })
+            .collect();
+        // JSON examples in the README that configure an MCP server.
+        let readme = std::fs::read_to_string(format!("{root}/README.md")).unwrap();
+        for (i, block) in readme.split("```json\n").skip(1).enumerate() {
+            let body = block.split("```").next().unwrap();
+            if body.contains("mcpServers") {
+                configs.push((
+                    format!("README.md json block {i}"),
+                    serde_json::from_str(body).unwrap(),
+                ));
+            }
+        }
+        assert!(
+            configs.len() >= 3,
+            "expected plugin, repo, and README configs"
+        );
+
+        for (source, config) in &configs {
+            let servers = config["mcpServers"].as_object().expect("mcpServers object");
+            for (server, def) in servers {
+                let Some(env) = def["env"].as_object() else {
+                    continue;
+                };
+                for (key, value) in env {
+                    let value = value.as_str().unwrap_or_default();
+                    for placeholder in value.split("${").skip(1) {
+                        let inner = placeholder.split('}').next().unwrap_or_default();
+                        assert!(
+                            inner.contains(":-"),
+                            "{source}: {server}.env.{key} uses ${{{inner}}} without a `:-` default; \
+                             write ${{{inner}:-}} so an unset variable expands to empty"
+                        );
+                    }
+                }
+            }
+        }
     }
 }
