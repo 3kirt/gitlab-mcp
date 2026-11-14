@@ -1,5 +1,7 @@
 mod client;
+mod commands;
 mod config;
+mod credentials;
 #[cfg(test)]
 mod test_util;
 mod tools;
@@ -9,7 +11,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use anyhow::Context;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use rmcp::ServiceExt;
 use tracing::info;
 use tracing_subscriber::fmt::writer::BoxMakeWriter;
@@ -38,6 +40,16 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
         The config file must not be world-readable (chmod o-r ~/.gitlab_mcp.json).\n\
         HTTPS is required for all non-localhost URLs.\n\
         \n\
+        GPG-ENCRYPTED TOKEN (pass)\n\
+        \n\
+        Instead of a plaintext \"token\", the config can name an entry in a pass-compatible\n\
+        password store (~/.password-store, or $PASSWORD_STORE_DIR):\n  {\n    \"url\":        \"https://gitlab.com\",\n    \"pass_entry\": \"gitlab-mcp/gitlab.com\"\n  }\n\
+        `gitlab-mcp login` verifies a token, encrypts it with gpg, and writes this config.\n\
+        The server decrypts it on first use without ever prompting: if gpg-agent has not\n\
+        cached the passphrase, tool calls fail with a message asking you to run\n\
+        `gitlab-mcp unlock`, and succeed once you have. Set \"gpg\" in the config to the\n\
+        full path of gpg if your MCP client launches servers with a minimal PATH.\n\
+        \n\
         DEBUGGING\n\
         \n\
         Pass --debug to log every GitLab request (method + URL, GraphQL query and\n\
@@ -48,8 +60,11 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
     version
 )]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Command>,
+
     /// Path to the configuration file (default: ~/.gitlab_mcp.json)
-    #[arg(long)]
+    #[arg(long, global = true)]
     config: Option<PathBuf>,
 
     /// Log every GitLab request and full error bodies (sets gitlab_mcp=debug
@@ -61,6 +76,19 @@ struct Args {
     /// Use this to capture a debug trace when the server is spawned by an MCP client.
     #[arg(long, value_name = "PATH")]
     log_file: Option<PathBuf>,
+}
+
+/// Without a subcommand, the MCP server runs over stdio.
+#[derive(Subcommand)]
+enum Command {
+    /// Verify a personal access token and store it GPG-encrypted in a pass store
+    Login(commands::LoginArgs),
+    /// Delete the stored token from the pass store
+    Logout(commands::EntryArgs),
+    /// Cache the token's GPG passphrase in gpg-agent (prompts if needed)
+    Unlock,
+    /// Show where the token comes from and whether its GPG key is unlocked
+    Status,
 }
 
 /// Decide the tracing filter directive. An explicit, non-empty `RUST_LOG`
@@ -103,12 +131,28 @@ async fn main() -> anyhow::Result<()> {
         .with(fmt::layer().json().with_writer(writer))
         .init();
 
-    let cfg = config::Config::load(args.config.as_deref())?;
-    let url = cfg.resolve_url()?;
-    let token = cfg.resolve_token()?;
+    let config_path = args.config.as_deref();
+    match args.command {
+        Some(Command::Login(login)) => return commands::login(config_path, login).await,
+        Some(Command::Logout(entry)) => return commands::logout(config_path, &entry),
+        Some(Command::Unlock) => return commands::unlock(config_path).await,
+        Some(Command::Status) => return commands::status(config_path).await,
+        None => {}
+    }
 
-    info!(mode = "stdio", gitlab_url = %url, "starting gitlab-mcp");
-    let server = tools::GitlabMcpServer::new_stdio(url, token)?;
+    let cfg = config::Config::load(config_path)?;
+    let url = cfg.resolve_url()?;
+    let source = cfg.resolve_token()?;
+
+    info!(mode = "stdio", gitlab_url = %url, token_source = %source.describe(), "starting gitlab-mcp");
+    let client = match source {
+        config::TokenSource::Env(token) | config::TokenSource::File(token) => {
+            client::GitlabClient::new(url, token)?
+        }
+        // Decrypted on first use, so a locked GPG key doesn't stop startup.
+        config::TokenSource::Pass(entry) => client::GitlabClient::with_pass_entry(url, entry)?,
+    };
+    let server = tools::GitlabMcpServer::new_stdio(client);
     server
         // Non-blocking pipe I/O on Linux when the client launches us over
         // FIFOs; identical to `stdio()` everywhere else.

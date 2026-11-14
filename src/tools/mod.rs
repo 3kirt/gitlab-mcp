@@ -854,12 +854,14 @@ pub struct GitlabMcpServer {
 }
 
 impl GitlabMcpServer {
-    pub fn new_stdio(base_url: String, token: String) -> anyhow::Result<Self> {
-        Ok(Self {
-            client: GitlabClient::new(base_url, token)?,
+    /// The server over `client`, whose token may be static or decrypted
+    /// lazily from a pass entry (see `GitlabClient::with_pass_entry`).
+    pub fn new_stdio(client: GitlabClient) -> Self {
+        Self {
+            client,
             tool_router: Self::tool_router(),
             recent_projects_cache: Arc::new(tokio::sync::Mutex::new(None)),
-        })
+        }
     }
 }
 

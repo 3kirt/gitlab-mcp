@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::{Client, StatusCode, header};
@@ -5,6 +6,8 @@ use serde::Serialize;
 use serde_json::Value;
 use thiserror::Error;
 use tracing::{debug, trace};
+
+use crate::credentials::PassEntry;
 
 /// Pagination headers extracted from a GitLab list response.
 ///
@@ -55,6 +58,10 @@ pub enum GitlabError {
     /// error from GitLab but still prevents the operation from succeeding.
     #[error("{0}")]
     Other(String),
+    /// The token couldn't be obtained (e.g. its GPG key is locked). The
+    /// message is written for the MCP client to relay to the user.
+    #[error("{0}")]
+    Credentials(String),
 }
 
 impl GitlabError {
@@ -83,32 +90,100 @@ impl GitlabError {
 pub struct GitlabClient {
     http: Client,
     base_url: String,
+    auth: Auth,
+}
+
+/// How the PRIVATE-TOKEN header is supplied.
+#[derive(Clone)]
+enum Auth {
+    /// Known up front; baked into the client's default headers.
+    Static,
+    /// Decrypted from a pass entry on first use and added per request.
+    Pass(Arc<PassToken>),
+}
+
+/// A token decrypted from a `pass` entry on demand. Failures are *not*
+/// cached: while the GPG key is locked every request fails fast with a
+/// [`GitlabError::Credentials`] explaining how to unlock, and the first
+/// request after the user unlocks succeeds — no server restart. Once
+/// decrypted the token is held in memory, so gpg-agent's cache TTL no longer
+/// matters for this process.
+struct PassToken {
+    entry: PassEntry,
+    // Held across the decrypt so concurrent requests run gpg once, not N times.
+    cached: tokio::sync::Mutex<Option<header::HeaderValue>>,
+}
+
+impl PassToken {
+    async fn header(&self) -> Result<header::HeaderValue, GitlabError> {
+        let mut cached = self.cached.lock().await;
+        if let Some(value) = cached.as_ref() {
+            return Ok(value.clone());
+        }
+        let token = self
+            .entry
+            .read_token()
+            .await
+            .map_err(|e| GitlabError::Credentials(e.to_string()))?;
+        let value = token_header(&token).map_err(|e| {
+            GitlabError::Credentials(format!("{e} (from pass entry {})", self.entry.name()))
+        })?;
+        debug!(target: LOG_TARGET, entry = self.entry.name(), "decrypted GitLab token from pass");
+        *cached = Some(value.clone());
+        drop(cached);
+        Ok(value)
+    }
+
+    /// Forget the token (after a 401) so the next request re-reads the entry,
+    /// picking up a token rotated with `gitlab-mcp login`.
+    async fn invalidate(&self) {
+        *self.cached.lock().await = None;
+    }
+}
+
+/// Build the sensitive PRIVATE-TOKEN header value.
+fn token_header(token: &str) -> anyhow::Result<header::HeaderValue> {
+    let mut value = header::HeaderValue::from_str(token).map_err(|_| {
+        anyhow::anyhow!(
+            "GitLab token contains characters not valid in HTTP headers (must be visible ASCII)"
+        )
+    })?;
+    // Keeps the token out of `Debug` output and out of HTTP/2 HPACK
+    // dynamic tables (where header values could otherwise be inferred).
+    value.set_sensitive(true);
+    Ok(value)
+}
+
+fn http_client(headers: header::HeaderMap) -> anyhow::Result<Client> {
+    Ok(Client::builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .timeout(REQUEST_TIMEOUT)
+        .default_headers(headers)
+        .build()?)
 }
 
 impl GitlabClient {
     pub fn new(base_url: impl Into<String>, token: impl AsRef<str>) -> anyhow::Result<Self> {
-        let mut token_value = header::HeaderValue::from_str(token.as_ref()).map_err(|_| {
-            anyhow::anyhow!(
-                "GitLab token contains characters not valid in HTTP headers (must be visible ASCII)"
-            )
-        })?;
-        // Keeps the token out of `Debug` output and out of HTTP/2 HPACK
-        // dynamic tables (where header values could otherwise be inferred).
-        token_value.set_sensitive(true);
-
         let mut headers = header::HeaderMap::new();
         // GitLab uses the PRIVATE-TOKEN header for personal access tokens.
-        headers.insert("PRIVATE-TOKEN", token_value);
-
-        let http = Client::builder()
-            .connect_timeout(CONNECT_TIMEOUT)
-            .timeout(REQUEST_TIMEOUT)
-            .default_headers(headers)
-            .build()?;
-
+        headers.insert("PRIVATE-TOKEN", token_header(token.as_ref())?);
         Ok(Self {
-            http,
+            http: http_client(headers)?,
             base_url: base_url.into(),
+            auth: Auth::Static,
+        })
+    }
+
+    /// A client whose token is decrypted from `entry` on first use (see
+    /// [`PassToken`]), so the server can start while the GPG key is locked.
+    pub fn with_pass_entry(base_url: impl Into<String>, entry: PassEntry) -> anyhow::Result<Self> {
+        Ok(Self {
+            http: http_client(header::HeaderMap::new())?,
+            base_url: base_url.into(),
+            auth: Auth::Pass(Arc::new(PassToken {
+                entry,
+                cached: tokio::sync::Mutex::new(None),
+            })),
         })
     }
 
@@ -242,6 +317,10 @@ impl GitlabClient {
         &self,
         builder: reqwest::RequestBuilder,
     ) -> Result<reqwest::Response, GitlabError> {
+        let builder = match &self.auth {
+            Auth::Static => builder,
+            Auth::Pass(token) => builder.header("PRIVATE-TOKEN", token.header().await?),
+        };
         let mut attempt: u32 = 0;
         loop {
             // Clone per attempt; our bodies are in-memory JSON, so this is `Some`.
@@ -266,6 +345,11 @@ impl GitlabClient {
                 attempt += 1;
                 tokio::time::sleep(wait).await;
                 continue;
+            }
+            if resp.status() == StatusCode::UNAUTHORIZED
+                && let Auth::Pass(token) = &self.auth
+            {
+                token.invalidate().await;
             }
             return Ok(resp);
         }
@@ -912,6 +996,76 @@ mod tests {
                 assert_eq!(body, "Not found");
             }
             other => panic!("expected GitlabError::Api, got {other}"),
+        }
+    }
+
+    mod pass_auth {
+        use super::*;
+        use crate::credentials::PassStore;
+        use crate::credentials::test_support::{LOCKED_SNIPPET, fake_gpg, ok_snippet};
+
+        fn pass_client(
+            server: &MockServer,
+        ) -> (tempfile::TempDir, std::path::PathBuf, GitlabClient) {
+            let dir = tempfile::tempdir().unwrap();
+            let entry = PassStore::new(dir.path(), fake_gpg()).entry("t").unwrap();
+            let file = entry.path();
+            let client = GitlabClient::with_pass_entry(server.uri(), entry).unwrap();
+            (dir, file, client)
+        }
+
+        #[tokio::test]
+        async fn locked_key_fails_then_succeeds_after_unlock() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/api/v4/user"))
+                .and(header("PRIVATE-TOKEN", "glpat-from-pass"))
+                .respond_with(
+                    ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": 1})),
+                )
+                .expect(2)
+                .mount(&server)
+                .await;
+            let (_dir, file, client) = pass_client(&server);
+
+            std::fs::write(&file, LOCKED_SNIPPET).unwrap();
+            let err = client.get("/api/v4/user").await.unwrap_err();
+            assert!(matches!(err, GitlabError::Credentials(_)), "{err}");
+            assert!(err.to_tool_message().contains("gitlab-mcp unlock"), "{err}");
+
+            // "Unlock": the next request decrypts successfully — no restart.
+            std::fs::write(&file, ok_snippet("glpat-from-pass")).unwrap();
+            client.get("/api/v4/user").await.unwrap();
+
+            // Cached in memory: re-locking the key doesn't affect this process.
+            std::fs::write(&file, LOCKED_SNIPPET).unwrap();
+            client.get("/api/v4/user").await.unwrap();
+        }
+
+        #[tokio::test]
+        async fn unauthorized_drops_cached_token() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/api/v4/user"))
+                .and(header("PRIVATE-TOKEN", "glpat-old"))
+                .respond_with(ResponseTemplate::new(401))
+                .mount(&server)
+                .await;
+            Mock::given(method("GET"))
+                .and(path("/api/v4/user"))
+                .and(header("PRIVATE-TOKEN", "glpat-rotated"))
+                .respond_with(
+                    ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": 1})),
+                )
+                .mount(&server)
+                .await;
+            let (_dir, file, client) = pass_client(&server);
+
+            std::fs::write(&file, ok_snippet("glpat-old")).unwrap();
+            assert!(client.get("/api/v4/user").await.is_err());
+            // Rotated in the store (e.g. via `gitlab-mcp login`) — picked up.
+            std::fs::write(&file, ok_snippet("glpat-rotated")).unwrap();
+            client.get("/api/v4/user").await.unwrap();
         }
     }
 }

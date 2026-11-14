@@ -81,6 +81,55 @@ gitlab-mcp --config /path/to/config.json
 
 For self-hosted GitLab instances, replace `https://gitlab.com` with your instance URL.
 
+### GPG-encrypted token (pass)
+
+Instead of a plaintext `token`, gitlab-mcp can keep the token GPG-encrypted in a
+[`pass`](https://www.passwordstore.org/)-compatible password store
+(`~/.password-store`, or `$PASSWORD_STORE_DIR`). Only `gpg` is required; the
+`pass` CLI is optional, but `pass show` reads the entry if you have it.
+
+```sh
+gitlab-mcp login --gpg-id <your-key-id>   # first time: no .gpg-id in the store yet
+gitlab-mcp login                          # later: reuses the store's .gpg-id
+```
+
+`login` prompts for the token (no echo; `--token-stdin` reads it from a pipe),
+checks it against GitLab, encrypts it to `gitlab-mcp/<host>.gpg`, and updates the
+config file. It also removes any plaintext `token` from that file:
+
+```json
+{
+  "url": "https://gitlab.com",
+  "pass_entry": "gitlab-mcp/gitlab.com"
+}
+```
+
+**Unattended operation.** The server decrypts the token on first use and never
+prompts (gpg runs with `--pinentry-mode error`), so it starts even while your
+key is locked. Until gpg-agent has your passphrase cached, tool calls fail with
+a message asking you to unlock. Your agent can relay that, and the next call
+after you unlock succeeds without restarting the server. After that first
+decrypt the token stays in memory for the life of the server process.
+
+```sh
+gitlab-mcp unlock   # caches the passphrase in gpg-agent (prompts if needed)
+gitlab-mcp status   # token source, recipients, locked/unlocked; never decrypts
+gitlab-mcp logout   # deletes the encrypted entry
+```
+
+How long an unlock lasts is up to gpg-agent (`default-cache-ttl` /
+`max-cache-ttl` in `~/.gnupg/gpg-agent.conf`). On macOS, `pinentry-mac` lets
+`unlock` prompt from anywhere and can store the passphrase in the Keychain.
+
+| Config key | Description |
+|---|---|
+| `pass_entry` | Store entry holding the token (mutually exclusive with `token`) |
+| `gpg` | Full path to `gpg`, for MCP clients that launch servers with a minimal `PATH` (e.g. `/opt/homebrew/bin/gpg`); `gpgconf` is looked up next to it |
+
+`GITLAB_TOKEN` still takes precedence over both. Plugin installs keep the
+binary under `~/.cache/gitlab-mcp/v<version>/gitlab-mcp`; run `login`/`unlock`
+from there if `gitlab-mcp` isn't on your `PATH`.
+
 ---
 
 ## Claude Code setup

@@ -100,7 +100,9 @@ mod tests {
     use super::*;
 
     fn server() -> GitlabMcpServer {
-        GitlabMcpServer::new_stdio("https://gitlab.com".into(), "test-token".into()).unwrap()
+        GitlabMcpServer::new_stdio(
+            crate::client::GitlabClient::new("https://gitlab.com", "test-token").unwrap(),
+        )
     }
 
     fn result_text(result: &CallToolResult) -> &str {

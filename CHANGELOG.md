@@ -4,6 +4,33 @@ All notable changes to gitlab-mcp are documented here.
 
 ---
 
+## [Unreleased]
+
+### Added
+- **GPG-encrypted token storage (pass-compatible)**: set `"pass_entry"` in the
+  config instead of a plaintext `"token"`. The token is GPG-encrypted in a
+  `pass`-compatible store (`~/.password-store` / `$PASSWORD_STORE_DIR`). Only
+  `gpg` is required.
+- **Unattended operation with a locked key**: the server decrypts the token on
+  first use and never prompts, so it starts while the key is locked. Tool calls
+  fail with an actionable "locked, ask the user to run `gitlab-mcp unlock`, then
+  retry" error until gpg-agent has the passphrase cached, then succeed without a
+  restart. Locked/no-key states come from gpg's numeric status codes, not its
+  localized messages.
+- **`gitlab-mcp login` / `logout` / `unlock` / `status` subcommands**. `login`
+  verifies the token against GitLab, encrypts it, updates the config, and
+  removes any plaintext token. `status` reports the token source and whether
+  the key is unlocked, by querying gpg-agent over its Assuan socket, without
+  decrypting anything.
+- `"gpg"` config key: full path to gpg for MCP clients that launch servers with
+  a minimal `PATH`.
+
+### Changed
+- A config file that sets both `"token"` and `"pass_entry"` is rejected.
+- `--config` is accepted after a subcommand as well as before it.
+
+---
+
 ## [0.38.1] — 2026-11-09
 
 Security dependency update.
