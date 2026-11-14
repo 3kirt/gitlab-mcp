@@ -38,20 +38,32 @@ const MAX_GPG_MESSAGE: usize = 300;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PassError {
+    /// `cli` is the command line that reaches this store's config (see
+    /// [`PassStore::cli`]), so the advice targets the right entry.
     #[error(
         "no GitLab token stored at pass entry '{entry}' ({} does not exist); \
-         run `gitlab-mcp login` to store one",
+         run `{cli} login` to store one",
         path.display()
     )]
-    NotFound { entry: String, path: PathBuf },
+    NotFound {
+        entry: String,
+        path: PathBuf,
+        cli: String,
+    },
+    /// `cli` and `gpg_decrypt` name this server's `--config` and keyring
+    /// (shell-quoted), so following the advice unlocks the agent the server
+    /// actually uses rather than the default one.
     #[error(
         "GitLab token is locked: gpg-agent has no cached passphrase for the key that \
-         decrypts {}. Ask the user to unlock it by running `gitlab-mcp unlock` (or \
-         `gpg --decrypt {} >/dev/null`) in a terminal, then retry.",
-        path.display(),
+         decrypts {}. Ask the user to unlock it by running `{cli} unlock` (or \
+         `{gpg_decrypt}`) in a terminal, then retry.",
         path.display()
     )]
-    Locked { path: PathBuf },
+    Locked {
+        path: PathBuf,
+        cli: String,
+        gpg_decrypt: String,
+    },
     #[error("no secret key in this GnuPG keyring can decrypt {}", path.display())]
     NoSecretKey { path: PathBuf },
     #[error("gpg did not finish decrypting {} within {}s", path.display(), timeout.as_secs())]
@@ -69,6 +81,9 @@ pub struct PassStore {
     /// GnuPG home passed as `--homedir` to gpg/gpgconf; `None` leaves gpg's
     /// own lookup (`$GNUPGHOME`, else `~/.gnupg`).
     homedir: Option<PathBuf>,
+    /// The `--config` file the server was started with, if one was given
+    /// explicitly; named in the unlock/login advice.
+    config_path: Option<PathBuf>,
     timeout: Duration,
 }
 
@@ -113,6 +128,7 @@ impl PassStore {
             root: root.into(),
             gpg: gpg.into(),
             homedir: None,
+            config_path: None,
             timeout: GPG_TIMEOUT,
         }
     }
@@ -121,6 +137,37 @@ impl PassStore {
     pub fn with_homedir(mut self, homedir: Option<PathBuf>) -> Self {
         self.homedir = homedir;
         self
+    }
+
+    /// Record the explicit `--config` path (`None` = the default config), so
+    /// error advice says `gitlab-mcp --config <path> unlock`.
+    #[must_use]
+    pub fn with_config_path(mut self, config_path: Option<PathBuf>) -> Self {
+        self.config_path = config_path;
+        self
+    }
+
+    /// The command prefix that reaches this store's config: `gitlab-mcp`, or
+    /// `gitlab-mcp --config <path>` (shell-quoted) when one was given.
+    pub fn cli(&self) -> String {
+        self.config_path.as_ref().map_or_else(
+            || "gitlab-mcp".into(),
+            |p| format!("gitlab-mcp --config {}", shell_quote(&p.to_string_lossy())),
+        )
+    }
+
+    /// A shell command that decrypts `path` with this store's gpg and
+    /// keyring and discards the plaintext (priming gpg-agent's cache).
+    pub fn gpg_decrypt_command(&self, path: &Path) -> String {
+        let mut cmd = shell_quote(&self.gpg.to_string_lossy());
+        if let Some(home) = &self.homedir {
+            cmd.push_str(" --homedir ");
+            cmd.push_str(&shell_quote(&home.to_string_lossy()));
+        }
+        cmd.push_str(" --decrypt ");
+        cmd.push_str(&shell_quote(&path.to_string_lossy()));
+        cmd.push_str(" >/dev/null");
+        cmd
     }
 
     /// The GnuPG home this store pins gpg to, if any.
@@ -231,6 +278,7 @@ impl PassEntry {
             return Err(PassError::NotFound {
                 entry: self.name.clone(),
                 path,
+                cli: self.store.cli(),
             });
         }
 
@@ -267,7 +315,13 @@ impl PassEntry {
         let stderr = String::from_utf8_lossy(&output.stderr);
         match classify_decrypt(output.status.success(), &stderr) {
             DecryptOutcome::Ok => {}
-            DecryptOutcome::Locked => return Err(PassError::Locked { path }),
+            DecryptOutcome::Locked => {
+                return Err(PassError::Locked {
+                    gpg_decrypt: self.store.gpg_decrypt_command(&path),
+                    cli: self.store.cli(),
+                    path,
+                });
+            }
             DecryptOutcome::NoSecretKey => return Err(PassError::NoSecretKey { path }),
             DecryptOutcome::Failed => {
                 return Err(PassError::Other(format!(
@@ -284,8 +338,9 @@ impl PassEntry {
         let token = plaintext.lines().next().unwrap_or("").trim();
         if token.is_empty() {
             return Err(PassError::Other(format!(
-                "{} decrypts to an empty first line; run `gitlab-mcp login` to store a token",
-                path.display()
+                "{} decrypts to an empty first line; run `{} login` to store a token",
+                path.display(),
+                self.store.cli()
             )));
         }
         Ok(token.to_string())
@@ -338,53 +393,78 @@ impl PassEntry {
             .file_name()
             .map_or_else(|| "entry".into(), |n| n.to_string_lossy().into_owned());
         let tmp = dir.join(format!(".{file_name}.tmp{}", std::process::id()));
+        // Create the temp file ourselves, exclusively and owner-only, before
+        // gpg writes over it: `--yes --output` would otherwise follow a
+        // symlink planted at this predictable name. If it already exists we
+        // fail without touching (or deleting) it.
+        drop(create_new_private(&tmp).map_err(|e| io_err("creating", &tmp, &e))?);
 
+        let outcome = self.encrypt_to(token, recipients, &tmp, &path).await;
+        if outcome.is_err() {
+            // Ours (created above), so safe to remove.
+            let _ = std::fs::remove_file(&tmp);
+        }
+        outcome
+    }
+
+    async fn encrypt_to(
+        &self,
+        token: &str,
+        recipients: &[String],
+        tmp: &Path,
+        path: &Path,
+    ) -> Result<(), PassError> {
         let mut cmd = self.store.gpg_command();
         cmd.args(["--batch", "--quiet", "--yes", "--no-tty", "--encrypt"]);
         for r in recipients {
             cmd.arg("--recipient").arg(r);
         }
         cmd.arg("--output")
-            .arg(&tmp)
+            .arg(tmp)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         let mut child = cmd.spawn().map_err(|e| spawn_err(&self.store.gpg, &e))?;
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin
-                .write_all(format!("{token}\n").as_bytes())
+        let stdin = child.stdin.take();
+        // Write and wait under one timeout. A gpg that exits early (e.g. no
+        // public key for a recipient) closes its stdin, so the write fails
+        // with EPIPE: ignore that and report gpg's own error from the status
+        // check below instead of a bare "Broken pipe".
+        let run = async {
+            if let Some(mut stdin) = stdin {
+                match stdin.write_all(format!("{token}\n").as_bytes()).await {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
+                    Err(e) => return Err(io_err("writing to gpg for", path, &e)),
+                }
+                // Dropping stdin closes it, so gpg sees EOF.
+            }
+            child
+                .wait_with_output()
                 .await
-                .map_err(|e| io_err("writing to gpg for", &path, &e))?;
-        }
-        let result = tokio::time::timeout(self.store.timeout, child.wait_with_output()).await;
-        let finish = || -> Result<(), PassError> {
-            let output = result
-                .map_err(|_| PassError::Timeout {
-                    path: path.clone(),
-                    timeout: self.store.timeout,
-                })?
-                .map_err(|e| io_err("waiting for gpg on", &path, &e))?;
-            if !output.status.success() {
-                return Err(PassError::Other(format!(
-                    "gpg failed to encrypt to {}: {}",
-                    recipients.join(", "),
-                    human_message(&String::from_utf8_lossy(&output.stderr))
-                )));
-            }
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))
-                    .map_err(|e| io_err("restricting", &tmp, &e))?;
-            }
-            std::fs::rename(&tmp, &path).map_err(|e| io_err("replacing", &path, &e))
+                .map_err(|e| io_err("waiting for gpg on", path, &e))
         };
-        let outcome = finish();
-        if outcome.is_err() {
-            let _ = std::fs::remove_file(&tmp);
+        let output = tokio::time::timeout(self.store.timeout, run)
+            .await
+            .map_err(|_| PassError::Timeout {
+                path: path.to_path_buf(),
+                timeout: self.store.timeout,
+            })??;
+        if !output.status.success() {
+            return Err(PassError::Other(format!(
+                "gpg failed to encrypt to {}: {}",
+                recipients.join(", "),
+                human_message(&String::from_utf8_lossy(&output.stderr))
+            )));
         }
-        outcome
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(tmp, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| io_err("restricting", tmp, &e))?;
+        }
+        std::fs::rename(tmp, path).map_err(|e| io_err("replacing", path, &e))
     }
 
     /// Delete the entry's `.gpg` file.
@@ -395,6 +475,7 @@ impl PassEntry {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(PassError::NotFound {
                 entry: self.name.clone(),
                 path,
+                cli: self.store.cli(),
             }),
             Err(e) => Err(io_err("removing", &path, &e)),
         }
@@ -507,6 +588,31 @@ fn human_message(stderr: &str) -> String {
     }
 }
 
+/// Quote `s` for a POSIX shell when it contains anything beyond a safe set
+/// (so `~`, spaces, `$`, quotes … can't change the command a user pastes).
+pub fn shell_quote(s: &str) -> String {
+    let safe = |c: char| c.is_ascii_alphanumeric() || "/._+-:@%=,".contains(c);
+    if !s.is_empty() && s.chars().all(safe) {
+        s.to_string()
+    } else {
+        format!("'{}'", s.replace('\'', r"'\''"))
+    }
+}
+
+/// Exclusively create `path` (owner-only), refusing to follow or reuse
+/// anything already there — e.g. a symlink planted at a predictable temp
+/// name.
+pub(crate) fn create_new_private(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o600);
+    }
+    opts.open(path)
+}
+
 fn create_private_dir(dir: &Path) -> Result<(), PassError> {
     let mut builder = std::fs::DirBuilder::new();
     builder.recursive(true);
@@ -560,6 +666,10 @@ while [ $# -gt 0 ]; do
   shift
 done
 if [ "$mode" = encrypt ]; then
+  case "$all" in
+    # Like real gpg with no public key: fail without reading stdin.
+    *nopubkey*) echo "gpg: nopubkey@example.invalid: skipped: No public key" >&2; exit 2 ;;
+  esac
   cat > "$out"
   echo "$all" > "$out.args"
   exit 0
@@ -621,6 +731,89 @@ mod tests {
         std::fs::create_dir_all(entry.path().parent().unwrap()).unwrap();
         std::fs::write(entry.path(), snippet).unwrap();
         (dir, entry)
+    }
+
+    #[tokio::test]
+    async fn locked_advice_names_the_config_and_keyring() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = PassStore::new(dir.path(), fake_gpg())
+            .with_homedir(Some(PathBuf::from("/keys/my gnupg")))
+            .with_config_path(Some(PathBuf::from("~/work cfg.json")));
+        let entry = store.entry("t").unwrap();
+        std::fs::write(entry.path(), LOCKED_SNIPPET).unwrap();
+
+        let msg = entry.read_token().await.unwrap_err().to_string();
+        // The server's own --config (quoted: `~` and the space) and keyring,
+        // so the advice unlocks the agent this server uses.
+        assert!(
+            msg.contains("gitlab-mcp --config '~/work cfg.json' unlock"),
+            "{msg}"
+        );
+        assert!(
+            msg.contains("--homedir '/keys/my gnupg' --decrypt"),
+            "{msg}"
+        );
+
+        std::fs::remove_file(entry.path()).unwrap();
+        let msg = entry.read_token().await.unwrap_err().to_string();
+        assert!(
+            msg.contains("gitlab-mcp --config '~/work cfg.json' login"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn shell_quote_quotes_only_when_needed() {
+        assert_eq!(shell_quote("/usr/bin/gpg"), "/usr/bin/gpg");
+        assert_eq!(shell_quote("a b"), "'a b'");
+        assert_eq!(shell_quote("~/x"), "'~/x'");
+        assert_eq!(shell_quote("it's"), r"'it'\''s'");
+        assert_eq!(shell_quote(""), "''");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_token_refuses_a_planted_temp_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = PassStore::new(dir.path(), fake_gpg());
+        let entry = store.entry("t").unwrap();
+        let victim = dir.path().join("victim");
+        std::fs::write(&victim, "precious").unwrap();
+        let tmp = dir.path().join(format!(".t.gpg.tmp{}", std::process::id()));
+        std::os::unix::fs::symlink(&victim, &tmp).unwrap();
+
+        let err = entry
+            .write_token("glpat-x", &["KEY".to_string()])
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("creating"), "{err}");
+        // Neither followed nor deleted: we didn't create it.
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "precious");
+        assert!(tmp.symlink_metadata().is_ok());
+        assert!(!entry.path().exists());
+    }
+
+    #[tokio::test]
+    async fn early_gpg_exit_reports_gpg_error_not_broken_pipe() {
+        let dir = tempfile::tempdir().unwrap();
+        let entry = PassStore::new(dir.path(), fake_gpg()).entry("t").unwrap();
+        // Bigger than a pipe buffer, so the write is still in flight when
+        // gpg exits and the write fails with EPIPE.
+        let token = "x".repeat(512 * 1024);
+        let err = entry
+            .write_token(&token, &["nopubkey@example.invalid".to_string()])
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("No public key"), "{err}");
+        assert!(!err.contains("Broken pipe"), "{err}");
+        // The temp file we created is cleaned up.
+        let leftovers: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "{leftovers:?}");
     }
 
     #[tokio::test]

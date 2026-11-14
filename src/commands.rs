@@ -77,6 +77,11 @@ pub async fn login(config_path: Option<&Path>, args: LoginArgs) -> anyhow::Resul
         ),
     };
 
+    // The config is written last; check now that it can be, so a missing or
+    // read-only directory can't leave a half-initialised store (an entry and
+    // .gpg-id, but no config pointing at them).
+    config::check_writable(&config::config_path(config_path)?)?;
+
     let token = read_token_input(args.token_stdin)?;
     let user = GitlabClient::new(&url, &token)?
         .get("/api/v4/user")

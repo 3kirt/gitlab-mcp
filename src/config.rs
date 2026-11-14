@@ -27,6 +27,9 @@ pub struct Config {
     file_gpg: Option<String>,
     file_password_store_dir: Option<String>,
     file_gnupg_home: Option<String>,
+    /// The `--config` path, when one was given (vs the default file): named
+    /// in unlock/login advice so it targets this config's entry.
+    explicit_path: Option<PathBuf>,
 }
 
 /// Hand-written so a stray `?config` in a log line can never print the token.
@@ -42,6 +45,7 @@ impl std::fmt::Debug for Config {
             .field("file_gpg", &self.file_gpg)
             .field("file_password_store_dir", &self.file_password_store_dir)
             .field("file_gnupg_home", &self.file_gnupg_home)
+            .field("explicit_path", &self.explicit_path)
             .finish()
     }
 }
@@ -76,7 +80,12 @@ impl Config {
     pub fn load(path: Option<&Path>) -> anyhow::Result<Self> {
         let explicit = path.is_some();
         let resolved = config_path(path)?;
+        let mut cfg = Self::load_resolved(&resolved, explicit)?;
+        cfg.explicit_path = path.map(Path::to_path_buf);
+        Ok(cfg)
+    }
 
+    fn load_resolved(resolved: &Path, explicit: bool) -> anyhow::Result<Self> {
         // `try_exists` (unlike `exists`) surfaces I/O errors such as a
         // permission-denied parent directory instead of reporting "absent".
         let present = resolved
@@ -89,9 +98,9 @@ impl Config {
             return Ok(Self::from_raw(RawConfig::default()));
         }
 
-        check_file_permissions(&resolved)?;
+        check_file_permissions(resolved)?;
 
-        let contents = std::fs::read_to_string(&resolved)
+        let contents = std::fs::read_to_string(resolved)
             .with_context(|| format!("reading config file {}", resolved.display()))?;
         let raw: RawConfig = serde_json::from_str(&contents)
             .with_context(|| format!("parsing config file {}", resolved.display()))?;
@@ -103,14 +112,16 @@ impl Config {
     /// path — is an empty config: for `gitlab-mcp login`, which creates it.
     pub fn load_or_empty(path: Option<&Path>) -> anyhow::Result<Self> {
         let resolved = config_path(path)?;
-        if resolved
+        let mut cfg = if resolved
             .try_exists()
             .with_context(|| format!("checking config file {}", resolved.display()))?
         {
-            Self::load(Some(&resolved))
+            Self::load_resolved(&resolved, true)?
         } else {
-            Ok(Self::from_raw(RawConfig::default()))
-        }
+            Self::from_raw(RawConfig::default())
+        };
+        cfg.explicit_path = path.map(Path::to_path_buf);
+        Ok(cfg)
     }
 
     fn from_raw(raw: RawConfig) -> Self {
@@ -121,6 +132,7 @@ impl Config {
             file_gpg: non_blank(raw.gpg),
             file_password_store_dir: non_blank(raw.password_store_dir),
             file_gnupg_home: non_blank(raw.gnupg_home),
+            explicit_path: None,
         }
     }
 
@@ -178,11 +190,12 @@ impl Config {
     /// The password store, honoring the config's `gpg`, `password_store_dir`
     /// and `gnupg_home` over the process environment.
     pub fn pass_store(&self) -> anyhow::Result<PassStore> {
-        PassStore::resolve(&StoreLocation {
+        Ok(PassStore::resolve(&StoreLocation {
             gpg: self.file_gpg.as_deref(),
             store_dir: self.file_password_store_dir.as_deref(),
             gnupg_home: self.file_gnupg_home.as_deref(),
-        })
+        })?
+        .with_config_path(self.explicit_path.clone()))
     }
 }
 
@@ -216,15 +229,12 @@ pub fn update_file(
     let mut tmp_name = target.clone().into_os_string();
     tmp_name.push(format!(".tmp{}", std::process::id()));
     let tmp = PathBuf::from(tmp_name);
-    let mut opts = std::fs::OpenOptions::new();
-    opts.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        opts.mode(0o600);
-    }
+    // Exclusive create: never follow or truncate something already at this
+    // predictable name (e.g. a planted symlink). Only a file *we* created is
+    // removed on failure.
+    let mut file = crate::credentials::create_new_private(&tmp)
+        .with_context(|| format!("creating temporary config file {}", tmp.display()))?;
     let write = || -> anyhow::Result<()> {
-        let mut file = opts.open(&tmp)?;
         let mut body = serde_json::to_string_pretty(&serde_json::Value::Object(obj))?;
         body.push('\n');
         std::io::Write::write_all(&mut file, body.as_bytes())?;
@@ -237,6 +247,36 @@ pub fn update_file(
             let _ = std::fs::remove_file(&tmp);
         })
         .with_context(|| format!("writing config file {}", target.display()))
+}
+
+/// Fail early (before `login` prompts for a token or touches the password
+/// store) if the config at `path` couldn't be written: its directory must
+/// exist and be writable, and an existing file must pass the permission
+/// check `update_file` applies. Otherwise `login` would encrypt the token
+/// and write `.gpg-id`, then fail at the very last step.
+pub fn check_writable(path: &Path) -> anyhow::Result<()> {
+    if path
+        .try_exists()
+        .with_context(|| format!("checking config file {}", path.display()))?
+    {
+        check_file_permissions(path)?;
+    }
+    let dir = match path.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => Path::new("."),
+    };
+    let meta = std::fs::metadata(dir)
+        .with_context(|| format!("config directory {} does not exist", dir.display()))?;
+    if !meta.is_dir() {
+        bail!("{} is not a directory", dir.display());
+    }
+    // Probe with a real exclusive create: permission bits alone can't see
+    // ACLs, read-only mounts, or ownership.
+    let probe = dir.join(format!(".gitlab_mcp.probe{}", std::process::id()));
+    crate::credentials::create_new_private(&probe)
+        .with_context(|| format!("config directory {} is not writable", dir.display()))?;
+    let _ = std::fs::remove_file(&probe);
+    Ok(())
 }
 
 /// The first value that is actually set wins (see [`non_blank`]).
@@ -340,8 +380,8 @@ pub fn enforce_https(url: &str) -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Config, RawConfig, TokenSource, enforce_https, first_non_empty, is_unexpanded_placeholder,
-        update_file,
+        Config, RawConfig, TokenSource, check_writable, enforce_https, first_non_empty,
+        is_unexpanded_placeholder, update_file,
     };
 
     #[test]
@@ -349,6 +389,54 @@ mod tests {
         let err =
             Config::load(Some(std::path::Path::new("/nonexistent/gitlab_mcp.json"))).unwrap_err();
         assert!(err.to_string().contains("does not exist"), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn update_file_refuses_a_planted_temp_symlink() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cfg.json");
+        let victim = dir.path().join("victim");
+        std::fs::write(&victim, "precious").unwrap();
+        let tmp = dir
+            .path()
+            .join(format!("cfg.json.tmp{}", std::process::id()));
+        std::os::unix::fs::symlink(&victim, &tmp).unwrap();
+
+        let err = update_file(&path, |obj| {
+            obj.insert("url".into(), "https://a".into());
+        })
+        .unwrap_err();
+        assert!(
+            format!("{err:#}").contains("temporary config file"),
+            "{err:#}"
+        );
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "precious");
+        assert!(
+            tmp.symlink_metadata().is_ok(),
+            "a file we didn't create was removed"
+        );
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn check_writable_rejects_a_missing_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = check_writable(&dir.path().join("nope").join("cfg.json")).unwrap_err();
+        assert!(format!("{err:#}").contains("does not exist"), "{err:#}");
+        check_writable(&dir.path().join("cfg.json")).unwrap();
+        // The probe leaves nothing behind.
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn explicit_config_path_reaches_the_store_advice() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("cfg.json");
+        let cfg = Config::load_or_empty(Some(&path)).unwrap();
+        let cli = cfg.pass_store().unwrap().cli();
+        assert!(cli.starts_with("gitlab-mcp --config "), "{cli}");
+        assert!(cli.contains("cfg.json"), "{cli}");
     }
 
     #[test]
@@ -360,6 +448,7 @@ mod tests {
             file_gpg: None,
             file_password_store_dir: None,
             file_gnupg_home: None,
+            explicit_path: None,
         };
         let shown = format!("{cfg:?}");
         assert!(!shown.contains("glpat-secret"), "{shown}");
