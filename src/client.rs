@@ -144,10 +144,15 @@ impl PassToken {
             // The re-read after a 401 failed (typically: gpg-agent's cache has
             // expired since the first decrypt). Keep sending the rejected
             // token so the caller sees GitLab's real auth error rather than a
-            // misleading "locked"; the re-read is retried on the next request.
+            // misleading "locked". Clear `stale` so this costs one gpg run per
+            // rejection, not one per later request (every page of a
+            // fetch_all, serialized behind this mutex); the next 401 marks it
+            // stale again.
             (Err(e), Some(old)) => {
                 debug!(target: LOG_TARGET, error = %e, "re-reading rejected token failed; reusing it");
-                Ok(old.clone())
+                let old = old.clone();
+                state.stale = false;
+                Ok(old)
             }
             (Err(e), None) => Err(GitlabError::Credentials(e.to_string())),
         };
@@ -343,23 +348,30 @@ impl GitlabClient {
     /// (POST/PUT/DELETE) — the rejected request never reached the resource.
     /// Honors GitLab's `Retry-After` header (seconds), falling back to
     /// exponential backoff; both are capped at [`MAX_RETRY_WAIT`].
+    ///
+    /// With a pass-entry token, a 401 re-reads the entry at once and, if it
+    /// now holds a different token (rotated via `gitlab-mcp login`), retries
+    /// the request once with it — so the first call after a rotation
+    /// succeeds. Safe for writes too: GitLab rejected the original outright.
     async fn send(
         &self,
         builder: reqwest::RequestBuilder,
     ) -> Result<reqwest::Response, GitlabError> {
-        let (builder, sent_token) = match &self.auth {
-            Auth::Static => (builder, None),
-            Auth::Pass(token) => {
-                let value = token.header().await?;
-                (builder.header("PRIVATE-TOKEN", value.clone()), Some(value))
-            }
+        let mut sent_token = match &self.auth {
+            Auth::Static => None,
+            Auth::Pass(token) => Some(token.header().await?),
         };
         let mut attempt: u32 = 0;
+        let mut auth_retried = false;
         loop {
             // Clone per attempt; our bodies are in-memory JSON, so this is `Some`.
-            let attempt_builder = builder
+            // The token is added per attempt so a retry can swap it.
+            let mut attempt_builder = builder
                 .try_clone()
                 .ok_or_else(|| GitlabError::Other("request body is not retryable".into()))?;
+            if let Some(value) = &sent_token {
+                attempt_builder = attempt_builder.header("PRIVATE-TOKEN", value.clone());
+            }
             // Log the method + URL once (first attempt) from the built request, so a
             // single central point covers every REST and GraphQL call. Headers (and
             // thus the PRIVATE-TOKEN) are never logged. The `enabled!` guard keeps the
@@ -383,6 +395,15 @@ impl GitlabClient {
                 && let (Auth::Pass(token), Some(sent)) = (&self.auth, &sent_token)
             {
                 token.mark_rejected(sent).await;
+                if !auth_retried
+                    && let Ok(fresh) = token.header().await
+                    && fresh != *sent
+                {
+                    debug!(target: LOG_TARGET, "token rotated in the pass entry; retrying once");
+                    auth_retried = true;
+                    sent_token = Some(fresh);
+                    continue;
+                }
             }
             return Ok(resp);
         }
@@ -1099,6 +1120,76 @@ mod tests {
             // Rotated in the store (e.g. via `gitlab-mcp login`) — picked up.
             std::fs::write(&file, ok_snippet("glpat-rotated")).unwrap();
             client.get("/api/v4/user").await.unwrap();
+        }
+
+        #[tokio::test]
+        async fn rotated_token_is_retried_within_the_same_call() {
+            let server = MockServer::start().await;
+            // The old token works once, then is revoked.
+            Mock::given(method("GET"))
+                .and(path("/api/v4/user"))
+                .and(header("PRIVATE-TOKEN", "glpat-old"))
+                .respond_with(
+                    ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": 1})),
+                )
+                .up_to_n_times(1)
+                .mount(&server)
+                .await;
+            Mock::given(method("GET"))
+                .and(path("/api/v4/user"))
+                .and(header("PRIVATE-TOKEN", "glpat-old"))
+                .respond_with(ResponseTemplate::new(401))
+                .mount(&server)
+                .await;
+            Mock::given(method("GET"))
+                .and(path("/api/v4/user"))
+                .and(header("PRIVATE-TOKEN", "glpat-rotated"))
+                .respond_with(
+                    ResponseTemplate::new(200).set_body_json(serde_json::json!({"id": 1})),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            let (_dir, file, client) = pass_client(&server);
+
+            std::fs::write(&file, ok_snippet("glpat-old")).unwrap();
+            client.get("/api/v4/user").await.unwrap();
+            // `gitlab-mcp login` rotates it: the very next call succeeds
+            // (401 → immediate re-read → one retry with the new token).
+            std::fs::write(&file, ok_snippet("glpat-rotated")).unwrap();
+            client.get("/api/v4/user").await.unwrap();
+        }
+
+        #[tokio::test]
+        async fn failed_reread_runs_gpg_once_per_rejection() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/api/v4/user"))
+                .respond_with(ResponseTemplate::new(401))
+                .mount(&server)
+                .await;
+            Mock::given(method("GET"))
+                .and(path("/api/v4/version"))
+                .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"v": 1})))
+                .mount(&server)
+                .await;
+            let (dir, file, client) = pass_client(&server);
+            std::fs::write(&file, ok_snippet("glpat-cached")).unwrap();
+            client.get("/api/v4/version").await.unwrap();
+
+            // The agent cache expires; every decrypt from now on is counted.
+            let count = dir.path().join("gpg-runs");
+            std::fs::write(
+                &file,
+                format!("echo run >> '{}'\n{LOCKED_SNIPPET}", count.display()),
+            )
+            .unwrap();
+            assert!(client.get("/api/v4/user").await.is_err());
+            for _ in 0..3 {
+                client.get("/api/v4/version").await.unwrap();
+            }
+            let runs = std::fs::read_to_string(&count).unwrap().lines().count();
+            assert_eq!(runs, 1, "gpg re-ran on requests after the failed re-read");
         }
 
         #[tokio::test]

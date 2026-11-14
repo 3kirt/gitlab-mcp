@@ -108,7 +108,10 @@ pub async fn encryption_keygrips(
 
 /// In colon listings a `grp` record carries the keygrip (field 10) of the
 /// `sec`/`ssb` record before it, whose field 12 lists its capabilities;
-/// a lowercase `e` means that specific (sub)key can encrypt.
+/// a lowercase `e` means that specific (sub)key can encrypt. Field 2 is the
+/// validity: an expired (`e`), revoked (`r`), disabled (`d`) or invalid
+/// (`i`) key is skipped — gpg won't encrypt new entries to it, so its cached
+/// passphrase says nothing about whether the store is unlocked.
 fn parse_encryption_keygrips(colons: &str) -> Vec<String> {
     let mut grips = Vec::new();
     let mut want = false;
@@ -116,7 +119,10 @@ fn parse_encryption_keygrips(colons: &str) -> Vec<String> {
         let fields: Vec<&str> = line.split(':').collect();
         match fields.first().copied() {
             Some("sec" | "ssb") => {
-                want = fields.get(11).is_some_and(|caps| caps.contains('e'));
+                let usable = !fields
+                    .get(1)
+                    .is_some_and(|v| matches!(*v, "e" | "r" | "d" | "i"));
+                want = usable && fields.get(11).is_some_and(|caps| caps.contains('e'));
             }
             Some("grp") => {
                 if want && let Some(grip) = fields.get(9).filter(|g| !g.is_empty()) {
@@ -289,6 +295,21 @@ grp:::::::::DA8860143E78BEEF72E4C9232E98A0E2C7014E13:
     fn only_encryption_subkey_grips_are_selected() {
         // The primary's `scESC` has no lowercase `e`: it can't encrypt itself.
         assert_eq!(parse_encryption_keygrips(COLONS), vec![GRIP_B]);
+    }
+
+    #[test]
+    fn unusable_encryption_subkeys_are_skipped() {
+        // Same key plus an expired and a revoked encryption subkey (validity
+        // `e` / `r` in field 2): only the usable subkey's grip counts.
+        let colons = format!(
+            "{COLONS}\
+ssb:e:255:18:1111111111111111:1700000000:1710000000:::::e:::+::cv25519::
+grp:::::::::{GRIP_A}:
+ssb:r:255:18:2222222222222222:1700000000::::::e:::+::cv25519::
+grp:::::::::AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA:
+"
+        );
+        assert_eq!(parse_encryption_keygrips(&colons), vec![GRIP_B]);
     }
 
     #[test]
