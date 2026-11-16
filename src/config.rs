@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::{Context, bail};
 use serde::Deserialize;
 
 use crate::credentials::{PassEntry, PassStore, StoreLocation};
@@ -18,6 +18,9 @@ struct RawConfig {
     /// GnuPG home (default: `$GNUPGHOME`, else gpg's own default).
     gnupg_home: Option<String>,
 }
+
+/// GitLab URL used when neither `GITLAB_URL` nor the config file sets one.
+pub const DEFAULT_URL: &str = "https://gitlab.com";
 
 #[derive(Clone)]
 pub struct Config {
@@ -141,12 +144,16 @@ impl Config {
         self.file_url.as_deref().filter(|u| !u.trim().is_empty())
     }
 
-    /// Resolve the GitLab base URL: GITLAB_URL env var, then config file, then error.
+    /// Resolve the GitLab base URL: GITLAB_URL env var, then config file, then
+    /// [`DEFAULT_URL`].
+    ///
+    /// The gitlab.com default lives here, *after* the config file, rather than
+    /// in shipped MCP configs as `${GITLAB_URL:-https://gitlab.com}`: a default
+    /// in the env var is a real value that shadows the config file's `url`, so
+    /// a self-hosted user's token would be sent to gitlab.com.
     pub fn resolve_url(&self) -> anyhow::Result<String> {
-        let url =
-            first_non_empty(env_var("GITLAB_URL"), self.file_url.clone()).ok_or_else(|| {
-                anyhow!("GitLab URL not set: provide GITLAB_URL or set \"url\" in config file")
-            })?;
+        let url = first_non_empty(env_var("GITLAB_URL"), self.file_url.clone())
+            .unwrap_or_else(|| DEFAULT_URL.to_string());
         enforce_https(&url)?;
         Ok(url)
     }
@@ -632,6 +639,26 @@ mod tests {
         }
     }
 
+    fn gitlab_url_env_set() -> bool {
+        super::env_var("GITLAB_URL").is_some()
+    }
+
+    #[test]
+    fn url_defaults_to_gitlab_com_only_after_config_file() {
+        if gitlab_url_env_set() {
+            return;
+        }
+        assert_eq!(raw(None, None).resolve_url().unwrap(), super::DEFAULT_URL);
+        let with_file = Config::from_raw(RawConfig {
+            url: Some("https://gitlab.example.com".into()),
+            ..RawConfig::default()
+        });
+        assert_eq!(
+            with_file.resolve_url().unwrap(),
+            "https://gitlab.example.com"
+        );
+    }
+
     #[test]
     fn placeholder_in_config_file_counts_as_unset() {
         if gitlab_token_env_set() {
@@ -683,6 +710,15 @@ mod tests {
                 };
                 for (key, value) in env {
                     let value = value.as_str().unwrap_or_default();
+                    // A non-empty default would be a real value that shadows
+                    // the config file's `url` (sending a self-hosted token to
+                    // gitlab.com); the server applies the default itself.
+                    if key == "GITLAB_URL" {
+                        assert_eq!(
+                            value, "${GITLAB_URL:-}",
+                            "{source}: {server}.env.GITLAB_URL must default to empty"
+                        );
+                    }
                     for placeholder in value.split("${").skip(1) {
                         let inner = placeholder.split('}').next().unwrap_or_default();
                         assert!(

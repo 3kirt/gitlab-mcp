@@ -65,8 +65,13 @@ enum TokenEnv {
 }
 
 /// Spawn the server against `gitlab` with a pass-entry config, call one tool
-/// over MCP stdio, and return the `tools/call` result.
-async fn call_through_binary(gitlab: &MockServer, token_env: TokenEnv) -> Value {
+/// over MCP stdio, and return the `tools/call` result. `url_env` is the
+/// `GITLAB_URL` the client passes (`None` = not in the environment).
+async fn call_through_binary(
+    gitlab: &MockServer,
+    token_env: TokenEnv,
+    url_env: Option<&str>,
+) -> Value {
     let dir = tempfile::tempdir().unwrap();
     let gpg = write_fake_gpg(dir.path());
     let store = dir.path().join("store");
@@ -101,6 +106,9 @@ async fn call_through_binary(gitlab: &MockServer, token_env: TokenEnv) -> Value 
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    if let Some(url) = url_env {
+        cmd.env("GITLAB_URL", url);
+    }
     match token_env {
         TokenEnv::Unset => {}
         TokenEnv::Empty => {
@@ -163,6 +171,12 @@ where
 }
 
 async fn assert_uses_pass_token(token_env: TokenEnv) {
+    assert_reaches_configured_gitlab(token_env, None).await;
+}
+
+/// The request must reach the config file's GitLab (the mock) carrying the
+/// pass-entry token.
+async fn assert_reaches_configured_gitlab(token_env: TokenEnv, url_env: Option<&str>) {
     let gitlab = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/api/v4/metadata"))
@@ -180,7 +194,7 @@ async fn assert_uses_pass_token(token_env: TokenEnv) {
         .mount(&gitlab)
         .await;
 
-    let result = call_through_binary(&gitlab, token_env).await;
+    let result = call_through_binary(&gitlab, token_env, url_env).await;
     assert_ne!(
         result["isError"],
         json!(true),
@@ -205,4 +219,18 @@ async fn pass_entry_is_used_when_token_env_is_empty() {
 #[tokio::test]
 async fn pass_entry_is_used_when_client_passes_a_literal_placeholder() {
     assert_uses_pass_token(TokenEnv::LiteralPlaceholder).await;
+}
+
+/// What the plugin's `"${GITLAB_URL:-}"` passes when the variable is unset.
+/// Up to v0.40.0 the plugin passed `${GITLAB_URL:-https://gitlab.com}`, a real
+/// value that shadowed the config file's self-hosted `url`, so the token went
+/// to gitlab.com instead.
+#[tokio::test]
+async fn config_file_url_is_used_when_url_env_is_empty() {
+    assert_reaches_configured_gitlab(TokenEnv::Empty, Some("")).await;
+}
+
+#[tokio::test]
+async fn config_file_url_is_used_when_client_passes_a_literal_url_placeholder() {
+    assert_reaches_configured_gitlab(TokenEnv::Empty, Some("${GITLAB_URL}")).await;
 }

@@ -65,7 +65,7 @@ set but empty counts as unset):
 
 | Variable | Description |
 |---|---|
-| `GITLAB_URL` | GitLab base URL (e.g. `https://gitlab.com` or `https://gitlab.example.com`) |
+| `GITLAB_URL` | GitLab base URL (e.g. `https://gitlab.example.com`); defaults to the config file's `url`, then `https://gitlab.com` |
 | `GITLAB_TOKEN` | GitLab personal access token |
 
 A custom config file path can be specified with `--config`:
@@ -220,7 +220,7 @@ binary automatically — no manual install step. In Claude Code:
 ```
 
 On first start the plugin downloads the prebuilt binary for your platform
-(macOS arm64, Linux amd64/arm64; macOS x86_64 from v0.34.0 onward) from the
+(macOS arm64/x86_64, Linux amd64/arm64) from the
 GitHub release matching the plugin version, verifies it against the release
 checksums, and caches it under `~/.cache/gitlab-mcp/` (or `$XDG_CACHE_HOME`). Plugin updates roll the
 binary forward automatically; on unsupported platforms (or when the download
@@ -255,7 +255,7 @@ users just export `GITLAB_TOKEN` before starting Claude Code:
       "command": "gitlab-mcp",
       "args": [],
       "env": {
-        "GITLAB_URL": "${GITLAB_URL:-https://gitlab.com}",
+        "GITLAB_URL": "${GITLAB_URL:-}",
         "GITLAB_TOKEN": "${GITLAB_TOKEN:-}"
       }
     }

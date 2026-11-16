@@ -4,6 +4,20 @@ All notable changes to gitlab-mcp are documented here.
 
 ## [Unreleased]
 
+### Fixed
+- **Plugin installs no longer ignore a self-hosted `url` in the config
+  file** — the plugin config passed `"GITLAB_URL": "${GITLAB_URL:-https://gitlab.com}"`.
+  With the variable unset, that expanded to a real `https://gitlab.com`,
+  which took precedence over `~/.gitlab_mcp.json`'s `url`. Every call went to
+  gitlab.com, **carrying the self-hosted instance's token**, and got a 401.
+  The plugin config, the repo's `.mcp.json`, and the README example now pass
+  `"${GITLAB_URL:-}"`. The server applies the gitlab.com default itself, after
+  the config file. With no URL configured anywhere, the server, `login`, and
+  `status` now use gitlab.com instead of erroring. If you
+  pointed a self-hosted token at the plugin, consider rotating it.
+- Launch-path tests cover an empty or literal-placeholder `GITLAB_URL`, and
+  the MCP-config lint rejects any non-empty `GITLAB_URL` default.
+
 ## [0.40.0] - 2026-11-14
 
 Fixes for GPG-encrypted tokens, the TLS switch to ring, and a release
