@@ -4,6 +4,10 @@ All notable changes to gitlab-mcp are documented here.
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-11-15
+
+Fixes the plugin sending a self-hosted token to gitlab.com.
+
 ### Fixed
 - **Plugin installs no longer ignore a self-hosted `url` in the config
   file** — the plugin config passed `"GITLAB_URL": "${GITLAB_URL:-https://gitlab.com}"`.
