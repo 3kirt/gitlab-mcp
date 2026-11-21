@@ -9,6 +9,17 @@ Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Crea
 - **Token-efficient responses** — list results are automatically slimmed (descriptions, pipelines, and other bulk fields stripped); use single-get tools when full detail is needed
 - **Request tracing** — tool errors and (with `--debug`) every GitLab request are logged to stderr or a file via `--log-file`, for diagnosing API failures
 
+**Using Claude Code?** Install it as a plugin. It takes two commands, and the
+plugin downloads, verifies, and updates the binary for you:
+
+```
+/plugin marketplace add 3kirt/gitlab-mcp
+/plugin install gitlab-mcp@gitlab-mcp
+```
+
+Then set up your [credentials](#configuration). Details are in
+[Plugin install](#plugin-install-recommended).
+
 ---
 
 ## Table of contents
@@ -25,17 +36,34 @@ Ask things like *"List open issues assigned to me in my-org/my-project"*, *"Crea
 ## Requirements
 
 - A GitLab instance (gitlab.com or self-hosted) and a personal access token with `api` scope
+- With the Claude Code plugin: nothing else, since the plugin fetches the binary
+- To use a pre-built binary with another MCP client: nothing, just grab it from the [releases page](https://github.com/3kirt/gitlab-mcp/releases)
 - To build from source: Rust stable toolchain (`rustup install stable`)
-- To use a pre-built binary: nothing — grab it from the [releases page](https://github.com/3kirt/gitlab-mcp/releases)
 - Optional: GnuPG, to keep the token encrypted instead of in plaintext ([GPG-encrypted token](#gpg-encrypted-token-pass))
 
 ---
 
 ## Installation
 
-### Pre-built binary (recommended)
+### Claude Code plugin (recommended)
 
-Download the binary for your platform from the [releases page](https://github.com/3kirt/gitlab-mcp/releases) and place it somewhere on your `$PATH`.
+If you use Claude Code, install the plugin instead of a binary:
+
+```
+/plugin marketplace add 3kirt/gitlab-mcp
+/plugin install gitlab-mcp@gitlab-mcp
+```
+
+The plugin registers the server and downloads the release binary that
+matches its version. It checks the binary against the release checksums and
+moves it forward on each plugin update, so there's nothing to install or keep
+up to date by hand. See [Plugin install](#plugin-install-recommended) for
+how it works, then continue with [Configuration](#configuration).
+
+### Pre-built binary
+
+For other MCP clients, or to run `gitlab-mcp` from your shell,
+download the binary for your platform from the [releases page](https://github.com/3kirt/gitlab-mcp/releases) and place it somewhere on your `$PATH`.
 
 ### From source
 
