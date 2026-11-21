@@ -38,8 +38,7 @@ async fn delete_mr(env: &LiveEnv, iid: u64) {
     .await;
 }
 
-/// Calls `mr_cancel_auto_merge` expecting failure; returns the tool message.
-async fn cancel_auto_merge_err(env: &LiveEnv, iid: u64) -> String {
+async fn cancel_auto_merge(env: &LiveEnv, iid: u64) -> Result<Value, GitlabError> {
     merge_requests::mr_cancel_auto_merge(
         &env.client,
         merge_requests::MrCancelAutoMergeParams {
@@ -48,8 +47,50 @@ async fn cancel_auto_merge_err(env: &LiveEnv, iid: u64) -> String {
         },
     )
     .await
-    .expect_err("cancel auto-merge must fail when auto-merge is not set")
-    .to_tool_message()
+}
+
+/// Start of `mr_cancel_auto_merge`'s "nothing to cancel" message (after the IID).
+const NOT_CANCELLABLE: &str = "has no auto-merge to cancel";
+
+/// Cancel auto-merge where there is none (never enabled, or MR merged) and
+/// assert the shared "nothing to cancel" error.
+async fn assert_nothing_to_cancel(env: &LiveEnv, iid: u64) {
+    let msg = cancel_auto_merge(env, iid)
+        .await
+        .expect_err("cancel auto-merge must fail")
+        .to_tool_message();
+    assert!(msg.contains(NOT_CANCELLABLE), "{msg}");
+}
+
+/// Merge params with every option unset; callers set what a case needs.
+fn mr_merge_params(env: &LiveEnv, iid: u64) -> merge_requests::MrMergeParams {
+    merge_requests::MrMergeParams {
+        project_id: env.project.clone().into(),
+        merge_request_iid: iid.into(),
+        merge_commit_message: None,
+        squash: None,
+        should_remove_source_branch: None,
+        merge_when_pipeline_succeeds: None,
+    }
+}
+
+/// `mr_merge`, retrying the transient `405 Method Not Allowed` GitLab returns
+/// while its async mergeability check lags (~30s budget). Any other outcome,
+/// or the last 405, is returned.
+async fn merge_retrying_405(
+    env: &LiveEnv,
+    params: impl Fn() -> merge_requests::MrMergeParams,
+) -> Result<Value, GitlabError> {
+    let mut result = merge_requests::mr_merge(&env.client, params()).await;
+    for _ in 0..60 {
+        match &result {
+            Err(GitlabError::Api { status, .. }) if status.as_u16() == 405 => {}
+            _ => break,
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        result = merge_requests::mr_merge(&env.client, params()).await;
+    }
+    result
 }
 
 /// MR create params with sensible defaults; callers override the fields a case
@@ -125,52 +166,33 @@ fn mrs_list_params(project: &str) -> merge_requests::MrsListParams {
 /// Allowed`. So we poll `detailed_merge_status` (falling back to the legacy
 /// `merge_status`) *and* retry the merge itself on a 405, within one budget.
 async fn merge_when_ready(env: &LiveEnv, iid: u64) -> Value {
-    // ~60s budget: GitLab's async mergeability check can lag on a loaded
-    // instance, and this test gates releases, so err toward patience.
+    // ~30s for the status to report ready, then ~30s of 405 retries: GitLab's
+    // async mergeability check can lag on a loaded instance, and this test
+    // gates releases, so err toward patience.
     for _ in 0..60 {
-        let mr = merge_requests::mr_get(
-            &env.client,
-            merge_requests::MrGetParams {
-                project_id: env.project.clone().into(),
-                merge_request_iid: iid.into(),
-            },
-        )
-        .await
-        .expect("mr_get while polling merge status");
+        let mr = get_mr(env, iid).await;
         let detailed = mr["detailed_merge_status"].as_str().unwrap_or("");
         let legacy = mr["merge_status"].as_str().unwrap_or("");
         assert!(
             !(detailed == "conflict" || legacy == "cannot_be_merged"),
             "MR {iid} cannot be merged (detailed_merge_status={detailed:?})"
         );
-        let ready = detailed == "mergeable" || (detailed.is_empty() && legacy == "can_be_merged");
-        if ready {
-            match merge_requests::mr_merge(
-                &env.client,
-                merge_requests::MrMergeParams {
-                    project_id: env.project.clone().into(),
-                    merge_request_iid: iid.into(),
-                    merge_commit_message: None,
-                    squash: None,
-                    should_remove_source_branch: Some(true),
-                    merge_when_pipeline_succeeds: None,
-                },
-            )
+        if detailed == "mergeable" || (detailed.is_empty() && legacy == "can_be_merged") {
+            return merge_retrying_405(env, || merge_requests::MrMergeParams {
+                should_remove_source_branch: Some(true),
+                ..mr_merge_params(env, iid)
+            })
             .await
-            {
-                Ok(merged) => return merged,
-                // 405 = "not mergeable yet" despite the status; back off and retry.
-                Err(GitlabError::Api { status, .. }) if status.as_u16() == 405 => {}
-                Err(e) => panic!("merge: {e:?}"),
-            }
+            .expect("merge");
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
     panic!("MR {iid} never became mergeable within the polling budget");
 }
 
-async fn get_mr_slimmed(env: &LiveEnv, iid: u64) -> Value {
-    let raw = merge_requests::mr_get(
+/// The raw (unslimmed) single-get response.
+async fn get_mr(env: &LiveEnv, iid: u64) -> Value {
+    merge_requests::mr_get(
         &env.client,
         merge_requests::MrGetParams {
             project_id: env.project.clone().into(),
@@ -178,8 +200,11 @@ async fn get_mr_slimmed(env: &LiveEnv, iid: u64) -> Value {
         },
     )
     .await
-    .expect("mr_get");
-    slim::slim_get(raw)
+    .expect("mr_get")
+}
+
+async fn get_mr_slimmed(env: &LiveEnv, iid: u64) -> Value {
+    slim::slim_get(get_mr(env, iid).await)
 }
 
 async fn list_mrs_slimmed(env: &LiveEnv, p: merge_requests::MrsListParams) -> (Value, u64) {
@@ -244,8 +269,7 @@ async fn mrs_create_get_update_delete_lifecycle() {
     // Cancel auto-merge on an MR that never had it. gitlab.com answers with a
     // success status + `{"status":"error","http_status":406}` body; it must
     // come back as an error, not be passed through as the MR.
-    let msg = cancel_auto_merge_err(&env, iid).await;
-    assert!(msg.contains("auto-merge is not enabled"), "{msg}");
+    assert_nothing_to_cancel(&env, iid).await;
 
     // Get — single-get keeps description and embeds closes/related issues.
     let got = get_mr_slimmed(&env, iid).await;
@@ -442,8 +466,7 @@ async fn mr_merge_into_throwaway_base() {
 
     // Same on a merged MR (gitlab.com sends the identical in-body 406, not
     // the documented 405).
-    let msg = cancel_auto_merge_err(&env, iid).await;
-    assert!(msg.contains("already merged or closed"), "{msg}");
+    assert_nothing_to_cancel(&env, iid).await;
 
     // Cleanup: delete the merged MR record, then the branches (which discards
     // the merged commit). main is untouched. The feature branch was removed on
@@ -534,49 +557,12 @@ async fn mr_closes_issue_embeds() {
 /// asynchronously); auto-merge set before that would merge immediately.
 async fn wait_for_head_pipeline(env: &LiveEnv, iid: u64, pipeline_id: u64) -> bool {
     for _ in 0..60 {
-        let mr = merge_requests::mr_get(
-            &env.client,
-            merge_requests::MrGetParams {
-                project_id: env.project.clone().into(),
-                merge_request_iid: iid.into(),
-            },
-        )
-        .await
-        .expect("mr_get while waiting for head pipeline");
-        if mr["head_pipeline"]["id"].as_u64() == Some(pipeline_id) {
+        if get_mr(env, iid).await["head_pipeline"]["id"].as_u64() == Some(pipeline_id) {
             return true;
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
     false
-}
-
-/// Enable auto-merge, retrying the transient 405 GitLab gives while its async
-/// mergeability check is still running (see `merge_when_ready`).
-async fn enable_auto_merge(env: &LiveEnv, iid: u64) -> Result<Value, GitlabError> {
-    let mut last = None;
-    for _ in 0..60 {
-        match merge_requests::mr_merge(
-            &env.client,
-            merge_requests::MrMergeParams {
-                project_id: env.project.clone().into(),
-                merge_request_iid: iid.into(),
-                merge_commit_message: None,
-                squash: None,
-                should_remove_source_branch: None,
-                merge_when_pipeline_succeeds: Some(true),
-            },
-        )
-        .await
-        {
-            Err(GitlabError::Api { status, body }) if status.as_u16() == 405 => {
-                last = Some(GitlabError::Api { status, body });
-            }
-            other => return other,
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    }
-    Err(last.expect("loop ran"))
 }
 
 #[tokio::test]
@@ -608,19 +594,18 @@ async fn mr_auto_merge_enable_then_cancel() {
 
     let linked = wait_for_head_pipeline(&env, iid, pipeline_id).await;
     let enabled = if linked {
-        Some(enable_auto_merge(&env, iid).await)
+        Some(
+            merge_retrying_405(&env, || merge_requests::MrMergeParams {
+                merge_when_pipeline_succeeds: Some(true),
+                ..mr_merge_params(&env, iid)
+            })
+            .await,
+        )
     } else {
         None
     };
-    let cancelled = merge_requests::mr_cancel_auto_merge(
-        &env.client,
-        merge_requests::MrCancelAutoMergeParams {
-            project_id: env.project.clone().into(),
-            merge_request_iid: iid.into(),
-        },
-    )
-    .await;
-    let second = cancel_auto_merge_err_result(&env, iid).await;
+    let cancelled = cancel_auto_merge(&env, iid).await;
+    let second = cancel_auto_merge(&env, iid).await;
     let after = get_mr_slimmed(&env, iid).await;
 
     delete_mr(&env, iid).await;
@@ -646,21 +631,11 @@ async fn mr_auto_merge_enable_then_cancel() {
     );
     assert_eq!(cancelled["state"], "opened", "{cancelled}");
 
-    let msg = second.expect_err("a second cancel must fail: nothing left to cancel");
-    assert!(msg.contains("auto-merge is not enabled"), "{msg}");
+    let msg = second
+        .expect_err("a second cancel must fail: nothing left to cancel")
+        .to_tool_message();
+    assert!(msg.contains(NOT_CANCELLABLE), "{msg}");
 
     assert_eq!(after["merge_when_pipeline_succeeds"], false, "{after}");
     assert_eq!(after["state"], "opened", "{after}");
-}
-
-async fn cancel_auto_merge_err_result(env: &LiveEnv, iid: u64) -> Result<Value, String> {
-    merge_requests::mr_cancel_auto_merge(
-        &env.client,
-        merge_requests::MrCancelAutoMergeParams {
-            project_id: env.project.clone().into(),
-            merge_request_iid: iid.into(),
-        },
-    )
-    .await
-    .map_err(|e| e.to_tool_message())
 }
