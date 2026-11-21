@@ -12,6 +12,10 @@ All notable changes to gitlab-mcp are documented here.
   (auto-merge not enabled, or the MR already merged or closed) it returns a
   plain-language error instead of GitLab's bare status.
 
+### Changed
+- rmcp upgraded to 3.11.0; other dependencies refreshed within their
+  existing version ranges.
+
 ## [0.41.0] - 2026-11-15
 
 Fixes the plugin sending a self-hosted token to gitlab.com.
