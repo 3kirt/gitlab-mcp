@@ -520,3 +520,147 @@ async fn mr_closes_issue_embeds() {
     delete_branch(&env, &branch).await;
     delete_issue(&env, issue_iid).await;
 }
+
+// --------------------------------------------------------------------------
+// Auto-merge enable → cancel, against a real running pipeline
+//
+// Auto-merge can only be set while the MR's head pipeline is active, so the
+// feature branch carries a CI job that just sleeps. The MR targets a
+// throwaway base, so even if auto-merge were to fire, `main` is untouched.
+// Everything is torn down *before* asserting.
+// --------------------------------------------------------------------------
+
+/// Poll until the MR's `head_pipeline` is `pipeline_id` (GitLab links it
+/// asynchronously); auto-merge set before that would merge immediately.
+async fn wait_for_head_pipeline(env: &LiveEnv, iid: u64, pipeline_id: u64) -> bool {
+    for _ in 0..60 {
+        let mr = merge_requests::mr_get(
+            &env.client,
+            merge_requests::MrGetParams {
+                project_id: env.project.clone().into(),
+                merge_request_iid: iid.into(),
+            },
+        )
+        .await
+        .expect("mr_get while waiting for head pipeline");
+        if mr["head_pipeline"]["id"].as_u64() == Some(pipeline_id) {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    false
+}
+
+/// Enable auto-merge, retrying the transient 405 GitLab gives while its async
+/// mergeability check is still running (see `merge_when_ready`).
+async fn enable_auto_merge(env: &LiveEnv, iid: u64) -> Result<Value, GitlabError> {
+    let mut last = None;
+    for _ in 0..60 {
+        match merge_requests::mr_merge(
+            &env.client,
+            merge_requests::MrMergeParams {
+                project_id: env.project.clone().into(),
+                merge_request_iid: iid.into(),
+                merge_commit_message: None,
+                squash: None,
+                should_remove_source_branch: None,
+                merge_when_pipeline_succeeds: Some(true),
+            },
+        )
+        .await
+        {
+            Err(GitlabError::Api { status, body }) if status.as_u16() == 405 => {
+                last = Some(GitlabError::Api { status, body });
+            }
+            other => return other,
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    Err(last.expect("loop ran"))
+}
+
+#[tokio::test]
+async fn mr_auto_merge_enable_then_cancel() {
+    let env = skip_unless_live!();
+    let tag = run_tag();
+    let base = format!("{tag}-am-base");
+    let feat = format!("{tag}-am-feat");
+
+    seed_branch_with_file(&env, &base, "main").await;
+    super::pipelines::seed_ci_branch(
+        &env,
+        &feat,
+        &base,
+        "workflow:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"api\"\n\n\
+         hold:\n  image: alpine:3.20\n  timeout: 15m\n  script: sleep 900\n",
+    )
+    .await;
+    let Some(pipeline_id) = super::pipelines::create_pipeline(&env, &feat).await else {
+        delete_branch(&env, &base).await;
+        return;
+    };
+
+    let (iid, _) = create_mr(
+        &env,
+        mr_create_params(&env, &feat, &base, &format!("{tag} auto-merge")),
+    )
+    .await;
+
+    let linked = wait_for_head_pipeline(&env, iid, pipeline_id).await;
+    let enabled = if linked {
+        Some(enable_auto_merge(&env, iid).await)
+    } else {
+        None
+    };
+    let cancelled = merge_requests::mr_cancel_auto_merge(
+        &env.client,
+        merge_requests::MrCancelAutoMergeParams {
+            project_id: env.project.clone().into(),
+            merge_request_iid: iid.into(),
+        },
+    )
+    .await;
+    let second = cancel_auto_merge_err_result(&env, iid).await;
+    let after = get_mr_slimmed(&env, iid).await;
+
+    delete_mr(&env, iid).await;
+    super::pipelines::teardown(&env, pipeline_id, &feat).await;
+    delete_branch(&env, &base).await;
+
+    assert!(
+        linked,
+        "MR !{iid} never picked up pipeline {pipeline_id} as head pipeline"
+    );
+    let enabled = enabled.expect("enable ran").expect("enable auto-merge");
+    assert_eq!(enabled["merge_when_pipeline_succeeds"], true, "{enabled}");
+    assert_eq!(
+        enabled["state"], "opened",
+        "auto-merge must not merge yet: {enabled}"
+    );
+
+    let cancelled = cancelled.expect("cancel auto-merge");
+    assert_eq!(cancelled["iid"], iid, "{cancelled}");
+    assert_eq!(
+        cancelled["merge_when_pipeline_succeeds"], false,
+        "{cancelled}"
+    );
+    assert_eq!(cancelled["state"], "opened", "{cancelled}");
+
+    let msg = second.expect_err("a second cancel must fail: nothing left to cancel");
+    assert!(msg.contains("auto-merge is not enabled"), "{msg}");
+
+    assert_eq!(after["merge_when_pipeline_succeeds"], false, "{after}");
+    assert_eq!(after["state"], "opened", "{after}");
+}
+
+async fn cancel_auto_merge_err_result(env: &LiveEnv, iid: u64) -> Result<Value, String> {
+    merge_requests::mr_cancel_auto_merge(
+        &env.client,
+        merge_requests::MrCancelAutoMergeParams {
+            project_id: env.project.clone().into(),
+            merge_request_iid: iid.into(),
+        },
+    )
+    .await
+    .map_err(|e| e.to_tool_message())
+}

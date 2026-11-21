@@ -346,6 +346,17 @@ pub async fn mr_cancel_auto_merge(
         {
             Err(not_cancellable(format!("GitLab returned {status}")))
         }
+        // The docs say success returns the MR; gitlab.com returns only
+        // `{"status":"success"}`. Fetch the MR in that case so the caller can
+        // confirm `merge_when_pipeline_succeeds` is now false.
+        Ok(v) if v.get("iid").is_none() => {
+            let mr_path = format!(
+                "{}/merge_requests/{}",
+                project_path(&p.project_id),
+                p.merge_request_iid
+            );
+            client.get(&mr_path).await
+        }
         other => other,
     }
 }
@@ -583,6 +594,35 @@ mod tests {
         Mock::given(method("POST"))
             .and(path(CANCEL_PATH))
             .respond_with(ResponseTemplate::new(201).set_body_json(&mr))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let v = mr_cancel_auto_merge(&mock_client(&server), cancel_params(5))
+            .await
+            .unwrap();
+        assert_eq!(v["iid"], 5);
+        assert_eq!(v["merge_when_pipeline_succeeds"], false);
+    }
+
+    /// gitlab.com answers a successful cancel with `{"status":"success"}`
+    /// only; the tool must follow up with a GET to return the MR.
+    #[tokio::test]
+    async fn mr_cancel_auto_merge_status_success_fetches_mr() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(CANCEL_PATH))
+            .respond_with(
+                ResponseTemplate::new(201).set_body_json(serde_json::json!({"status": "success"})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut mr = mr_json(5);
+        mr["merge_when_pipeline_succeeds"] = serde_json::json!(false);
+        Mock::given(method("GET"))
+            .and(path("/api/v4/projects/g%2Fp/merge_requests/5"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(&mr))
             .expect(1)
             .mount(&server)
             .await;

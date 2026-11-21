@@ -13,7 +13,9 @@ All notable changes to gitlab-mcp are documented here.
   When there's nothing to cancel (auto-merge not enabled, or the MR already
   merged or closed) it returns a plain-language error. gitlab.com reports
   that case with a success status and an error body, not the documented
-  406/405; both shapes are handled. (#17)
+  406/405, and answers a successful cancel with only `{"status":"success"}`
+  (the tool then fetches the MR); both documented and observed shapes are
+  handled. (#17)
 
 ## [0.41.0] - 2026-11-15
 
