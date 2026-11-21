@@ -1,3 +1,4 @@
+use reqwest::StatusCode;
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -300,6 +301,44 @@ pub async fn mr_merge(client: &GitlabClient, p: MrMergeParams) -> Result<Value, 
 }
 
 // --------------------------------------------------------------------------
+// Cancel auto-merge ("merge when pipeline succeeds")
+// --------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct MrCancelAutoMergeParams {
+    pub project_id: crate::tools::ProjectId,
+    pub merge_request_iid: crate::tools::MergeRequestIid,
+}
+
+pub async fn mr_cancel_auto_merge(
+    client: &GitlabClient,
+    p: MrCancelAutoMergeParams,
+) -> Result<Value, GitlabError> {
+    let path = format!(
+        "{}/merge_requests/{}/cancel_merge_when_pipeline_succeeds",
+        project_path(&p.project_id),
+        p.merge_request_iid
+    );
+    // GitLab signals "nothing to cancel" with bare 4xx statuses; translate the
+    // two documented ones into messages an LLM caller can act on.
+    match client.post(&path, &serde_json::json!({})).await {
+        Err(GitlabError::Api { status, .. }) if status == StatusCode::NOT_ACCEPTABLE => {
+            Err(GitlabError::Other(format!(
+                "auto-merge is not enabled on merge request !{} (GitLab returned 406 Not Acceptable), so there is nothing to cancel",
+                p.merge_request_iid
+            )))
+        }
+        Err(GitlabError::Api { status, .. }) if status == StatusCode::METHOD_NOT_ALLOWED => {
+            Err(GitlabError::Other(format!(
+                "merge request !{} is already merged or closed (GitLab returned 405 Method Not Allowed), so auto-merge cannot be cancelled",
+                p.merge_request_iid
+            )))
+        }
+        other => other,
+    }
+}
+
+// --------------------------------------------------------------------------
 // Approve merge request
 // --------------------------------------------------------------------------
 
@@ -437,6 +476,27 @@ impl GitlabMcpServer {
     }
 
     #[tool(
+        description = "Cancel auto-merge on a GitLab merge request (turn off \"merge when pipeline succeeds\" / \"set to auto-merge\" enabled via gitlab_mrs_merge). Use this to hold back an MR: marking it draft with gitlab_mrs_update does NOT clear auto-merge. Required: project_id and merge_request_iid. Returns the updated merge request (merge_when_pipeline_succeeds is then false); errors clearly if auto-merge was not enabled or the MR is already merged/closed.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false
+        )
+    )]
+    async fn gitlab_mrs_cancel_auto_merge(
+        &self,
+        Parameters(p): Parameters<MrCancelAutoMergeParams>,
+    ) -> Result<CallToolResult, McpError> {
+        delegate_json!(
+            self,
+            mr_cancel_auto_merge,
+            p,
+            "cancelling auto-merge on",
+            "merge request"
+        )
+    }
+
+    #[tool(
         description = "Approve a GitLab merge request. Required: project_id and merge_request_iid. Optional: sha (HEAD commit SHA to guard against concurrent updates), approval_password (only needed if re-authentication is enabled). Returns the updated approval state including approvals_left and approved_by.",
         annotations(
             read_only_hint = false,
@@ -484,9 +544,94 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     use super::{
-        MrApproveParams, MrGetParams, MrUnapproveParams, mr_approve, mr_get, mr_unapprove,
+        MrApproveParams, MrCancelAutoMergeParams, MrGetParams, MrUnapproveParams, mr_approve,
+        mr_cancel_auto_merge, mr_get, mr_unapprove,
     };
     use crate::test_util::mock_client;
+
+    // ------------------------------------------------------------------
+    // mr_cancel_auto_merge
+    // ------------------------------------------------------------------
+
+    fn cancel_params(iid: u64) -> MrCancelAutoMergeParams {
+        MrCancelAutoMergeParams {
+            project_id: "g/p".into(),
+            merge_request_iid: iid.into(),
+        }
+    }
+
+    const CANCEL_PATH: &str =
+        "/api/v4/projects/g%2Fp/merge_requests/5/cancel_merge_when_pipeline_succeeds";
+
+    #[tokio::test]
+    async fn mr_cancel_auto_merge_posts_and_returns_mr() {
+        let server = MockServer::start().await;
+        let mut mr = mr_json(5);
+        mr["merge_when_pipeline_succeeds"] = serde_json::json!(false);
+        Mock::given(method("POST"))
+            .and(path(CANCEL_PATH))
+            .respond_with(ResponseTemplate::new(201).set_body_json(&mr))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let v = mr_cancel_auto_merge(&mock_client(&server), cancel_params(5))
+            .await
+            .unwrap();
+        assert_eq!(v["iid"], 5);
+        assert_eq!(v["merge_when_pipeline_succeeds"], false);
+    }
+
+    #[tokio::test]
+    async fn mr_cancel_auto_merge_406_explains_not_enabled() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(CANCEL_PATH))
+            .respond_with(
+                ResponseTemplate::new(406).set_body_string(r#"{"message":"406 Not Acceptable"}"#),
+            )
+            .mount(&server)
+            .await;
+
+        let err = mr_cancel_auto_merge(&mock_client(&server), cancel_params(5))
+            .await
+            .unwrap_err();
+        let msg = err.to_tool_message();
+        assert!(matches!(err, crate::client::GitlabError::Other(_)));
+        assert!(msg.contains("auto-merge is not enabled"), "{msg}");
+        assert!(msg.contains("!5"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn mr_cancel_auto_merge_405_explains_merged_or_closed() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(CANCEL_PATH))
+            .respond_with(ResponseTemplate::new(405))
+            .mount(&server)
+            .await;
+
+        let msg = mr_cancel_auto_merge(&mock_client(&server), cancel_params(5))
+            .await
+            .unwrap_err()
+            .to_tool_message();
+        assert!(msg.contains("already merged or closed"), "{msg}");
+    }
+
+    #[tokio::test]
+    async fn mr_cancel_auto_merge_propagates_other_errors() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(CANCEL_PATH))
+            .respond_with(ResponseTemplate::new(404).set_body_string("Not found"))
+            .mount(&server)
+            .await;
+
+        let err = mr_cancel_auto_merge(&mock_client(&server), cancel_params(5))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, crate::client::GitlabError::Api { .. }));
+    }
 
     fn mr_json(iid: u64) -> serde_json::Value {
         serde_json::json!({

@@ -1209,7 +1209,7 @@ mod tests {
         // and a name collision. Update it when adding or removing tools —
         // together with EXPECTED_TOOLS in scripts/smoke.py.
         let tools = GitlabMcpServer::tool_router().list_all();
-        assert_eq!(tools.len(), 191);
+        assert_eq!(tools.len(), 192);
     }
 
     #[test]
