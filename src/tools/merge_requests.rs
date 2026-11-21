@@ -314,48 +314,51 @@ pub async fn mr_cancel_auto_merge(
     client: &GitlabClient,
     p: MrCancelAutoMergeParams,
 ) -> Result<Value, GitlabError> {
-    let path = format!(
-        "{}/merge_requests/{}/cancel_merge_when_pipeline_succeeds",
+    let mr_path = format!(
+        "{}/merge_requests/{}",
         project_path(&p.project_id),
         p.merge_request_iid
     );
-    // GitLab's docs promise a 406 when auto-merge isn't set (405 when the MR
-    // is merged/closed), but gitlab.com actually answers with a *success*
-    // status and an error body, `{"status":"error","http_status":406,
-    // "message":"Can't cancel the automatic merge"}`, for both cases. Handle
-    // both shapes, or the error body would pass through as if it were the MR.
+    // The `delegate_json!` shim prefixes "cancelling auto-merge on merge
+    // request:", so this message starts at the IID.
     let not_cancellable = |detail: String| {
         GitlabError::Other(format!(
-            "cannot cancel auto-merge on merge request !{}: auto-merge is not enabled on it, \
-             or it is already merged or closed ({detail}). Nothing was changed; \
-             check its state and merge_when_pipeline_succeeds with gitlab_mrs_get",
+            "!{} has no auto-merge to cancel: it is not enabled, or the MR is already \
+             merged or closed ({detail}). Nothing was changed; check its state and \
+             merge_when_pipeline_succeeds with gitlab_mrs_get",
             p.merge_request_iid
         ))
     };
-    match client.post(&path, &serde_json::json!({})).await {
+    // gitlab.com diverges from the API docs in both directions, so each arm
+    // covers the documented *and* the observed shape:
+    // - nothing to cancel: docs say 406 (405 if merged/closed); gitlab.com
+    //   sends a success status with `{"status":"error","http_status":406,
+    //   "message":"Can't cancel the automatic merge"}` for both cases;
+    // - success: docs say the MR comes back; gitlab.com sends only
+    //   `{"status":"success"}`, so fetch the MR for the caller.
+    match client
+        .post(
+            &format!("{mr_path}/cancel_merge_when_pipeline_succeeds"),
+            &serde_json::json!({}),
+        )
+        .await
+    {
         Ok(v) if v.get("status").and_then(Value::as_str) == Some("error") => {
-            let code = v.get("http_status").and_then(Value::as_u64).unwrap_or(0);
             let message = v
                 .get("message")
                 .and_then(Value::as_str)
                 .unwrap_or("no message");
-            Err(not_cancellable(format!("GitLab: {code} {message}")))
+            let detail = v.get("http_status").and_then(Value::as_u64).map_or_else(
+                || format!("GitLab: {message}"),
+                |code| format!("GitLab {code}: {message}"),
+            );
+            Err(not_cancellable(detail))
         }
+        Ok(v) if v.get("iid").is_none() => client.get(&mr_path).await,
         Err(GitlabError::Api { status, .. })
             if status == StatusCode::NOT_ACCEPTABLE || status == StatusCode::METHOD_NOT_ALLOWED =>
         {
             Err(not_cancellable(format!("GitLab returned {status}")))
-        }
-        // The docs say success returns the MR; gitlab.com returns only
-        // `{"status":"success"}`. Fetch the MR in that case so the caller can
-        // confirm `merge_when_pipeline_succeeds` is now false.
-        Ok(v) if v.get("iid").is_none() => {
-            let mr_path = format!(
-                "{}/merge_requests/{}",
-                project_path(&p.project_id),
-                p.merge_request_iid
-            );
-            client.get(&mr_path).await
         }
         other => other,
     }
@@ -503,7 +506,7 @@ impl GitlabMcpServer {
         annotations(
             read_only_hint = false,
             destructive_hint = false,
-            idempotent_hint = false
+            idempotent_hint = true
         )
     )]
     async fn gitlab_mrs_cancel_auto_merge(
@@ -583,6 +586,9 @@ mod tests {
         }
     }
 
+    /// Start of the shared "nothing to cancel" message for `!5`.
+    const NOT_CANCELLABLE: &str = "!5 has no auto-merge to cancel";
+
     const CANCEL_PATH: &str =
         "/api/v4/projects/g%2Fp/merge_requests/5/cancel_merge_when_pipeline_succeeds";
 
@@ -653,13 +659,15 @@ mod tests {
             .unwrap_err();
         let msg = err.to_tool_message();
         assert!(matches!(err, crate::client::GitlabError::Other(_)));
-        assert!(msg.contains("auto-merge is not enabled"), "{msg}");
-        assert!(msg.contains("Can't cancel the automatic merge"), "{msg}");
-        assert!(msg.contains("!5"), "{msg}");
+        assert!(msg.starts_with(NOT_CANCELLABLE), "{msg}");
+        assert!(
+            msg.contains("GitLab 406: Can't cancel the automatic merge"),
+            "{msg}"
+        );
     }
 
     #[tokio::test]
-    async fn mr_cancel_auto_merge_406_explains_not_enabled() {
+    async fn mr_cancel_auto_merge_406_is_not_cancellable() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path(CANCEL_PATH))
@@ -674,12 +682,12 @@ mod tests {
             .unwrap_err();
         let msg = err.to_tool_message();
         assert!(matches!(err, crate::client::GitlabError::Other(_)));
-        assert!(msg.contains("auto-merge is not enabled"), "{msg}");
-        assert!(msg.contains("!5"), "{msg}");
+        assert!(msg.starts_with(NOT_CANCELLABLE), "{msg}");
+        assert!(msg.contains("406 Not Acceptable"), "{msg}");
     }
 
     #[tokio::test]
-    async fn mr_cancel_auto_merge_405_explains_merged_or_closed() {
+    async fn mr_cancel_auto_merge_405_is_not_cancellable() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path(CANCEL_PATH))
@@ -687,11 +695,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        let msg = mr_cancel_auto_merge(&mock_client(&server), cancel_params(5))
+        let err = mr_cancel_auto_merge(&mock_client(&server), cancel_params(5))
             .await
-            .unwrap_err()
-            .to_tool_message();
-        assert!(msg.contains("already merged or closed"), "{msg}");
+            .unwrap_err();
+        let msg = err.to_tool_message();
+        assert!(matches!(err, crate::client::GitlabError::Other(_)));
+        assert!(msg.starts_with(NOT_CANCELLABLE), "{msg}");
+        assert!(msg.contains("405 Method Not Allowed"), "{msg}");
     }
 
     #[tokio::test]

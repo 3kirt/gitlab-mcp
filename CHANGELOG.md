@@ -5,17 +5,12 @@ All notable changes to gitlab-mcp are documented here.
 ## [Unreleased]
 
 ### Added
-- **`gitlab_mrs_cancel_auto_merge`** — turns off auto-merge ("merge when
-  pipeline succeeds") on a merge request, via
-  `POST /merge_requests/:iid/cancel_merge_when_pipeline_succeeds`, and
-  returns the updated MR. Setting an MR back to draft doesn't clear
-  auto-merge, so until now there was no way to hold one back through MCP.
-  When there's nothing to cancel (auto-merge not enabled, or the MR already
-  merged or closed) it returns a plain-language error. gitlab.com reports
-  that case with a success status and an error body, not the documented
-  406/405, and answers a successful cancel with only `{"status":"success"}`
-  (the tool then fetches the MR); both documented and observed shapes are
-  handled. (#17)
+- **`gitlab_mrs_cancel_auto_merge`** (#17) — turns off auto-merge ("merge
+  when pipeline succeeds") on a merge request and returns the updated MR.
+  Setting an MR back to draft doesn't clear auto-merge, so until now there
+  was no way to hold one back through MCP. When there's nothing to cancel
+  (auto-merge not enabled, or the MR already merged or closed) it returns a
+  plain-language error instead of GitLab's bare status.
 
 ## [0.41.0] - 2026-11-15
 
