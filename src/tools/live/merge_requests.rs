@@ -38,6 +38,20 @@ async fn delete_mr(env: &LiveEnv, iid: u64) {
     .await;
 }
 
+/// Calls `mr_cancel_auto_merge` expecting failure; returns the tool message.
+async fn cancel_auto_merge_err(env: &LiveEnv, iid: u64) -> String {
+    merge_requests::mr_cancel_auto_merge(
+        &env.client,
+        merge_requests::MrCancelAutoMergeParams {
+            project_id: env.project.clone().into(),
+            merge_request_iid: iid.into(),
+        },
+    )
+    .await
+    .expect_err("cancel auto-merge must fail when auto-merge is not set")
+    .to_tool_message()
+}
+
 /// MR create params with sensible defaults; callers override the fields a case
 /// exercises. `squash`/`remove_source_branch` mirror the tool's `default_true`.
 fn mr_create_params(
@@ -226,6 +240,12 @@ async fn mrs_create_get_update_delete_lifecycle() {
     assert_eq!(created["state"], "opened");
     assert_eq!(created["source_branch"], branch);
     assert_eq!(created["target_branch"], "main");
+
+    // Cancel auto-merge on an MR that never had it. gitlab.com answers with a
+    // success status + `{"status":"error","http_status":406}` body; it must
+    // come back as an error, not be passed through as the MR.
+    let msg = cancel_auto_merge_err(&env, iid).await;
+    assert!(msg.contains("auto-merge is not enabled"), "{msg}");
 
     // Get — single-get keeps description and embeds closes/related issues.
     let got = get_mr_slimmed(&env, iid).await;
@@ -419,6 +439,11 @@ async fn mr_merge_into_throwaway_base() {
     let got = get_mr_slimmed(&env, iid).await;
     assert_mr_get_invariants(&got);
     assert_eq!(got["state"], "merged");
+
+    // Same on a merged MR (gitlab.com sends the identical in-body 406, not
+    // the documented 405).
+    let msg = cancel_auto_merge_err(&env, iid).await;
+    assert!(msg.contains("already merged or closed"), "{msg}");
 
     // Cleanup: delete the merged MR record, then the branches (which discards
     // the merged commit). main is untouched. The feature branch was removed on

@@ -319,20 +319,32 @@ pub async fn mr_cancel_auto_merge(
         project_path(&p.project_id),
         p.merge_request_iid
     );
-    // GitLab signals "nothing to cancel" with bare 4xx statuses; translate the
-    // two documented ones into messages an LLM caller can act on.
+    // GitLab's docs promise a 406 when auto-merge isn't set (405 when the MR
+    // is merged/closed), but gitlab.com actually answers with a *success*
+    // status and an error body, `{"status":"error","http_status":406,
+    // "message":"Can't cancel the automatic merge"}`, for both cases. Handle
+    // both shapes, or the error body would pass through as if it were the MR.
+    let not_cancellable = |detail: String| {
+        GitlabError::Other(format!(
+            "cannot cancel auto-merge on merge request !{}: auto-merge is not enabled on it, \
+             or it is already merged or closed ({detail}). Nothing was changed; \
+             check its state and merge_when_pipeline_succeeds with gitlab_mrs_get",
+            p.merge_request_iid
+        ))
+    };
     match client.post(&path, &serde_json::json!({})).await {
-        Err(GitlabError::Api { status, .. }) if status == StatusCode::NOT_ACCEPTABLE => {
-            Err(GitlabError::Other(format!(
-                "auto-merge is not enabled on merge request !{} (GitLab returned 406 Not Acceptable), so there is nothing to cancel",
-                p.merge_request_iid
-            )))
+        Ok(v) if v.get("status").and_then(Value::as_str) == Some("error") => {
+            let code = v.get("http_status").and_then(Value::as_u64).unwrap_or(0);
+            let message = v
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("no message");
+            Err(not_cancellable(format!("GitLab: {code} {message}")))
         }
-        Err(GitlabError::Api { status, .. }) if status == StatusCode::METHOD_NOT_ALLOWED => {
-            Err(GitlabError::Other(format!(
-                "merge request !{} is already merged or closed (GitLab returned 405 Method Not Allowed), so auto-merge cannot be cancelled",
-                p.merge_request_iid
-            )))
+        Err(GitlabError::Api { status, .. })
+            if status == StatusCode::NOT_ACCEPTABLE || status == StatusCode::METHOD_NOT_ALLOWED =>
+        {
+            Err(not_cancellable(format!("GitLab returned {status}")))
         }
         other => other,
     }
@@ -580,6 +592,30 @@ mod tests {
             .unwrap();
         assert_eq!(v["iid"], 5);
         assert_eq!(v["merge_when_pipeline_succeeds"], false);
+    }
+
+    /// The shape gitlab.com actually returns: success status, error body.
+    #[tokio::test]
+    async fn mr_cancel_auto_merge_error_body_on_success_status_is_an_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path(CANCEL_PATH))
+            .respond_with(ResponseTemplate::new(201).set_body_json(serde_json::json!({
+                "status": "error",
+                "http_status": 406,
+                "message": "Can't cancel the automatic merge",
+            })))
+            .mount(&server)
+            .await;
+
+        let err = mr_cancel_auto_merge(&mock_client(&server), cancel_params(5))
+            .await
+            .unwrap_err();
+        let msg = err.to_tool_message();
+        assert!(matches!(err, crate::client::GitlabError::Other(_)));
+        assert!(msg.contains("auto-merge is not enabled"), "{msg}");
+        assert!(msg.contains("Can't cancel the automatic merge"), "{msg}");
+        assert!(msg.contains("!5"), "{msg}");
     }
 
     #[tokio::test]

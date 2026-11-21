@@ -10,8 +10,10 @@ All notable changes to gitlab-mcp are documented here.
   `POST /merge_requests/:iid/cancel_merge_when_pipeline_succeeds`, and
   returns the updated MR. Setting an MR back to draft doesn't clear
   auto-merge, so until now there was no way to hold one back through MCP.
-  GitLab's bare 406 (auto-merge not enabled) and 405 (MR already merged or
-  closed) come back as plain-language errors. (#17)
+  When there's nothing to cancel (auto-merge not enabled, or the MR already
+  merged or closed) it returns a plain-language error. gitlab.com reports
+  that case with a success status and an error body, not the documented
+  406/405; both shapes are handled. (#17)
 
 ## [0.41.0] - 2026-11-15
 
