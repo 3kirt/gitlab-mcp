@@ -29,7 +29,7 @@ from pathlib import Path
 BIN_NAME = "gitlab-mcp"
 # Must change together with `combined_router_exposes_every_tool` in
 # src/tools/mod.rs.
-EXPECTED_TOOLS = 191
+EXPECTED_TOOLS = 192
 # No real host/token; must not match `make secrets-scan`.
 DUMMY_ENV = {"GITLAB_URL": "https://localhost:1", "GITLAB_TOKEN": "dummy-smoke"}
 # -----------------------------------------------------------------------------

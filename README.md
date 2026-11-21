@@ -294,7 +294,7 @@ Once connected, beyond the tools themselves you get:
 
 ## Available tools
 
-The server exposes 191 tools. Each one describes its own parameters to the
+The server exposes 192 tools. Each one describes its own parameters to the
 client, so you rarely need to look anything up. To inspect a tool directly,
 `gitlab_tool_schema_get` returns its description and parameter schema. What
 you can do, by area:
