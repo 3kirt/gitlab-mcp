@@ -14,8 +14,8 @@ use super::harness::*;
 use crate::client::GitlabError;
 use crate::tools::{TERMINAL_STATUSES, jobs, pipelines, repository_files};
 
-/// Commit `ci_yaml` as `.gitlab-ci.yml` on a new branch off `main`.
-async fn seed_ci_branch(env: &LiveEnv, branch: &str, ci_yaml: &str) {
+/// Commit `ci_yaml` as `.gitlab-ci.yml` on a new branch off `start_branch`.
+pub(super) async fn seed_ci_branch(env: &LiveEnv, branch: &str, start_branch: &str, ci_yaml: &str) {
     repository_files::file_create(
         &env.client,
         repository_files::FileCreateParams {
@@ -28,7 +28,7 @@ async fn seed_ci_branch(env: &LiveEnv, branch: &str, ci_yaml: &str) {
             author_name: None,
             author_email: None,
             execute_filemode: None,
-            start_branch: Some("main".into()),
+            start_branch: Some(start_branch.to_string()),
         },
     )
     .await
@@ -41,7 +41,7 @@ async fn seed_ci_branch(env: &LiveEnv, branch: &str, ci_yaml: &str) {
 /// is required in order to run CI jobs" for unverified accounts, for *every*
 /// pipeline, even one with only a manual job. Any other error fails the test
 /// (after cleanup).
-async fn create_pipeline(env: &LiveEnv, branch: &str) -> Option<u64> {
+pub(super) async fn create_pipeline(env: &LiveEnv, branch: &str) -> Option<u64> {
     let result = pipelines::pipeline_create(
         &env.client,
         pipelines::PipelineCreateParams {
@@ -74,7 +74,7 @@ async fn create_pipeline(env: &LiveEnv, branch: &str) -> Option<u64> {
 
 /// Best-effort: cancel (in case it is still running), delete the pipeline,
 /// delete the branch. Errors are ignored so cleanup never masks a failure.
-async fn teardown(env: &LiveEnv, pipeline_id: u64, branch: &str) {
+pub(super) async fn teardown(env: &LiveEnv, pipeline_id: u64, branch: &str) {
     let project_id = || env.project.clone().into();
     let _ = pipelines::pipeline_cancel(
         &env.client,
@@ -129,6 +129,7 @@ async fn pipeline_and_job_wait_return_on_manual_gate() {
     seed_ci_branch(
         &env,
         &branch,
+        "main",
         "workflow:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"api\"\n\n\
          gate:\n  script: echo \"manual gate\"\n  when: manual\n",
     )
@@ -195,6 +196,7 @@ async fn pipeline_wait_follows_real_job_or_times_out() {
     seed_ci_branch(
         &env,
         &branch,
+        "main",
         "workflow:\n  rules:\n    - if: $CI_PIPELINE_SOURCE == \"api\"\n\n\
          hello:\n  image: alpine:3.20\n  script: echo \"hello from the wait test\"\n",
     )
