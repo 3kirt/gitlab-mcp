@@ -4,6 +4,10 @@ All notable changes to gitlab-mcp are documented here.
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-11-21
+
+Adds a tool to cancel auto-merge on a merge request.
+
 ### Added
 - **`gitlab_mrs_cancel_auto_merge`** (#17) — turns off auto-merge ("merge
   when pipeline succeeds") on a merge request and returns the updated MR.
